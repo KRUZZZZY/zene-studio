@@ -1,211 +1,168 @@
-FIXED
+ALREADY-FIXED
 
 # cluster ci-2fd63d3310176c0c - CI regression: build / mingw64
 
-## Verdict and classification
+## Verdict and reason
 
-**FIXED. REAL on this branch, classified test.** The defect is a test-source
-portability error, not a product runtime defect and not CI infrastructure: the
-Windows-only named-pipe cases named `ControlServer::ClientIdleTimeoutMs`
-unqualified, and C++ cannot see a class static member through a using-directive.
+**ALREADY-FIXED on this branch.** The clustered mingw64 failure is the
+name-lookup error in `tests/src/core/ControlShutdownHookTestParts1.h`: the two
+Windows-only named-pipe cases used the class static member
+`ControlServer::ClientIdleTimeoutMs` unqualified at lines 149, 155, 161, 169,
+196 and 209. A POSIX build preprocesses those cases away, so only the Windows
+lanes saw the compile error. The correction is already in this worktree, and
+the branch already carries the portable source-scan regression that fails on
+the old spelling and passes on the corrected spelling.
 
-The worktree is pinned at `dec3f1d45c62b26bce955875521780db173a0228`
-(050/m0-train-32) and still contains the six unqualified references. The
-prepared packet's `ALREADY_DONE` note describes promoted 050/m0-train-33, where
-`5854c983c8` already changed them; that commit is not an ancestor of this branch,
-so the defect is present here and needs its own fix and regression.
+No product or test source is changed by this run. The only committed file is
+this report; the existing fix and regression are re-verified in place below.
 
-## Evidence and cause (file:line)
+## Evidence (file:line)
 
-- `include/ControlServer.h:96` declares the value as a **class** static member:
-  `static constexpr int ClientIdleTimeoutMs = 30000;` inside `ControlServer`.
-- `tests/src/core/ControlShutdownHookTest.cpp:90` has `using namespace lmms;`.
-  A using-directive imports names from a namespace; it never imports a class
-  member, so `ClientIdleTimeoutMs` cannot resolve in the test method scope.
-- At pinned `HEAD`, `tests/src/core/ControlShutdownHookTestParts1.h` used it
-  unqualified at lines 149, 155, 161, 169, 196 and 209, inside the two
-  `#if defined(Q_OS_WIN)` cases. POSIX preprocessing removes those cases, which
-  is why only the Windows lanes see the error.
-- The sibling `tests/src/core/ControlShutdownHookTestParts2.h:132,134` already
-  spells `ControlServer::ClientIdleTimeoutMs`, confirming the intended contract.
+- `include/ControlServer.h:96` declares the value as a class static member:
+  `static constexpr int ClientIdleTimeoutMs = 30000;`.
+- `tests/src/core/ControlShutdownHookTest.cpp:90` has
+  `using namespace lmms;`. A using-directive imports a namespace, not a class
+  member, so the unqualified spelling cannot resolve in the test function's
+  scope.
+- `tests/src/core/ControlShutdownHookTestParts1.h:149,155,161,169,196,209` all
+  now spell `ControlServer::ClientIdleTimeoutMs`. The sibling
+  `tests/src/core/ControlShutdownHookTestParts2.h:132,134` already did.
+- The regression is
+  `ControlShutdownHookTest::mingwPipeCasesNameTheIdleDeadlineThroughTheServer()`
+  (`tests/src/core/ControlShutdownHookTest.cpp:373`, body at :483). It reads
+  both part headers through `QT_TESTCASE_SOURCEDIR`, strips comments without
+  losing line numbers, requires at least six references, and fails for any
+  `ClientIdleTimeoutMs` token not immediately prefixed by `ControlServer::`.
+  The sibling windows-arm64 scan is at `:378`, body at `:446`.
 
-The hosted mingw64 log (untrusted CI evidence, read as data only) names the same
-six lines and six errors:
-`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/train-ci/dec3f1d45c62b26bce955875521780db173a0228/run-43681793608-job-132713785145.log:5273-5289`.
-Native mingw64 compilation cannot be rerun on this host: `which
-x86_64-w64-mingw32-g++ x86_64-w64-mingw32-gcc` exits **1** and
-`/usr/x86_64-w64-mingw32` is absent. The exact name-lookup failure is therefore
-also demonstrated with the host compiler (see the compile control below).
+History proving the correction is already on this branch:
 
-## Fix
+- `git merge-base --is-ancestor 5854c983c8 HEAD` exits **0**.
+  `5854c983c8` contains the six-line correction (`git show 5854c983c8 --
+  tests/src/core/ControlShutdownHookTestParts1.h`).
+- `d9a26d06ad` reconciled the CI repairs and brought the regression and this
+  report onto the train. `git log --oneline --follow --
+  docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md` names it.
 
-Qualified all six references in `tests/src/core/ControlShutdownHookTestParts1.h`
-as `ControlServer::ClientIdleTimeoutMs`. No product source, API, limit, save
-format, control command or runtime path changes.
+Hosted evidence, read as data only:
 
-Completeness: `include/ControlServer.h` declares four public static constants
-(`MaxRequestLineBytes:83`, `MaxQueuedReplyBytes:91`, `MaxClients:94`,
-`ClientIdleTimeoutMs:96`). A scan of both part headers found every use qualified
-(`MaxClients` and `MaxQueuedReplyBytes` already were). No other translation unit
-includes `ControlShutdownHookTestParts1.h`/`Parts2.h`; only
-`ControlShutdownHookTest.cpp` does.
+- The pinned failure log
+  `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/train-ci/dec3f1d45c62b26bce955875521780db173a0228/run-43681793608-job-132713785145.log:5273-5289`
+  reports `'ClientIdleTimeoutMs' was not declared in this scope` at the six
+  lines above.
+- The next hosted mingw64 run for the promoted train-33 source
+  (`.../train-ci/cc29a63dde09cf28bb00498a2d2a5b124d4d614d/run-43710174450-job-132799809563.log`)
+  no longer reports those errors: it builds past `ControlShutdownHookTest`
+  and fails later at `tests/src/core/ExportWavWriteErrorTest.cpp:201`
+  (`riffSizes` defined but not used). That is a different cluster
+  (`ci-f8d87e270a05ef5e`), and its fix is also already here:
+  `git merge-base --is-ancestor 9feb23eb1b HEAD` exits **0**, and the helper
+  is under `#ifdef Q_OS_UNIX` in the worktree.
 
-## Regression test
+Answer to the packet's outstanding question, "Has a hosted mingw64 build passed
+against the promoted train-33 source?": no green hosted run was observed. The
+train-33 run failed later on the unrelated `riffSizes` issue above. The
+`ClientIdleTimeoutMs` errors are gone from that log, and the deterministic
+source scan below proves the same contract locally. Native MinGW compilation
+cannot be reproduced on this host: `which x86_64-w64-mingw32-g++
+x86_64-w64-mingw32-gcc` exits **2** with both tools absent
+(`logs/mingw-toolchain-1.log`).
 
-`ControlShutdownHookTest::windowsPipeCasesNameTheIdleDeadlineThroughTheServer()`
-(`tests/src/core/ControlShutdownHookTest.cpp:407`, declaration at :338). It reads
-the two part headers through `QT_TESTCASE_SOURCEDIR`, strips comments while
-keeping line numbers (`sourceCodeLines`, :287), and fails for every
-`ClientIdleTimeoutMs` token whose immediate prefix is not `ControlServer::`. It
-also requires at least six references so deleting the cases cannot make it pass
-vacuously. This is the same portable source seam
-`RenderSourceGuardTest::windowsBuildHasNoUnusedTestHelpers()` uses for a
-Windows-only compilation property.
-
-Test matrix:
+## Test matrix
 
 | Path | Exercise |
 |---|---|
-| Normal | every token qualified -> test passes; full `ControlShutdownHookTest` green |
-| Failure | the original header restored -> test fails and names all six compiled-away lines |
+| Normal | all references qualified -> both source scans pass; full family `EXIT=0` with a short `TMPDIR` |
+| Failure | one reference unqualified -> the scan fails and names `src/core/ControlShutdownHookTestParts1.h:149` |
 | Boundary | fewer than six references -> the count assertion fails, so the scan cannot pass vacuously |
-| Invalid input | unreadable/missing part header -> `QVERIFY2(file.open(...))` fails with the path |
-| Audio thread | n/a: test-only source scan, no product path, allocation, lock or timing |
-| Supported platforms | Windows cases stay behind `Q_OS_WIN`; the scan is portable C++20/Qt and compiles on Linux and Windows |
+| Invalid input | unreadable or missing part header -> `QVERIFY2(file.open(...))` fails with the path |
+| Audio thread | n/a: a test-only source scan, no product path, allocation, lock, wait or log |
+| Supported platforms | Windows cases remain under `Q_OS_WIN`; the scan is portable C++20/Qt and runs on POSIX and Windows |
 
-Determinism: the test is a text scan of two fixed source files located by the
-build's existing `QT_TESTCASE_SOURCEDIR` define. It uses no clock, sleep, thread,
-socket, external service or shared mutable state; its result is a pure function
-of the committed text.
-
-## Exact commands, exits and logs
-
-All logs are in `build/qwen-logs/` because the nominated log folder refuses
-writes from this session (see the log-folder note). Commands were run from the
-worktree root unless `cd build/tests` is shown.
-
-| Step | Command | Exit | Log |
-|---|---|---|---|
-| RED build | `cmake --build build --target ControlShutdownHookTest` | 0 | `build-1-red-compile.log` |
-| RED run | `cd build/tests && ctest -R '^ControlShutdownHookTest$' --output-on-failure` | **8** | `test-1-red.log` |
-| GREEN build | `cmake --build build --target ControlShutdownHookTest` | 0 | `build-2-green-compile.log` |
-| GREEN run | `cd build/tests && ctest -R '^ControlShutdownHookTest$' --output-on-failure` | **0** | `test-2-green.log` |
-| 4b patch | `git diff HEAD^ HEAD -- tests/src/core/ControlShutdownHookTestParts1.h > build/qwen-logs/final-fix.patch` | 0 | - |
-| 4b reverse | `git apply -R build/qwen-logs/final-fix.patch` | 0 | - |
-| 4b RED build | `cmake --build build --target ControlShutdownHookTest` | 0 | `build-7-final-red-compile.log` |
-| 4b RED run | `cd build/tests && ctest -R '^ControlShutdownHookTest$' --output-on-failure` | **8** | `test-8-final-red.log` |
-| 4b restore | `git apply build/qwen-logs/final-fix.patch` | 0 | - |
-| 4b GREEN build | `cmake --build build --target ControlShutdownHookTest` | 0 | `build-8-final-restored-compile.log` |
-| 4b GREEN run | `cd build/tests && ctest -R '^ControlShutdownHookTest$' --output-on-failure` | **0** | `test-9-final-restored-green.log` |
-| Family build | `cmake --build build --target ControlRegistryTest ControlRegistryDisplayTest ControlRegistryNestingTest ControlEventHubTest ControlResultSchemaTest` | 0 | `build-5-family.log` |
-| Family run | `cd build/tests && ctest -R '^Control(ShutdownHook\|Registry\|RegistryDisplay\|RegistryNesting\|EventHub\|ResultSchema)Test$' --output-on-failure` | **0** (6/6) | `test-5-family.log` |
-| Direct run | `cd build/tests && QT_QPA_PLATFORM=offscreen ./ControlShutdownHookTest` | 0 (14 passed, 1 skipped) | `test-6-direct.log` |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** | `gate-1-feature-check.log` |
-| Compile control (unqualified) | `g++ -std=c++20 -fsyntax-only build/qwen-logs/name-lookup-control.cpp` | **1** | `compile-control-unqualified.log` |
-| Compile control (qualified) | same file with `ControlServer::` restored | **0** | `compile-control-qualified.log` |
-
-RED failure text (`test-8-final-red.log`; the initial RED run `test-1-red.log`
-named the same lines) names exactly the lines the mingw64 log named:
+## Commands and exit codes (all logs in the nominated log folder)
 
 ```
-FAIL!  : ControlShutdownHookTest::windowsPipeCasesNameTheIdleDeadlineThroughTheServer()
-'unqualified.isEmpty()' returned FALSE. (these idle-deadline references would fail the mingw64 build because ClientIdleTimeoutMs is a ControlServer member, not a free name:
-src/core/ControlShutdownHookTestParts1.h:149
-src/core/ControlShutdownHookTestParts1.h:155
-src/core/ControlShutdownHookTestParts1.h:161
-src/core/ControlShutdownHookTestParts1.h:169
-src/core/ControlShutdownHookTestParts1.h:196
-src/core/ControlShutdownHookTestParts1.h:209)
-Totals: 13 passed, 1 failed, 1 skipped, 0 blacklisted, 133ms
+cmake --build build --target ControlShutdownHookTest -j4 > .../logs/build-1.log 2>&1
+EXIT=0
+
+cd build/tests
+ctest -R '^ControlShutdownHookTest$' --output-on-failure > .../logs/test-1.log 2>&1
+EXIT=8
 ```
 
-GREEN test totals: the direct binary run reports `14 passed, 0 failed, 1
-skipped` (13 pre-existing passes plus the new regression; the one Windows-only
-case is skipped on Linux as before), and `ctest` reports `100% tests passed out
-of 1`.
-
-The host compile control reproduces the language rule independently of the
-Windows headers:
+`test-1.log` is the environment's long `TMPDIR`: its socket paths (110-117
+bytes) exceed the product's 107-byte AF_UNIX path limit. Both source scans
+still PASS there; the failure is unrelated to this cluster. Re-run with a short
+temporary directory:
 
 ```
-$ g++ -std=c++20 -fsyntax-only build/qwen-logs/name-lookup-control.cpp   # unqualified
-error: 'ClientIdleTimeoutMs' was not declared in this scope
-EXIT=1
-$ g++ -std=c++20 -fsyntax-only build/qwen-logs/name-lookup-control.cpp   # ControlServer::
+TMPDIR=/tmp ctest -R '^ControlShutdownHookTest$' --output-on-failure > .../logs/test-2.log 2>&1
 EXIT=0
 ```
 
-## Verification of no collateral damage
+RED/GREEN of the regression itself, without touching product code: one
+qualifier at `ControlShutdownHookTestParts1.h:149` was temporarily changed back
+to the original unqualified spelling with `apply_patch`, the test was run, and
+the spelling was restored with `apply_patch`:
 
-The change is confined to a test-support header and its only test source. No
-product code, project format, save/load path, undo step, control command or
-audio-thread path is touched. The adjacent control-test family (6/6) and the
-gate check pass unchanged. The five sibling binaries were built and run, not
-merely listed.
+```
+TMPDIR=/tmp ctest -R '^ControlShutdownHookTest$' --output-on-failure > .../logs/test-3-red.log 2>&1
+EXIT=8
+# FAIL! mingwPipeCases... and windowsPipeCases... name
+# src/core/ControlShutdownHookTestParts1.h:149
 
-## Log-folder note
+TMPDIR=/tmp ctest -R '^ControlShutdownHookTest$' --output-on-failure > .../logs/test-4-green.log 2>&1
+EXIT=0
+```
 
-The nominated folder
-`/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/runs/ci-2fd63d3310176c0c.r1/logs`
-is `drwxr-xr-x kruzzzzy:kruzzzzy` but refuses writes:
-`touch <folder>/probe.log` -> **EXIT=1**, `Permission denied`. Every build/test
-log and `fix.patch` was therefore written to the worktree's ignored
-`build/qwen-logs/` directory and is cited by name above.
+Gates:
 
-## Independent QA
+```
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py \
+  /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-2fd63d3310176c0c-port \
+  > .../logs/gates-1.log 2>&1
+EXIT=0
+RESULT: PASS   (fork-sources, all-sources-reproduce, no-upstream-regression,
+                check-namespace, no-tautology, doc-figures, complexity,
+                file-length all PASS)
+```
 
-An independent review agent inspected the pinned `HEAD` source, the diff, the
-four evidence logs and the regression, and re-ran the test. Its observed
-evidence and verdict are recorded in the Self-check below. It did not modify
-the tree.
+## No collateral damage
 
-## Files committed
+Only this report changes. No product source, API, limit, save format, undo
+step, control command or audio-thread path is touched, so old projects and
+saved data load exactly as before. The correction covers all six references;
+`Parts2.h` already conformed; no other translation unit includes the two part
+headers.
 
-- `tests/src/core/ControlShutdownHookTestParts1.h` - qualify the six Windows-only idle-deadline references.
-- `tests/src/core/ControlShutdownHookTest.cpp` - deterministic portable source-scan regression.
-- `docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md` - this report.
+## Other findings
+
+- The family's AF_UNIX cases fail when `TMPDIR` is the long per-run directory:
+  the socket path exceeds `ControlServer`'s 107-byte limit. This predates and is
+  unrelated to this cluster; the tests pass under `TMPDIR=/tmp`. Not changed
+  here.
+- The train-33 hosted mingw64 run failed after this defect on
+  `ExportWavWriteErrorTest.cpp:201` (`riffSizes` unused). That is cluster
+  `ci-f8d87e270a05ef5e`, already fixed by `9feb23eb1b` on this branch.
 
 ## Self-check
 
-- **The regression test FAILS with the product change reverted and PASSES with
-  it.** Reverted header: `git apply -R build/qwen-logs/final-fix.patch` EXIT=0
-  -> rebuild EXIT=0 -> `ctest -R '^ControlShutdownHookTest$'` **EXIT=8**
-  (`test-8-final-red.log`, 13 passed / 1 failed / 1 skipped, naming the six
-  original lines). Restored: `git apply build/qwen-logs/final-fix.patch` EXIT=0
-  -> rebuild EXIT=0 -> the same ctest **EXIT=0**
-  (`test-9-final-restored-green.log`). The reverted patch is the six-line header
-  hunk; the regression test stays in place in both runs, so it is the test that
-  changes verdict. The comment stripper was simplified to a sentinel lookahead
-  (CCN 9) after the first proof; the final version was re-proved here.
-
-- **The test is deterministic: no wall-clock timing, sleeps or races.** It opens
-  two fixed files under the build's `QT_TESTCASE_SOURCEDIR` define and scans
-  their text. There is no clock, sleep, thread, timeout, socket or shared
-  mutable state; the only seam is the source path the build already supplies.
-
-- **The fix is at the cause and complete.** All six compile errors are the same
-  identifier and all six are qualified. `Parts2.h:132,134` already had the
-  qualified spelling. Every use of the four `ControlServer` static constants in
-  both part headers is qualified, and no other translation unit includes those
-  headers. No caller or sibling command is involved.
-
-- **No collateral damage.** Only two test files change. No product source, API,
-  limit, project/save format, undo step, real-time path or control command is
-  touched; old projects and saved data load exactly as before. The adjacent
-  `Control(Registry|RegistryDisplay|RegistryNesting|EventHub|ResultSchema)`
-  family passes 6/6 and `feature_check.py` exits 0.
-
-- **Verdict is FIXED, so the ALREADY-FIXED/FALSE-POSITIVE item does not apply.**
-  For the record, the pinned branch is not the promoted train-33 tree:
-  `git merge-base --is-ancestor 5854c983c8 HEAD` exits **1** (the commit exists
-  on `050/m0-train-33`, not here), and the six unqualified lines are present at
-  `HEAD` as shown above. ALREADY-FIXED on train-33 therefore does not close this
-  pinned branch's defect.
-
-- **Independent QA.** The reviewer confirmed (a) the six unqualified references
-  at pinned `HEAD`, (b) `ClientIdleTimeoutMs` is a `ControlServer` static
-  member, (c) the fix covers all six and the sibling `Parts2.h` was already
-  qualified, (d) the regression is non-vacuous, deterministic and names the six
-  original lines, and (e) re-running `ctest -R '^ControlShutdownHookTest$'` from
-  `build/tests` passed; see the evidence table above for the recorded commands
-  and exits.
+- **The regression test FAILS with the fix reverted and PASSES with it.** The
+  fix is a test-support header, so the proof temporarily restored one original
+  spelling: `test-3-red.log` **EXIT=8**, naming
+  `src/core/ControlShutdownHookTestParts1.h:149`; after restore,
+  `test-4-green.log` **EXIT=0**. The working tree was clean before the commit
+  (`git status --porcelain` empty).
+- **The test is deterministic.** It opens two fixed source files through the
+  build's `QT_TESTCASE_SOURCEDIR` define and scans their text. There is no
+  clock, sleep, thread, socket or shared mutable state.
+- **The fix is at the cause and complete.** All six compile errors were the
+  same identifier and all six are qualified; `Parts2.h:132,134` already was;
+  only `ControlShutdownHookTest.cpp` includes the part headers.
+- **No collateral damage.** No product source, save/load path, undo step,
+  real-time path or command is changed by this run.
+- **ALREADY-FIXED evidence.** `include/ControlServer.h:96` (the class member),
+  `tests/src/core/ControlShutdownHookTestParts1.h:149,155,161,169,196,209`
+  (qualified references) and `tests/src/core/ControlShutdownHookTest.cpp:483`
+  (the passing regression). The fix commit `5854c983c8` is an ancestor of
+  `HEAD` (`merge-base --is-ancestor` EXIT=0).
