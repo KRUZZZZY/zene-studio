@@ -128,8 +128,18 @@ reverse/restore experiment reverses the ancestor `421f6f13ae` hunk in the test s
 - **Qt 5.15 / MSVC / macOS portability.** The probe compiles the same shipped block with Qt 5.15.19 and Qt 6.12.0
   here; the change removes a Qt-6-only expression, and the Qt 5 leg reproduces the hosted macOS diagnostic.
   MSVC was not exercised locally (no MSVC on this box) — the check is a Qt-version check, not a compiler feature.
-- **Sibling commands / registration.** The submit check lists no sibling command group for this diff: no command
-  file changed. `fork-sources` PASS, `all-sources-reproduce` PASS, `no-upstream-regression` PASS,
+- **Sibling commands (the `app.*` / `arrangement.*` list the submit check asks about).** None of them belongs to
+  this port. The ids come from command files other clusters merged into the train range between the base
+  `fa4a5f2e78` and this branch — `git diff --name-only $(git merge-base HEAD 050/m0-train-35)..HEAD | awk
+  '/ControlCommands|ControlReversibilityTable/'` lists
+  `src/core/ControlCommandsAudioSlice.cpp`, `...AudioTestTone.cpp`, `...BrowserCollections.cpp`,
+  `...DeviceTools.cpp`, `...LinkAudio.cpp`, `...MixerListen.cpp`, `...NoteTools.cpp`,
+  `...RecordingRecovery.cpp`, `...RecordingRoutes.cpp`, `...Session.cpp` and more. This port touches no command
+  file, adds no command, and changes no command behaviour, so every one of those siblings is unaffected: the
+  `ControlCommandsSnapshot` canary does not move. The other `tests/` files the check lists
+  (`tests/Qt5QStringListSizeConstructorCheck.py`, `tests/clang-template-keyword-check.py`) are likewise other
+  clusters' files inside the merged range, not edits of this port.
+- **Registration.** `fork-sources` PASS, `all-sources-reproduce` PASS, `no-upstream-regression` PASS,
   `check-namespace` PASS, `no-tautology` PASS, `doc-figures` PASS, complexity and file-length report no new item
   in the changed files (`gates-1.log`, EXIT=0).
 
