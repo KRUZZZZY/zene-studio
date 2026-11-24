@@ -216,8 +216,10 @@ public:
 	 *  allocation probe calls THIS entry over 64 blocks, so the probe measures
 	 *  the function the engine runs and not a copy of it.
 	 *
-	 *  Realtime-safe: no allocation, no growth, one lock per clip (the clip's
-	 *  own), and it returns at its first test when no clip has opted in. */
+	 *  Realtime-safe: no allocation, no growth, and it never waits: each clip's
+	 *  own lock is ASKED for once (AutomationClip::RenderLock, new-p12-248) and a
+	 *  clip a control thread is editing is left out of the block. It returns at
+	 *  its first test when no clip has opted in. */
 	void buildAutomationRamps(const TrackList& trackList, const TimePos& blockStart,
 		f_cnt_t frames, int frameOffsetInTick);
 	//! The same publish against one pinned AutomationLatency snapshot; an audio period passes its own.
