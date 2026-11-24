@@ -290,10 +290,14 @@ const ReversibilityRow kSnapshotRows[] = {
 		"project state, no object in the project holds it and the ProjectJournal "
 		"cannot restore it",
 		"the recorded inverse is the paired COMMAND (`applies: command`): "
-		"record.recovery_discard when this call created the journal, or "
-		"record.journal_begin with the journal that was already there. before "
-		"records which of the two, so control.undo takes the write back either "
-		"way",
+		"record.recovery_discard, which removes the journal this call created. A "
+		"journal that is already there and still protects an interrupted capture "
+		"is REFUSED rather than replaced (writing a fresh one at frames_on_disk 0 "
+		"dropped the offer to zero recoverable frames); retiring it with "
+		"record.journal_finish or record.recovery_discard first is what a new "
+		"capture of the same take costs. The one side file it still writes over "
+		"is the `restored` tombstone record.recovery_restore/place leave behind, "
+		"because this command IS that undo's inverse",
 		""),
 	R("record.journal_update", RC::Snapshot, true,
 		"the frame count is one number in the same side file; the project journal "

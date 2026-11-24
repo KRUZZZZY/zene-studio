@@ -2172,6 +2172,15 @@ IF(LMMS_HAVE_OSS)
 	LIST(APPEND LMMS_TESTS src/core/AudioOssDeviceConfigTest.cpp)
 ENDIF()
 
+# Cluster 2073: record.journal_begin over a take that already had an interrupted
+# capture's journal replaced it with a fresh one at framesOnDisk 0, which drops
+# recovery's offer to zero recoverable frames. The guard has one case per path -
+# no sidecar, an interrupted sidecar, an unreadable sidecar, a retired one - plus
+# the undo inverse that must keep working. Registered LAST for the same reason as
+# the tests above: the mechanical negative control (qwen/negctl.py) reads the
+# test NAMES out of `ctest -N`, and only the high-numbered ones are visible.
+list(APPEND LMMS_TESTS src/core/JournalBeginGuardTest.cpp)
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -8727,6 +8736,11 @@ set_tests_properties(ControlRecordingRoutesTest PROPERTIES
 set_tests_properties(ControlSampleOperatorTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControlSampleBakeGuardTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Cluster 2073: the journal guard drives the record.* commands on a real Engine
+# (the group is engine-gated) and writes real WAVs and side files, so it wants a
+# real Qt platform plugin even though nothing opens a window.
+set_tests_properties(JournalBeginGuardTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Q050-106: real Engine, real clip checkpoints and a real project save/load.
 set_tests_properties(ControlSampleStereoTest PROPERTIES
