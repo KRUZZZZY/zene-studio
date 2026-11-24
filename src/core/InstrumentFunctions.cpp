@@ -345,6 +345,86 @@ InstrumentFunctionArpeggio::InstrumentFunctionArpeggio( Model * _parent ) :
 
 
 
+namespace
+{
+
+
+/*! The notes an arpeggio note plays over, read where the engine holds them instead of being
+ *  collected into a list (cluster new-p12-94).
+ *
+ *  processNote() used to build a QList of the track's note handles on every note and every
+ *  period, which allocates and frees on the audio thread. The list was only ever asked three
+ *  things: how many notes it held, the frame counters of the note it played first, and (in
+ *  sort mode) which key sat at a given position of its key-sorted order. A count per key
+ *  answers the third on the stack and the walk that fills it in answers the other two, so
+ *  nothing has to be stored and nothing has to be sorted.
+ */
+struct ArpBaseNotes
+{
+	//! Takes one more note into the count. Called in the order the engine holds the notes.
+	void add( const NotePlayHandle * _nph )
+	{
+		++count;
+		if( firstInPlayOrder == nullptr ) { firstInPlayOrder = _nph; }
+		const int key = std::clamp( _nph->key(), 0, NumKeys - 1 );
+		++notesPerKey[key];
+		if( key < lowestKey )
+		{
+			lowestKey = key;
+			firstOfLowestKey = _nph;
+		}
+	}
+
+	//! The key of the @a _index-th note in ascending key order.
+	int keyAt( int _index ) const
+	{
+		int notesBefore = 0;
+		for( int key = 0; key < NumKeys; ++key )
+		{
+			notesBefore += notesPerKey[key];
+			if( _index < notesBefore ) { return key; }
+		}
+		return NumKeys - 1;
+	}
+
+	int count = 0;
+	//! The first note in the order the engine holds them: the one sort mode lets through.
+	const NotePlayHandle * firstInPlayOrder = nullptr;
+	//! The first note of the lowest key: the list's first() once it was sorted by key.
+	const NotePlayHandle * firstOfLowestKey = nullptr;
+	int lowestKey = NumKeys;
+	//! How many base notes carry each key (Note::key() is bounded by NumKeys).
+	std::array<int, NumKeys> notesPerKey{};
+};
+
+
+/*! The notes @a _track's arpeggio plays over: its unreleased notes with no parent, or - when
+ *  it has none - its preset-preview note, or - when it has none of those either - the note
+ *  being processed, @a _note, as the only one. */
+ArpBaseNotes arpBaseNotesOf( const InstrumentTrack * _track, const NotePlayHandle * _note )
+{
+	ArpBaseNotes baseNotes;
+	for( const PlayHandle * handle : Engine::audioEngine()->playHandles() )
+	{
+		const auto nph = dynamic_cast<const NotePlayHandle *>( handle );
+		if( nph == nullptr || nph->instrumentTrack() != _track ) { continue; }
+		if( nph->isReleased() || nph->hasParent() ) { continue; }
+		baseNotes.add( nph );
+	}
+	if( baseNotes.count > 0 ) { return baseNotes; }
+
+	// maybe we're playing only a preset-preview-note?
+	const NotePlayHandle * previewNote = PresetPreviewPlayHandle::previewNoteOfInstrumentTrack( _track );
+	baseNotes.add( previewNote != nullptr ? previewNote : _note );
+	return baseNotes;
+}
+
+
+} // namespace
+
+
+
+
 void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 {
 	const int base_note_key = _n->key();
@@ -362,27 +442,21 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 	const int selected_arp = m_arpModel.value();
 	const auto arpMode = static_cast<ArpMode>(m_arpModeModel.value());
 
-	ConstNotePlayHandleList cnphv = NotePlayHandle::nphsOfInstrumentTrack(_n->instrumentTrack());
-
-	if(arpMode != ArpMode::Free && cnphv.size() == 0 )
-	{
-		// maybe we're playing only a preset-preview-note?
-		cnphv = PresetPreviewPlayHandle::nphsOfInstrumentTrack( _n->instrumentTrack() );
-		if( cnphv.size() == 0 )
-		{
-			// still nothing found here, so lets return
-			//return;
-			cnphv.push_back( _n );
-		}
-	}
+	// cluster new-p12-94: the notes this arpeggio plays over are WALKED, never collected.
+	// Collecting them into a QList allocated (and freed) in the audio path, once per note and
+	// period. Free mode reads neither them nor their frame counters - it steps the note it is
+	// processing - so it walks nothing at all.
+	const ArpBaseNotes baseNotes = arpMode == ArpMode::Free
+		? ArpBaseNotes{}
+		: arpBaseNotesOf( _n->instrumentTrack(), _n );
 
 	// avoid playing same key for all
 	// currently playing notes if sort mode is enabled
-	if (arpMode == ArpMode::Sort && _n != cnphv.first()) { return; }
+	if (arpMode == ArpMode::Sort && _n != baseNotes.firstInPlayOrder) { return; }
 
 	const InstrumentFunctionNoteStacking::ChordTable & chord_table = InstrumentFunctionNoteStacking::ChordTable::getInstance();
 	const int cur_chord_size = chord_table.chords()[selected_arp].size();
-	const int total_chord_size = cur_chord_size * cnphv.size();
+	const int total_chord_size = cur_chord_size * baseNotes.count;
 	// The slot arithmetic below is whole-number arithmetic. The range and repeats models do not round
 	// to their step, so their values are cut to whole numbers here: range is then an exact multiple of
 	// repeats, and range / repeats (the slot count) is at least one, never zero.
@@ -391,15 +465,14 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 	// how many notes are in a single chord (multiplied by range)
 	const int singleNoteRange = cur_chord_size * arpRange * repeats;
 	// how many notes are in the final chord
-	const int range = arpMode == ArpMode::Sort ? singleNoteRange * cnphv.size() : singleNoteRange;
+	const int range = arpMode == ArpMode::Sort ? singleNoteRange * baseNotes.count : singleNoteRange;
 
-	if (arpMode == ArpMode::Sort)
-	{
-		std::sort(cnphv.begin(), cnphv.end(), [](const NotePlayHandle* a, const NotePlayHandle* b)
-		{
-			return a->key() < b->key();
-		});
-	}
+	// The note the arpeggio's timing runs off: the list's first() entry, which sort mode had
+	// sorted by key. Among notes that share the lowest key the earliest in play order is
+	// taken; std::sort left the order of equal keys to the implementation.
+	const NotePlayHandle * const firstNote = arpMode == ArpMode::Sort
+		? baseNotes.firstOfLowestKey
+		: baseNotes.firstInPlayOrder;
 
 	// number of frames that every note should be played
 	const auto arp_frames = (f_cnt_t)(m_arpTimeModel.value() / 1000.0f * Engine::audioEngine()->outputSampleRate());
@@ -409,10 +482,10 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 	// arp_frames-1, otherwise the first arp-note will not be setup
 	// correctly... -> arp_frames frames silence at the start of every note!
 	int cur_frame = (arpMode != ArpMode::Free ?
-						cnphv.first()->totalFramesPlayed() :
+						firstNote->totalFramesPlayed() :
 						_n->totalFramesPlayed()) + arp_frames - 1;
 	// used for loop
-	f_cnt_t frames_processed = arpMode != ArpMode::Free ? cnphv.first()->noteOffset() : _n->noteOffset();
+	f_cnt_t frames_processed = arpMode != ArpMode::Free ? firstNote->noteOffset() : _n->noteOffset();
 
 	while( frames_processed < Engine::audioEngine()->framesPerPeriod() )
 	{
@@ -497,12 +570,12 @@ void InstrumentFunctionArpeggio::processNote( NotePlayHandle * _n )
 		}
 		else
 		{
-			const auto octaveDiv = std::div(cur_arp_idx, static_cast<int>(total_chord_size));
+			const auto octaveDiv = std::div(cur_arp_idx, total_chord_size);
 			const int octave = octaveDiv.quot;
-			const auto arpDiv = std::div(octaveDiv.rem, static_cast<int>(cnphv.size()));
+			const auto arpDiv = std::div(octaveDiv.rem, baseNotes.count);
 			const int arpIndex = arpDiv.rem;
 			const int chordIndex = arpDiv.quot;
-			sub_note_key = cnphv[arpIndex]->key()
+			sub_note_key = baseNotes.keyAt( arpIndex )
 				+ chord_table.chords()[selected_arp][chordIndex]
 				+ octave * KeysPerOctave;
 		}
