@@ -176,6 +176,25 @@ RESULT: PASS
   inherited-file entry in `tests/upstream-modifications.txt`. The product file
   `src/core/ControlCommandsProject.cpp` is already a registered fork source. The gates
   above pass.
+- **ALREADY-FIXED / FALSE-POSITIVE**: not claimed. The bug was reproduced on this
+  branch before the change (`test-1-red.log`: 524288 bytes of truncated RIFF at `out`;
+  `test-6-red-final.log`: the same failure with the product patch reverted).
+- **Sibling commands listed by the completion check** (`app.about`, `app.ask`,
+  `app.help`, `app.online_help`, `app.task_cancel`, `app.tasks`, `app.tour`,
+  `app.tours`, `app.update_check_get`, `app.update_check_run`, `app.update_check_set`,
+  `app.version`, `app.whats_new`, `arrangement.fit_tracks`,
+  `arrangement.get_state`). None of them calls `runCliRender` or writes a render
+  output: the `app.*` handlers live in `src/gui/ControlCommandsShell.cpp` (dialogs,
+  help, tasks, update checks) and the `arrangement.*` handlers live in
+  `src/gui/ControlCommandsArrangerView.cpp` and
+  `src/core/ControlCommandsArrangementState.cpp` (view state, track heights). The
+  submit-check lists them because their names occur in text in the changed file's
+  family; this diff changes no command id, schema, reply or handler. The render
+  siblings that do share the path are covered above: `render.sections` through
+  `render.render`, `render.stems`/`exportstems` through its own already-staged
+  directory, the render queue through `RenderQueue`'s own staging, and
+  `project.subproject_add`/`refresh` through the second `runCliRender` caller
+  (proved by `ControlBounceRenderTest`, EXIT=0).
 
 ## Other findings
 
