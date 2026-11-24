@@ -79,6 +79,8 @@ verified writable with a one-line probe (`000-write-probe.log`, EXIT 0).
 | 19 | Fixture-level RED for the regression binary: rows 4 then `cmake --build build --target VideoTestClipPortabilityTest -j4` (0) then `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^VideoTestClipPortabilityTest$' --output-on-failure` | **8** — `FAIL! : VideoTestClipPortabilityTest::makeClipIsDeclaredWithoutFfmpegAndRefuses() '!videotest::makeClip(path)' returned FALSE. Loc: [../../tests/src/core/VideoTestClipPortabilityTest.cpp(57)]` | `019-red-build-reverted-fixture.log`, `020-red-regression-run.log` |
 | 20 | rows 6, then the same build (0) and the same ctest at HEAD `70f6a4ae6c` | 0 (1/1) | `021-green-build-restored-fixture.log`, `022-green-regression-run.log` |
 | 21 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-6422986f4db9676f-port` | 0 — `RESULT: PASS - submit`, every mechanical row PASS | `023-submit-check.log` |
+| 22 | `python3 .../feature_check.py $PWD` and `python3 .../submit_check.py $PWD ci-6422986f4db9676f-port` after the report commits | 0, 0 — 8/8 PASS and `RESULT: PASS - submit` | `024-final-feature-check.log`, `025-final-submit-check.log` |
+| 23 | final confirmation at the manifest commit: the probe, then the six-test ctest family | 0, 0 (6/6) | `026-final-run.log` |
 
 Two notes on readings that are not code failures. Row 11's EXIT 8 is a binary that was never
 built in this configured tree (`Not Run`), cleared by building it in row 13. Row 5's message
