@@ -96,3 +96,45 @@ Delegation:
 - `loadProjectWithCheckpoint` treats a load with a non-empty `loadRefusal()` as "ready" without a rollback.
   If such a load clears the journal before refusing, the displaced history would be lost there too. Not
   verified this session.
+
+## Self-check
+
+- **The test fails without the fix and passes with it.**
+  - `git apply -R logs/fix.patch` returned EXIT 0. After rebuilding `zene` and `SessionCheckpointBudgetTest`
+    (EXIT 0, `build-4.log`), `ctest -R SessionCheckpointBudgetTest` returned EXIT 8 (`test-4.log`). It failed
+    at line 162 (redoDepth 0 vs 1) and line 161 (undoDepth 0 vs 1).
+  - `git apply logs/fix.patch` returned EXIT 0. After the rebuild (EXIT 0, `build-5.log`), the same ctest
+    returned EXIT 0 (`test-5.log`).
+- **The test is deterministic.**
+  - There is no timing, sleep or thread. Each test drives the synchronous control registry
+    (`ControlRegistry::invoke`) and `ProjectJournal::undo()`/`redo()` on the test thread.
+  - The refusal is forced by an injected byte budget: `setMaxUndoBytes(captureUndoSnapshot()->size() + 512)`.
+  - The payload is fixed: 24 tracks whose 512-character names come from a fixed LCG (`longTrackName`).
+- **The fix is at the cause and complete.**
+  - The cause is that `SessionCheckpoint.cpp` threw away journal state it never held. Every caller of the
+    changed functions was checked:
+    - `takeSessionCheckpoint`: `ControlCommandsScript.cpp:308` (script.run) and `SessionCheckpoint.cpp:253`.
+    - `finishScriptCheckpoint`: `ControlCommandsScript.cpp:330`.
+    - `loadProjectWithCheckpoint`: `ControlCommandsProjectFiles.cpp:647` (project.open) and
+      `src/gui/MainWindow.cpp:999` (the GUI open path, same function, so it is covered by the open fix).
+  - Both rollback paths of each command (capture failed, pair over budget) now restore the held history.
+  - The script success path pushes onto the held history.
+  - The header has no other includers (searched for `SessionCheckpoint.h`), and the `zene` target rebuilt
+    all of them.
+- **No collateral damage.**
+  - No limit or check was added, and no file format, load or save path was changed.
+  - The successful open path is unchanged: the held copy is unused there, and the opened project's history
+    still replaces the displaced one.
+  - The script `!changed` path is unchanged.
+  - The step serial counter is not rewound, so transaction records cannot alias a later step.
+  - `SessionCheckpointTest`, `ScriptDawRemovalUndoTest`, `ProjectOpenIntegrityTest` and `ControlRenderJobTest`
+    still pass (`test-3.log`, 5/5, EXIT 0).
+- **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable. The verdict is FIXED; the RED runs above show
+  the bug.
+- **Sibling commands listed by the check:** `app.*` and `arrangement.fit_tracks`/`arrangement.get_state` are
+  not affected. They come from the branch-wide diff against the base, not from this commit, which changes
+  no command file. The only commands that reach the changed code are script.run and project.open (plus the
+  GUI open path), and all are covered above.
+- **Audio thread:** not involved. `ProjectJournal` and the checkpoint run on the GUI/control thread only
+  (the `include/ProjectJournal.h` class comment: "Neither the bounds nor the merge touch the audio thread").
+  Local TSan does not run on this box, so this is a design argument, not a TSan result.
