@@ -129,6 +129,16 @@ head's product code (`src/core/Plugin.cpp:312`, `include/Plugin.h:316`).
   library loaded for at least as long as its plug-in instances"), and removing
   them reproduces the reported failure.
 
+- **Sibling commands in the command files the pre-submit check listed**
+  (`app.*`, `arrangement.*`): this job's commit changes exactly one file,
+  `docs/qwen-fixes-2026-10/cluster-2403.md`. The `ControlCommands*` sources the
+  check sees are the ones already on the branch between `FIX-BASE` and this
+  head (commit `8dab701ac5` and the `050/m0-train` merges), not work of this
+  session. This fix adds no command and no handler, so no sibling command
+  changes behaviour. The user path that triggers the finding is `plugin.rescan`
+  (`src/core/ControlCommandsPluginScanEdit.cpp:325`, `factory->discoverPlugins()`),
+  which needs no change because the retention lives in `Plugin::instantiate`.
+
 ## Other findings
 
 - An open `PluginBrowser`/`EffectSelectDialog` holds `Plugin::Descriptor*`
