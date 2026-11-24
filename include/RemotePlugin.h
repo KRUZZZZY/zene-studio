@@ -173,9 +173,11 @@ public:
 	//! Number of processing periods abandoned because the client did not answer within one period.
 	std::uint64_t processingOverruns() const { return m_processingOverruns.load(); }
 
-	//! Writes the warning for a channel-count request that processMessage refused. processMessage also runs on
-	//! the audio thread, where a log would allocate and lock, so the refusal is only recorded there and this
-	//! main-thread side reports it. Called from updateAudioBuffer(), processFinished() and the destructor.
+	//! Writes the warning for a channel-count request that processMessage refused, and that the refusal failed
+	//! the instance (the client stops processing with the old block, so a period it answers is not a processed
+	//! one). processMessage also runs on the audio thread, where a log would allocate and lock, so the refusal is
+	//! only recorded there and this main-thread side reports it. Called from applyDeferredClientRequests(),
+	//! updateAudioBuffer(), processFinished() and the destructor.
 	//! @return true when a refusal was waiting and has now been reported
 	bool reportRefusedChannelCounts();
 

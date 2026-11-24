@@ -42,6 +42,7 @@
 
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "DataFile.h"
 #include "AutomatableModel.h"
 #include "Engine.h"
@@ -674,6 +675,63 @@ private slots:
 		QVERIFY2(model->value() < static_cast<int>(Engine::mixer()->numChannels()),
 			"a child must not be able to select a channel that has been deleted");
 		removeAll(name);
+	}
+
+	//! BUG 4536: routing mode OWNS every child's mixer channel (the invariant
+	//! childLinked() establishes when a child joins). A direct reassignment - what
+	//! the Inspector's mixer channel menu and a script both are - moved the child
+	//! off the folder's channel while the folder still reported routing enabled,
+	//! so its audio stopped passing through the folder and nothing said so. The
+	//! reassignment is refused, typed, and changes NOTHING; the very same call is
+	//! accepted once the folder is out of routing mode, so the refusal is about
+	//! the routing and not about the command.
+	void reassigningARoutedChildsMixerChannelIsRefused()
+	{
+		const QString name = QStringLiteral("q-reassign");
+		Mixer* mixer = Engine::mixer();
+		// A channel of its own to name, made BEFORE the folder takes one: the
+		// folder's is then the higher index, and releasing routing deletes only it.
+		const int other = mixer->createChannel();
+		QVERIFY(other > 0);
+		const QString otherId = control::channelIdOf(mixer->mixerChannel(other));
+
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int folderChannel = static_cast<int>(folder->mixerChannel());
+		QVERIFY(folderChannel > other);
+		QCOMPARE(child->mixerChannelModel()->value(), folderChannel);
+
+		const QJsonObject stepBefore = lastInverse();
+		const ControlResult refused = ControlRegistry::instance()->invoke(
+			QStringLiteral("track.set_mixer_channel"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(child)},
+				{QStringLiteral("channel"), otherId}});
+		QVERIFY2(!refused.ok, qPrintable(QStringLiteral(
+			"the child of a routing folder stands on ch-%1 while the folder reports routing: its "
+			"audio leaves the folder's sum and the folder keeps advertising a channel it no longer "
+			"sums into (refusal expected, got channel %2)")
+			.arg(child->mixerChannelModel()->value()).arg(other)));
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		// The refusal changed nothing: the invariant still holds and no undo step was taken.
+		QCOMPARE(child->mixerChannelModel()->value(), folderChannel);
+		QVERIFY(folder->isRouting());
+		QCOMPARE(folder->mixerChannel(), folderChannel);
+		QVERIFY2(lastInverse() == stepBefore, "a refused reassignment cost an undo step");
+
+		// Out of routing mode the same call goes through and the child really moves.
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		const ControlResult allowed = ControlRegistry::instance()->invoke(
+			QStringLiteral("track.set_mixer_channel"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(child)},
+				{QStringLiteral("channel"), otherId}});
+		QVERIFY2(allowed.ok, qPrintable(allowed.errorMessage));
+		QCOMPARE(child->mixerChannelModel()->value(), other);
+
+		removeAll(name);
+		mixer->deleteChannel(other);
 	}
 
 	//! A routing folder's mixer channel is NAMED after it, and the name is shown on

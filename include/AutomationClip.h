@@ -113,10 +113,39 @@ public:
 	const objectVector& objects() const;
 	objectVector objectsSnapshot() const;
 	bool hasObjects() const;
-	//! Whether the clip holds a target, read without m_clipMutex: the render
-	//! thread asks this every tick and may not block. Every change to m_objects
-	//! republishes the answer under the mutex (publishLiveTarget()).
-	bool hasLiveTarget() const noexcept { return m_hasLiveTarget.load(std::memory_order_acquire); }
+	/*! The clip's first live target, read without m_clipMutex: the render thread
+	 *  asks this every tick and may not block. Every change to m_objects
+	 *  republishes the pointer under the mutex (publishLiveTarget()), and a
+	 *  target's destruction takes the engine change guard before it tells the
+	 *  clip, so a pointer read inside a render period stays alive for it. */
+	const AutomatableModel* liveTarget() const noexcept
+	{
+		return m_liveTarget.load(std::memory_order_acquire);
+	}
+	//! Whether the clip holds a target, derived from the same atomic pointer.
+	bool hasLiveTarget() const noexcept { return liveTarget() != nullptr; }
+
+	/*! The render thread's hold on one clip for one block or tick (cluster
+	 *  new-p12-248). It ASKS for m_clipMutex and never waits: an edit on a
+	 *  control thread holding the lock makes owns() false, and the render
+	 *  leaves the clip out of that block or tick (no ramp is published, so the
+	 *  control keeps its per-tick value). While it owns the lock, the clip's own
+	 *  accessors (objects(), firstObject(), valueAt(), writeBlockRamp()) re-enter
+	 *  the recursive mutex as its owner and do not wait either. */
+	class RenderLock
+	{
+	public:
+		explicit RenderLock(const AutomationClip* clip) noexcept
+			: m_clip(clip), m_owns(clip->m_clipMutex.tryLock()) {}
+		~RenderLock() { if (m_owns) { m_clip->m_clipMutex.unlock(); } }
+		RenderLock(const RenderLock&) = delete;
+		RenderLock& operator=(const RenderLock&) = delete;
+		bool owns() const noexcept { return m_owns; }
+
+	private:
+		const AutomationClip* m_clip;
+		bool m_owns;
+	};
 #ifdef LMMS_TESTING
 	using ObjectsReadProbe = void (*)(const AutomationClip*);
 	static void setObjectsReadProbeForTest(ObjectsReadProbe probe) { s_objectsReadProbe = probe; }
@@ -363,8 +392,8 @@ public:
 	static AutomationClip * globalAutomationClip( AutomatableModel * _m );
 	static void resolveAllIDs();
 
-	bool isRecording() const { return m_isRecording; }
-	void setRecording( const bool b ) { m_isRecording = b; }
+	bool isRecording() const { return m_isRecording.load(std::memory_order_acquire); }
+	void setRecording( const bool b ) { m_isRecording.store(b, std::memory_order_release); }
 
 	static int quantization() { return s_quantization; }
 	static void setQuantization(int q) { s_quantization = q; }
@@ -445,9 +474,15 @@ private:
 	AutomationTrack * m_autoTrack;
 	std::vector<jo_id_t> m_idsToResolve;
 	objectVector m_objects;
-	//! Mirrors !m_objects.empty() for hasLiveTarget(). Written under m_clipMutex by publishLiveTarget().
-	std::atomic<bool> m_hasLiveTarget{ false };
-	void publishLiveTarget() noexcept { m_hasLiveTarget.store(!m_objects.empty(), std::memory_order_release); }
+	//! The first live target of m_objects, published under m_clipMutex by
+	//! publishLiveTarget() so the render thread can decide whether to record
+	//! without taking the clip lock. Null when the clip has no target.
+	std::atomic<const AutomatableModel*> m_liveTarget{ nullptr };
+	void publishLiveTarget() noexcept
+	{
+		m_liveTarget.store(m_objects.empty() ? nullptr : m_objects.front().data(),
+			std::memory_order_release);
+	}
 	timeMap m_timeMap;	// actual values
 	timeMap m_oldTimeMap;	// old values for storing the values before setDragValue() is called.
 	float m_tension;
@@ -471,7 +506,7 @@ private:
 	float m_dragInTan; // The dragged node's inTangent
 	float m_dragOutTan; // The dragged node's outTangent
 
-	bool m_isRecording;
+	std::atomic<bool> m_isRecording{ false };
 	float m_lastRecordedValue;
 
 	//! The writes the render thread queued for the control thread (cluster

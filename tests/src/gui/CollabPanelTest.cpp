@@ -31,6 +31,7 @@
 
 #include <QtTest>
 
+#include <QAction>
 #include <QPushButton>
 #include <QLineEdit>
 #include <QScopeGuard>

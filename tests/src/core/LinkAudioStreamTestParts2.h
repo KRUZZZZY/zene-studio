@@ -121,6 +121,46 @@ void LinkAudioStreamTest::omittedSendKeepsSendingOffWhileThePeerStays() {
 	QVERIFY(run(QStringLiteral("link.audio_set_enabled"), {{QStringLiteral("enabled"), false}}).ok);
 	QVERIFY(!run(QStringLiteral("link.audio_get_state")).result.value(QStringLiteral("running")).toBool());
 }
+void LinkAudioStreamTest::anUnderrunDiscardsTheStalePartialFrames() {
+	// No socket, no thread, no sleep: the RX ring is filled through the test seam.
+	constexpr std::size_t Period = 480;   // 10 ms at 48 kHz
+	LinkAudioStream stream;
+	LinkAudioStreamTestAccess::enableReceiver(stream, 5);   // 5 ms wanted, so the target is two periods
+	std::vector<SampleFrame> mix(Period, SampleFrame(0.f, 0.f));
+	stream.process(mix.data(), mix.size(), Rate);   // the epoch bump of enableReceiver is taken here
+
+	// 1000 frames of 1.0: the target (960) is reached and the first period plays.
+	std::vector<float> first(1000 * AudioChannels, 1.f);
+	QCOMPARE(LinkAudioStreamTestAccess::writeRx(stream, first.data(), 1000), std::size_t{1000});
+	for (int period = 0; period < 2; ++period)   // 1000 -> 520 -> 40 frames left
+	{
+		std::fill(mix.begin(), mix.end(), SampleFrame(0.f, 0.f));
+		stream.process(mix.data(), mix.size(), Rate);
+		QCOMPARE(mix.front().left(), 1.f);
+	}
+	QCOMPARE(stream.report().underruns, std::uint64_t{0});
+
+	// The third period needs 480 frames and the ring has 40: an underrun, and those 40 frames
+	// belong to the audio before the gap - they go with it.
+	std::fill(mix.begin(), mix.end(), SampleFrame(0.f, 0.f));
+	stream.process(mix.data(), mix.size(), Rate);
+	QCOMPARE(stream.report().underruns, std::uint64_t{1});
+	for (const SampleFrame& frame : mix)
+	{
+		QCOMPARE(frame.left(), 0.f);
+		QCOMPARE(frame.right(), 0.f);
+	}
+
+	// Fresh audio arrives: the next period must start with it, not with the stale frames.
+	std::vector<float> second(960 * AudioChannels, 2.f);
+	QCOMPARE(LinkAudioStreamTestAccess::writeRx(stream, second.data(), 960), std::size_t{960});
+	std::fill(mix.begin(), mix.end(), SampleFrame(0.f, 0.f));
+	stream.process(mix.data(), mix.size(), Rate);
+	QCOMPARE(mix.front().left(), 2.f);
+	QCOMPARE(mix.front().right(), 2.f);
+	QCOMPARE(stream.report().underruns, std::uint64_t{1});
+	QCOMPARE(stream.report().latencyMs, 10.0);   // 960 fresh frames less one period: nothing stale is left
+}
 void LinkAudioStreamTest::theStreamLeavesLinkSyncAlone() {
 	// Link stays OFF here (it would multicast); the claim is that the two surfaces share no
 	// state: link.* answers identically with the stream running, and link's own setters work.
