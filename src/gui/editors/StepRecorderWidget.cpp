@@ -55,6 +55,13 @@ StepRecorderWidget::StepRecorderWidget(
 
 void StepRecorderWidget::setPixelsPerBar(int ppb)
 {
+	// A zero (or negative) scale makes xCoordOfTick() constant, so the ruler loop in
+	// paintEvent() could never leave the widget; keep the previous valid value instead.
+	if (ppb <= 0)
+	{
+		return;
+	}
+
 	m_ppb = ppb;
 }
 
@@ -121,7 +128,7 @@ void StepRecorderWidget::paintEvent(QPaintEvent * pe)
 
 	TimePos curPos = m_curStepEndPos;
 	int x = xCoordOfTick(curPos);
-	if (m_stepsLength.getTicks() > 0)
+	if (m_stepsLength.getTicks() > 0 && m_ppb > 0)
 	{
 		while(x <= m_right)
 		{
