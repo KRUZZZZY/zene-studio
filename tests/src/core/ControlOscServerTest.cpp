@@ -110,7 +110,7 @@ private slots:
 	{
 		Engine::init(true);
 		ControlRegistry::setReady(true);
-		QVERIFY(m_client.bind(QHostAddress::LocalHost, 0));
+		QVERIFY(m_client.bind(QHostAddress(QHostAddress::LocalHost), 0));
 	}
 
 	void cleanupTestCase()

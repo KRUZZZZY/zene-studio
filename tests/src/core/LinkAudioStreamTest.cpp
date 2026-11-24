@@ -138,6 +138,13 @@ private slots:
 
 	void largePeriodsKeepTheJitterTargetInsideItsSupportedRange();
 
+	/*! A period the RX ring cannot fill is an underrun, and the frames still in the ring at that
+	 *  moment are stale: they were queued before the silence interval. Playing them after it
+	 *  adds a discontinuity and a delay that the report does not show, so the underrun drops
+	 *  them and the re-prime starts with fresh audio. Deterministic: the receive seams only
+	 *  (writeRx + enableReceiver), no thread, no sleep. */
+	void anUnderrunDiscardsTheStalePartialFrames();
+
 	void loopbackExchangeIsSampleExact();
 
 	void audioThreadAllocatesNothing();
