@@ -106,6 +106,25 @@ An earlier family run (before step 11's build) exited 8 with six tests
 them, step 12 passed 7/7; the two runs are `test-5-family.log` and
 `test-6-family.log`.
 
+## Completion check
+
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py
+/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p14-124-port
+new-p14-124-port` -> `submit-2.log`, EXIT 0, `RESULT: PASS - submit`:
+
+```
+PASS  commits on the branch
+PASS  working tree clean
+PASS  report docs/qwen-fixes-2026-10/cluster-new-p14-124-port.md
+PASS  tests added or changed
+PASS  new test files registered in tests/CMakeLists.txt
+PASS  gates (feature_check.py)
+```
+
+The first completion run (`submit-1.log`, also EXIT 0 / PASS) raised the
+train-wide sibling-command list as an ASK; the `## Self-check` answer above
+names it and shows this commit contains no command file.
+
 ## Self-check
 
 - **Regression test fails with the synchronization removed and passes restored.**
