@@ -1,9 +1,12 @@
 ALREADY-FIXED
 
 The hosted `build / linux-arm64` regression described by cluster
-`ci-0b372147c313d00a` is already fixed on this branch. The port does not need a
-product edit: the fix (and its regression probe) arrived with ancestor commit
-`03e5a509b7` while this branch was brought up to `050/m0-train-52`.
+`ci-0b372147c313d00a` is already fixed on this branch, and this branch now owns a
+regression test that pins the exact historical defect. No product edit was
+needed in the retry: the header correction arrived with ancestor commits
+`e9c37052ba` and `03e5a509b7`, and the retry adds the missing regression proof in
+`tests/train-39-portability-check.py` (registered unchanged as
+`Train39-unused-result`).
 
 ## Finding and decision
 
@@ -18,133 +21,149 @@ tests/src/core/MountNamespaceTestSupport.h:110:22: error: ignoring return value 
 'warn_unused_result' [-Werror=unused-result]
 ```
 
-The hosted `linux-arm64` job builds with Qt 5 and GCC's fortified libc, where a
-`(void)::write(...)` cast does not silence `-Wunused-result`. The original
-port branch fixed this by checking both handshake writes.
+Under the hosted GCC/fortify configuration a `(void)::write(...)` cast does not
+silence `-Wunused-result`. The current branch checks both handshake writes:
 
-I checked the base revision this fix was made against (`40b4322860e9`), and it
-still contains the rejected calls:
+- `tests/src/core/MountNamespaceTestSupport.h:62-68` defines
+  `writeNamespaceHandshakeByte`, which retries `EINTR` and returns whether the
+  byte was written.
+- `tests/src/core/MountNamespaceTestSupport.h:88-89` stores its result and
+  returns `written && notified` from `mapOwnUidIntoNamespace`.
+- `tests/src/core/MountNamespaceTestSupport.h:120` and `:127` store the result in
+  `enterOwnMountNamespace` and return `unshared && notified && ...`.
 
-```
-git show 40b4322860e9:tests/src/core/MountNamespaceTestSupport.h
-    char done = written ? 1 : 0;
-    (void)::write(writeEnd, &done, 1);       # historical line 78
-    return written;
-...
-    char go = 1;
-    (void)::write(toChild[1], &go, 1);       # historical line 110
-```
+`git merge-base --is-ancestor 03e5a509b7 HEAD` exited 0, so the header correction
+is in this branch's ancestry, not only a working-tree artefact. The file is
+unchanged by this retry (`git status` shows only the test script).
 
-The current branch contains the corrected code. `writeNamespaceHandshakeByte`
-checks and retries the write (`tests/src/core/MountNamespaceTestSupport.h:62-68`);
-both callers use it and include its result in their return value
-(`tests/src/core/MountNamespaceTestSupport.h:88-89` and `:120`, `:127`).
+## Regression test (the port branch's own change)
 
-`git blame` attributes those lines to `03e5a509b7`, and
-`git merge-base --is-ancestor 03e5a509b7 HEAD` exited 0, so the correction is on
-this branch rather than being a working-tree artefact. A search of
-`tests/src/` found no remaining `(void)`, `(void) `, or `(void)` `::write` call.
+`tests/train-39-portability-check.py` mode `unused-result`, still registered as
+`Train39-unused-result` (`tests/CMakeLists.txt:9851-9863`), now compiles with the
+hosted flags plus `-Werror=unused-variable` (`:175-176`) and adds two fixtures:
 
-## Regression test
+- `historic-unchecked-handshakes.cpp` (`:211-233`) reproduces both historical
+  `(void)::write` handshakes and must be rejected. If it ever compiles, the check
+  fails, so the exact regression cannot stop being pinned.
+- `dropped-handshake-result.cpp` (`:249-271`) stores
+  `writeNamespaceHandshakeByte`'s result in `notified` but returns `true`; under
+  `-Werror=unused-variable` it must be rejected, so a caller that stops
+  propagating the notification cannot pass.
+- `propagated-handshake-result.cpp` (`:273-276`) returns `notified` and must be
+  accepted, so the flag rejects dropping the result, not the helper.
+- The existing discarded-write control must still be rejected and the existing
+  checked-write control accepted, and the real header must still compile
+  (`:280-296`).
 
-The regression belongs to the existing Train 39 portability family:
+Test matrix: normal path = the real header and both checked fixtures compile;
+failure path = discarded and unpropagated results are rejected; reconfiguration =
+each helper combines its notification into the caller's return value;
+audio-thread = not applicable (test-support header used before the test starts
+threads); supported platforms = Linux block checked here, non-Linux stub
+unchanged.
 
-- `tests/train-39-portability-check.py:158-228` (mode `unused-result`) compiles
-  the real header with the hosted flags
-  `-std=c++20 -O2 -D_FORTIFY_SOURCE=3 -Werror=unused-result -c`.
-- `tests/CMakeLists.txt:9851-9863` registers it as `Train39-unused-result`.
-- The probe also compiles a must-fail discarded-write control and a must-pass
-  checked-write control, so the test cannot silently stop detecting the defect.
-- The header is consumed by `RecordToolsTest` (`tests/src/core/RecordToolsTest.cpp:237`);
-  the target rebuilt successfully (see below).
-
-Test matrix: normal path = the real header compiles and the probe's checked
-control compiles; failure path = a discarded `write()` result is rejected;
-reconfiguration = a failed handshake write returns `false` instead of being
-ignored; audio-thread = not applicable (test-support header, used before the
-test starts any threads); supported platforms = the Linux block and the
-non-Linux stub keep their existing behaviour.
-
-## Commands and EXIT codes
+## Commands and EXIT codes (this retry run)
 
 Log folder:
-`/home/kruzzzzy/.config/kads/zene/state/runs/ci-0b372147c313d00a-port.r2/logs`
+`/home/kruzzzzy/.config/kads/zene/state/runs/ci-0b372147c313d00a-port.r3/logs`
+
+GREEN baseline with the header fix in place:
 
 ```sh
-cmake --build <worktree>/build --target RecordToolsTest -j4 > LOGS/build-1-recordtools.log 2>&1
+cd build/tests && ctest -R '^Train39-unused-result$' --output-on-failure > LOGS/test-1-baseline.log 2>&1
 # EXIT=0
-
-ctest -R 'Train39-unused-result|RecordToolsTest' --output-on-failure > LOGS/test-2-green.log 2>&1
-# EXIT=8: Train39-unused-result Passed; RecordToolsTest failed on the unrelated
-# missing-volume environment check described under Other findings.
 ```
 
-RED with the reported defect reintroduced (the two unchecked `(void)::write`
-calls), then the restored tree:
+The historical header fix patch was reconstructed from the last pre-fix header
+blob and reverse-applied for RED:
 
 ```sh
-git diff -- tests/src/core/MountNamespaceTestSupport.h > LOGS/reintroduce-bug.patch
-# EXIT=0, 1363 bytes
+git diff 2dd87473a6 HEAD -- tests/src/core/MountNamespaceTestSupport.h > LOGS/header-fix.patch
+# EXIT=0; 57 lines
+git apply --check -R LOGS/header-fix.patch
+# EXIT=0
+git apply -R LOGS/header-fix.patch
+# EXIT=0; header back to the two (void)::write handshakes
 
-ctest -R '^Train39-unused-result$' --output-on-failure > LOGS/test-3-red-reintroduced.log 2>&1
-# EXIT=8: both controls passed; the real header failed at :88 and :120 with
+cd build/tests && ctest -V -R '^Train39-unused-result$' > LOGS/test-2-red-reverted-header.log 2>&1
+# EXIT=8: all five controls PASS; the real header FAILS at :78 and :110 with
 # "ignoring return value of 'ssize_t write(...)' [-Werror=unused-result]"
-
-git apply -R LOGS/reintroduce-bug.patch
-# EXIT=0
-
-ctest -R '^Train39-unused-result$' --output-on-failure > LOGS/test-4-green-restored.log 2>&1
-# EXIT=0
-
-ctest -R '^(Train39-unused-result|Train41-linux|UnusedResultFortifyCheck)$' --output-on-failure > LOGS/test-5-related-family.log 2>&1
-# EXIT=0: 3/3 passed
 ```
 
-`git status --short` was clean after the reverse patch.
+`RecordToolsTest` was rebuilt both with the reverted header and after restoring
+it:
+
+```sh
+cmake --build build --target RecordToolsTest -j4 > LOGS/build-1-recordtools-reverted.log 2>&1
+# EXIT=0
+
+git apply LOGS/header-fix.patch
+# EXIT=0
+
+cmake --build build --target RecordToolsTest -j4 > LOGS/build-2-recordtools-restored.log 2>&1
+# EXIT=0
+```
+
+GREEN with the fix restored:
+
+```sh
+cd build/tests && ctest -V -R '^Train39-unused-result$' > LOGS/test-3-green-restored-header.log 2>&1
+# EXIT=0: PASS control, PASS historical handshakes, PASS checked write,
+# PASS dropped handshake notification, PASS propagated handshake,
+# PASS mount namespace helper checks every write result
+```
+
+Direct consumer and family:
+
+```sh
+cmake --build build --target MountNamespaceHandshakeTest -j4 > LOGS/build-3-handshaketest.log 2>&1
+# EXIT=0
+
+cd build/tests && ctest -R '^(Train39-unused-result|MountNamespaceHandshakeTest|RecordToolsTest)$' --output-on-failure > LOGS/test-4-family.log 2>&1
+# EXIT=8: Train39-unused-result Passed; MountNamespaceHandshakeTest Passed;
+# RecordToolsTest failed only its pre-existing environment check
+# "cannot measure the volume holding '/home/kruzzzzy/Documents/Zene Studio'".
+```
 
 Gates:
 
 ```sh
 python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > LOGS/gates-1.log 2>&1
-# EXIT=0; all eight gates PASS
+# EXIT=0; RESULT: PASS (all eight gates)
 ```
 
 ## Self-check
 
-- **Regression fails reverted and passes restored.** With the two unchecked
-  writes reintroduced, `Train39-unused-result` EXIT=8, failing at
-  `MountNamespaceTestSupport.h:88` and `:120` (`test-3-red-reintroduced.log`).
-  After `git apply -R` restored the fixed header (EXIT=0), the same test EXIT=0
-  (`test-4-green-restored.log`).
-- **Deterministic.** The probe is compile-only with fixed flags and fixed
-  fixtures; it has a rejected discarded-write control and an accepted
-  checked-write control. It uses no clock, sleep, thread or race.
-- **Cause and completeness.** Both handshake writes now go through
-  `writeNamespaceHandshakeByte` (`:62-68`), and both callers combine its result
-  into their return value (`:88-89`, `:120`, `:127`). No `(void)` `::write`
-  remains under `tests/src/`, and the only consumer, `RecordToolsTest`, rebuilt
-  EXIT=0.
-- **No collateral damage.** This is a Linux-only test-support header. The
-  non-Linux stub is unchanged, no product/save/load/undo/command path is
-  touched, and no limit or validation was added. The original `RecordToolsTest`
-  volume check is unaffected by the header change; its local failure is
-  environmental (Other findings).
-- **ALREADY-FIXED evidence.** The base revision still has the rejected calls at
-  historical lines 78 and 110, while the current header checks both writes at
-  `tests/src/core/MountNamespaceTestSupport.h:62-68`, `:88-89`, `:120`, `:127`.
-  `git blame` and `git merge-base --is-ancestor 03e5a509b7 HEAD` (EXIT=0) place
-  the correction on this branch.
+- **Regression fails reverted and passes restored.** With the historical header
+  reverse-applied, `Train39-unused-result` EXIT=8, failing on the ignored
+  `write()` results at `MountNamespaceTestSupport.h:78` and `:110`
+  (`test-2-red-reverted-header.log`). After `git apply` restored the fixed
+  header (EXIT=0), the same registered test EXIT=0
+  (`test-3-green-restored-header.log`).
+- **Deterministic.** The check is compile-only with fixed flags and generated
+  fixtures; it uses no clock, sleep, thread or race. Its controls are
+  must-fail/must-pass pairs, so it cannot silently pass by rejecting everything.
+- **Cause and completeness.** Both handshake writes go through
+  `writeNamespaceHandshakeByte` (`:62-68`); both callers propagate its result
+  (`:88-89`, `:120`, `:127`). The extended check now pins both the historical
+  `(void)::write` shape and the dropped-notification shape. The only consumer,
+  `RecordToolsTest`, rebuilt EXIT=0.
+- **No collateral damage.** The header is unchanged by this retry; the non-Linux
+  stub is untouched. No product, save/load, undo, command or audio-thread path is
+  changed, and no limit or validation was added.
+- **ALREADY-FIXED evidence.** Current code is
+  `tests/src/core/MountNamespaceTestSupport.h:62-68`, `:88-89`, `:120`, `:127`;
+  `git merge-base --is-ancestor 03e5a509b7 HEAD` exited 0. Reverse-applying the
+  historical header faithfully reproduces the hosted error at the historical
+  lines 78 and 110, and the registered check rejects that state (EXIT=8).
 - **Sibling commands.** This cluster changes no command file, registry or
-  reversibility table. The `app.*` and `arrangement.*` list in the pre-submit
-  check comes from other train commits between the old base and `HEAD`; none of
-  those commands reads or writes the mount-namespace test helper.
+  reversibility table.
 
 ## Other findings
 
 - `RecordToolsTest::theRemainingRecordTime()` fails on this box with
   `cannot measure the volume holding '/home/kruzzzzy/Documents/Zene Studio'`
-  (`test-2-green.log`). That is an unrelated environment/mount-visibility
-  failure in an inherited test, not the header write-result defect; it is not
-  fixed here.
+  (`test-4-family.log`). That is an unrelated environment/volume check in an
+  inherited test, not the header write-result defect; it is not fixed here.
 - Fontconfig prints `No writable cache directories` while those tests load
   plug-ins; harmless noise, unrelated to this finding.
