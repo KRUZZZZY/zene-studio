@@ -60,6 +60,21 @@ All three fix commits are ancestors of HEAD (`git merge-base --is-ancestor <c> H
   `Qt5WorkerThreadCheck` and `RemotePluginAudioPortsShmCompileCheck` were built and run green (commands 1–2).
 * Registration: no files were added or modified besides this report, which is under `docs/`.
 * Realtime, undo and commands: untouched.
+* RED/GREEN with the product change reverted: not applicable. This job made no product change, so
+  there is nothing to revert. The existing guards above are green at HEAD (ctest EXIT=0, 6/6).
+* Determinism: the guards are compile checks (Qt5WorkerThreadCheck compiles against a shadow
+  `qtcore-config.h`, and the SHM check compiles an OBJECT library). No clocks, sleeps or threads.
+* Cause and siblings: all four former `QThread::create` call sites and the three `-Werror` helpers
+  were checked at HEAD (tables above). An fff search finds no remaining compiled `QThread::create(`.
+* Collateral damage: none. No code or saved-data path changed.
+* ALREADY-FIXED evidence: `tests/src/core/TestWorkerThread.h:45`,
+  `tests/src/gui/Warp/SampleClipWarpEditTest.cpp:434,464,552`, `tests/src/core/WarpMarkersTest.cpp:132`,
+  `tests/src/core/RemotePluginAudioPortsTest.cpp:75-84`, `tests/src/core/MidiOutTimingTest.cpp:69,259`,
+  `tests/src/core/ExportWavWriteErrorTest.cpp:190,225`, `tests/CMakeLists.txt:3349,6580`.
+* Sibling commands (app.* and others): not affected. No command file was changed by this job. The
+  files that submit_check lists as "tests added or changed" (`tests/control-*.py`) come from the
+  branch's earlier merge commits against the base, not from this job.
+* submit_check: `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-539b88713935565b-port` gave EXIT=0, `RESULT: PASS - submit` (logs/submit-1.log).
 
 Delegation: Haiku (1) found the mingw64 job in the three newest ancestor CI log sets and extracted
 the failing `error:` lines. Haiku (2) ran the build (command 1) and the ctest run (command 2) and
