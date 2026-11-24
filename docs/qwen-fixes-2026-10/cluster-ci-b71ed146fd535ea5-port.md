@@ -105,6 +105,17 @@ the strictly sequential rerun and its log.
 - Realtime: nothing in this change runs on the audio thread.
 - Undo/commands: no command, undo step, reversibility class or snapshot canary
   is involved.
+- Sibling commands (`app.*`, `arrangement.*` and the rest listed by
+  `submit_check`): they belong to the merge-train commits already between the
+  pinned base `fa4a5f2e` and this branch's `HEAD`, not to this job. This job's
+  only commit touches
+  `docs/qwen-fixes-2026-10/cluster-ci-b71ed146fd535ea5-port.md` alone
+  (`git show --stat --oneline HEAD` in `20-sibling-evidence.log`), and the
+  product fix under test, `421f6f13ae`, changes only
+  `tests/src/gui/MixerSendsOnFadersTest.cpp`,
+  `tests/train-51-portability-check.py` and its report. No command id,
+  handler, reversibility class or snapshot canary is touched, so those commands
+  are unaffected.
 
 ## Other findings
 
