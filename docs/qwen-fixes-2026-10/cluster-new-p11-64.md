@@ -129,7 +129,7 @@ RESULT: PASS
   it. Older readers ignore the unknown element. The wider round-trip, missing-devices and
   backward-compat tests pass (25/25).
 - **Audio thread:** nothing new runs there. The save and load code runs on the control thread, and
-  `loadSettings` already holds the model-change guard (`src/core/EffectChain.cpp:199`) across the
+  `loadSettings` already holds the model-change guard (`src/core/EffectChain.cpp:201`) across the
   new call and the rebuild. Local TSan does not run here; this is reasoned from the design.
 - **Undo and commands:** no control command was added, and the ControlCommandsSnapshot canary
   passes. The `patcher.set_wiring` row stays `snapshot`, with its inverse-command undo, and only
