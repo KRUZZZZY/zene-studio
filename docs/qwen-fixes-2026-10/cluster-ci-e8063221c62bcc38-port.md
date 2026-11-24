@@ -63,7 +63,7 @@ The direct runner exits `1` on RED and `0` on GREEN; ctest wraps the same runner
 | --- | --- | --- | --- |
 | GREEN baseline | `python3 tests/VideoClipsNoFfmpegCheck.py --source-root "$PWD" --build-dir "$PWD/build" --moc /usr/lib/qt6/moc` | `0` | `test-7-noffmpeg-direct-green-final.log`: probe PASS, negative control FAIL as expected, both TUs PASS |
 | RED, pre-fix header | `git show 9feb23eb1b^:tests/src/core/VideoTestClip.h > tests/src/core/VideoTestClip.h` then the same runner | `1` | `test-8-noffmpeg-red-prefix-final.log`: `'makeClip' is not a member of 'videotest'` |
-| Restore HEAD header | `git show HEAD:tests/src/core/VideoTestClip.h > tests/src/core/VideoTestClip.h` | `0` | `git status --porcelain` shows only `tests/VideoClipsNoFfmpegCheck.py` |
+| Restore HEAD header | `git show HEAD:tests/src/core/VideoTestClip.h > tests/src/core/VideoTestClip.h` | `0` | `git status --porcelain` lists the test file and this report, with no `VideoTestClip.h` change |
 | GREEN, ctest | `cd build/tests && ctest -R '^VideoClipsNoFfmpegCheck$' --output-on-failure` | `0` | `test-9-ctest-noffmpeg-green-final.log`: 1/1 passed |
 | GREEN, video family | `cd build/tests && ctest -R '^(VideoClipsTest\|VideoTestClipPortabilityTest\|VideoClipsGuiTest\|VideoClipsNoFfmpegCheck)$' --output-on-failure` | `0` | `test-10-ctest-video-family-green-final.log`: 4/4 passed |
 | RED, ctest, pre-fix header | pre-fix header swap then `cd build/tests && ctest -R '^VideoClipsNoFfmpegCheck$' --output-on-failure` | `8` | `test-11-ctest-noffmpeg-red-prefix-final.log`: `0% tests passed, 1 tests failed` |
