@@ -120,3 +120,10 @@ doc-figures, complexity and file-length.
    control command or undo step changed. `zene` and the LFO family build and pass.
 5. **ALREADY-FIXED / FALSE-POSITIVE do not apply.** The reversed-product-patch control
    fails at the assertion above, so the defect was reachable on this branch.
+6. **Command siblings.** This cluster changes no file matching `ControlCommands*` or
+   `ControlReversibilityTable` and adds no control command, so the command snapshot
+   canary is untouched. The sibling ids the pre-submit check lists (`app.*`,
+   `arrangement.*`, ...) come from the train's `base..HEAD` diff, not from this cluster's
+   commit: that commit contains only `include/LfoController.h`, `src/core/LfoController.cpp`,
+   the LFO regression test, the divergence ledger and this report. None of those commands
+   is affected, and none was changed here.
