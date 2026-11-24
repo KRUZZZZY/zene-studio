@@ -6336,6 +6336,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
 	set_tests_properties(Train48Portability PROPERTIES TIMEOUT 300)
 endif()
 
+# Cluster ci-00e6f05f41fa4f1a: the Windows-arm64 runner is clang/mingw, which
+# defines _WIN32 but not _MSC_VER. SfzDistoBuffersTest's aligned operators must
+# follow the Windows CRT there, not posix_memalign. The probe compiles the
+# platform blocks extracted from the real source, natively and with _WIN32.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME WindowsArm64AlignedNewCheck COMMAND ${PYTHON3_EXECUTABLE}
+		${CMAKE_CURRENT_SOURCE_DIR}/windows-arm64-aligned-new-check.py
+		--source-root ${CMAKE_SOURCE_DIR})
+	set_tests_properties(WindowsArm64AlignedNewCheck PROPERTIES TIMEOUT 120)
+endif()
+
 # Train 47: exercise the Qt5 JSON and Windows fixture compiler contracts.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
 	add_test(NAME Train47Portability COMMAND ${PYTHON3_EXECUTABLE}

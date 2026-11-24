@@ -4012,3 +4012,7 @@ tests/src/plugins/BitInvaderLoadSettingsTest.cpp
 tests/src/core/AudioOssDeviceConfigTest.cpp
 # cluster new-p16-100: LocaleHelper::toFloat parse contract and the project-load non-finite leg (fork-NEW).
 tests/src/core/LocaleHelperTest.cpp
+
+# Cluster ci-00e6f05f41fa4f1a: Windows-arm64 aligned-new compiler regression.
+tests/windows-arm64-aligned-new-check.py
+docs/qwen-fixes-2026-10/cluster-ci-00e6f05f41fa4f1a-port.md
