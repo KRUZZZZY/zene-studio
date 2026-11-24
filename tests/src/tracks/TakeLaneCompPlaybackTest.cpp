@@ -276,6 +276,117 @@ private slots:
 		QVERIFY(std::fabs(meanLevel(plain, 256, plain.size() / 2) - 0.5) < 1e-6);
 	}
 
+	//! Cluster new-p14-278, the finding's own case: a MUTED take whose lane the composite names
+	//! SOMEWHERE is admitted to the pass by SampleTrack::play (src/tracks/SampleTrack.cpp:281,
+	//! namedByComposite :116-123), and the report claimed such a take then sounds over its WHOLE
+	//! window, including the span the comp gives to another lane. It does not: the handle the
+	//! schedule builds (:304) gates itself to the composite's spans for its own lane
+	//! (SamplePlayHandle::snapshotComp src/core/SamplePlayHandle.cpp:350-403, applyComp :406-430,
+	//! run by play() at :655-658), so the take is silent wherever the comp does not select it.
+	//! And a muted take whose lane NO segment names is not scheduled at all: the admission is not
+	//! "any lane mentioned".
+	void aMutedTakeSoundsOnlyWhereTheCompositeSelectsItsLane()
+	{
+		SampleTrack track(Engine::getSong());
+		SampleClip* take = makeTake(track, m_rate, 0.5f, 1);
+		TakeLaneModel& comp = track.takeLanes();
+		comp.addLane(); comp.addLane();
+		const int length = take->length().getTicks();
+		const int third = length / 3;
+		QVERIFY(third > 0);
+		// A gapless comp: the base lane everywhere, the take's OWN lane only in the middle third.
+		QVERIFY(comp.selectSegment(0, length, 0));
+		QVERIFY(comp.selectSegment(third, 2 * third, 1));
+		QCOMPARE(comp.segments().size(), std::size_t{3});
+		take->setMuted(true);
+		QVERIFY(take->isMuted());
+
+		// The schedule DOES admit the muted take: the composite names its lane somewhere. This is the
+		// pass predicate the report points at (SampleTrack::play, src/tracks/SampleTrack.cpp:305-318).
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY2(track.play(TimePos(0), frames, 0, -1),
+			"a muted take the composite selects must be scheduled");
+		track.updateClips();
+
+		// What that handle renders: the same construction the schedule makes
+		// (SampleTrack.cpp:270-275), so the gate is measured over the clip's WHOLE window.
+		std::vector<SampleFrame> out;
+		std::vector<SampleFrame> buffer(512);
+		{
+			SamplePlayHandle handle(take, take->sampleWindow());
+			const auto total = static_cast<int>(handle.totalFrames());
+			for (int guard = 0; static_cast<int>(handle.framesDone()) < total && guard < total / 512 + 16; ++guard)
+			{
+				std::fill(buffer.begin(), buffer.end(), SampleFrame(0.0f, 0.0f));
+				handle.play(std::span<SampleFrame>(buffer));
+				out.insert(out.end(), buffer.begin(), buffer.end());
+			}
+			out.resize(static_cast<std::size_t>(total));
+		}
+
+		const auto at = [this](int ticks) { return static_cast<std::size_t>(std::llround(ticks * Engine::framesPerTick(m_rate))); };
+		const std::size_t guard = 512;  // clear of the 64-frame comp ramp at each run's edges
+		QVERIFY(at(third) > guard && at(2 * third) > at(third) + 2 * guard && at(2 * third) + guard < out.size());
+		const double comped = meanLevel(out, at(third) + guard, at(2 * third) - guard);
+		const double before = meanLevel(out, guard, at(third) - guard);
+		const double after = meanLevel(out, at(2 * third) + guard, out.size() - guard);
+		std::printf("MUTED_COMP_EVIDENCE comped[third,2third)=%.4f before=%.4f after=%.4f\n", comped, before, after);
+		QVERIFY2(std::fabs(comped - 0.5) < 1e-4, "the take must sound where the comp selects its lane");
+		QVERIFY2(before == 0.0, qPrintable(QStringLiteral("the muted take plays outside its comped span: %1").arg(before)));
+		QVERIFY2(after == 0.0, qPrintable(QStringLiteral("the muted take plays past its comped span: %1").arg(after)));
+
+		// The other half of the admission rule: no segment names the take's lane, so it is not scheduled.
+		SampleTrack unnamedTrack(Engine::getSong());
+		SampleClip* unnamed = makeTake(unnamedTrack, m_rate, 0.5f, 1);
+		TakeLaneModel& baseOnly = unnamedTrack.takeLanes();
+		baseOnly.addLane(); baseOnly.addLane();
+		QVERIFY(baseOnly.selectSegment(0, unnamed->length().getTicks(), 0));
+		unnamed->setMuted(true);
+		QVERIFY2(!unnamedTrack.play(TimePos(0), frames, 0, -1),
+			"a muted take no segment names must not be scheduled");
+		for (PlayHandle* handle : Engine::audioEngine()->playHandles())
+		{
+			auto* sampleHandle = dynamic_cast<SamplePlayHandle*>(handle);
+			QVERIFY2(sampleHandle == nullptr || !sampleHandle->isFromTrack(&unnamedTrack),
+				"a muted take no segment names got a play handle");
+		}
+	}
+
+	//! The finding's second half: with a composite active the pass predicate admits EVERY clip of a
+	//! take group (activeTakeForPlayback, src/tracks/SampleTrack.cpp:126-130), selected or not. Such
+	//! a group member is scheduled - and renders SILENCE, not its own window, because its lane has no
+	//! span in the composite (SamplePlayHandle::snapshotComp leaves m_compSpanCount at 0 for it).
+	void aGroupMemberTheCompositeDoesNotSelectRendersSilence()
+	{
+		SampleTrack track(Engine::getSong());
+		SampleClip* selected = makeTake(track, m_rate, 0.5f, 0);
+		SampleClip* unselected = makeTake(track, m_rate, 0.25f, 1);
+		const int groupId = selected->id();
+		selected->setTakeGroupId(groupId);
+		unselected->setTakeGroupId(groupId);
+		TakeLaneModel& comp = track.takeLanes();
+		comp.addLane(); comp.addLane();
+		QVERIFY(comp.recordTake(groupId, 0, track.getClips()));
+		QVERIFY(comp.recordTake(groupId, 1, track.getClips()));
+		QVERIFY(comp.selectSegment(0, selected->length().getTicks(), 0));
+		QCOMPARE(comp.segments().size(), std::size_t{1});
+
+		const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+		QVERIFY(track.play(TimePos(0), frames, 0, -1));
+		// Both passes of the group were scheduled: the comp, not the group choice, decides here.
+		QVERIFY2(selected->isPlaying() && unselected->isPlaying(),
+			"the composite must admit every member of the group");
+		track.updateClips();
+
+		const std::vector<SampleFrame> chosen = render(selected);
+		const std::vector<SampleFrame> unchosen = render(unselected);
+		QCOMPARE(chosen.size(), unchosen.size());
+		std::printf("GROUP_COMP_EVIDENCE selected=%.4f unselected=%.4f\n",
+			meanLevel(chosen, 256, chosen.size() - 256), meanLevel(unchosen, 0, unchosen.size()));
+		QVERIFY(std::fabs(meanLevel(chosen, 256, chosen.size() - 256) - 0.5) < 1e-6);
+		QCOMPARE(meanLevel(unchosen, 0, unchosen.size()), 0.0);
+	}
+
 	//! A clip assigned to group zero obeys the active-take gate; ordinary clips remain ungated.
 	void aZeroIdTakeGroupIsDistinctFromAnOrdinaryClip()
 	{
