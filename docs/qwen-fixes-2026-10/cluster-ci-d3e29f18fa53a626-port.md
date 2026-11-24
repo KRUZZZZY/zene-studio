@@ -72,8 +72,7 @@ Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/ci-d3e29f18fa53a626-port.r4/l
 |---|---|---|---|
 | Reconfigure (refused by guard) | `cd build && cmake .` | `configure-1.log` | 97 |
 | Build `zene` + `MixerSendsOnFadersTest` | `cmake --build build --target zene MixerSendsOnFadersTest -j4` | `build-1.log` | 0 |
-| GREEN, checker as committed | `python3 tests/ci-d3e29f18-mixer-faders-portability-check.py --source-root .` | `test-1-portability.log` (CTest) | 0 |
-| GREEN, CTest #834 | `cd build/tests && ctest -R CiD3e29f18MixerFadersPortability --output-on-failure` | `test-1-portability.log` | 0 (1/1) |
+| GREEN, CTest #834 (runs the checker on the committed source) | `cd build/tests && ctest -R CiD3e29f18MixerFadersPortability --output-on-failure` | `test-1-portability.log` | 0 (1/1) |
 | Affected Qt test | `cd build/tests && ctest -R '^MixerSendsOnFadersTest$' --output-on-failure` | `test-2-mixersends.log` | 0 (1/1) |
 | Build the reverse patch | `git diff 421f6f13ae^ 421f6f13ae -- tests/src/gui/MixerSendsOnFadersTest.cpp > .../red-reverse.patch` | — | 0 |
 | Revert the fix hunk | `git apply -R .../red-reverse.patch` | — | 0 |
