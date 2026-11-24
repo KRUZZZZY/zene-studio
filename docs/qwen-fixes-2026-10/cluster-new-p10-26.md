@@ -200,14 +200,45 @@ python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>   -> gate
   RESULT: PASS
 ```
 
+That first run was taken while the new test source was still untracked, so the
+scope recipes (which read `git ls-files`) did not yet derive it. Once the test was
+committed the reproduce gate asked for it in the whole-tree manifest: `gates-2.log`
+EXIT=1, `FAIL fork-sources` and `FAIL all-sources-reproduce`, each naming the one
+missing entry `tests/src/core/AbletonLinkContextStopTest.cpp`. The entry was added
+to `tests/all-sources.txt` at the recipe's sorted position (between
+`AbletonLinkAllocatorTest` and `AbletonLinkEsp32RunnerTest`) and both gates then
+passed on their own:
+
+```
+bash tests/all-sources-reproduce.sh  -> gate-all-sources.log  EXIT=0
+   "REPRODUCES: the entry list in all-sources.txt is the recipe's own output."
+bash tests/fork-sources-gate.sh      -> gate-fork-sources.log EXIT=0
+   "PASS: every tracked source in scope is registered (2769 fork-NEW, 1213 inherited, 49 tooling)."
+```
+
 Registration and documentation in the same commit: the changed vendored file is
 declared in `tests/upstream-modifications.txt:2087` (its entry now states the
-local modification), the new test file is in `tests/fork-sources.txt`, the
-modification list in `src/3rdparty/ableton-link/README.lmms` says "three" and
-names this change with its test, and `docs/LINK-SYNC.md` no longer claims "Local
-modifications: none" (it points at those lists). `MANIFEST.tsv` still records the
-upstream blob shas, as it does for the two ESP32 files that were already
-modified.
+local modification), the new test file is in `tests/fork-sources.txt` and
+`tests/all-sources.txt`, the modification list in
+`src/3rdparty/ableton-link/README.lmms` says "three" and names this change with
+its test, and `docs/LINK-SYNC.md` no longer claims "Local modifications: none" (it
+points at those lists). `MANIFEST.tsv` still records the upstream blob shas, as it
+does for the two ESP32 files that were already modified. No command id, control
+command, GUI file or `commands_snapshot.json` was touched, so the
+`ControlCommandsSnapshot` canary is unchanged.
+
+Commits on `bugs/qwen-new-p10-26`: `a4591cdcb5` (product change, test, registration
+and this report) and `5fe19db01c` (the whole-tree manifest entry).
+
+Completion check:
+
+```
+python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p10-26
+   -> submit-check-2.log EXIT=0, "RESULT: PASS - submit"
+```
+
+(An earlier run, `submit-check-1.log` EXIT=1, failed only the gate row above for
+the missing manifest entry; its ASKs are answered below.)
 
 ## Self-check
 
@@ -245,6 +276,16 @@ modified.
 * **Verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE** — the pre-fix code is
   quoted above with the `std::system_error` abort reproduced on this branch,
   both before the change and with the change reverted.
+* **Sibling commands (the ASK's list: app.*, arrangement.fit_tracks,
+  arrangement.get_state, ...)** — none of them is affected, because this fix
+  changes no command file: `git diff --name-only` over my two commits
+  (`a4591cdcb5`, `5fe19db01c`) is exactly the eight paths named above (the vendored
+  header, the test, the two scope manifests, `upstream-modifications.txt`,
+  `README.lmms`, `LINK-SYNC.md`, this report). `ControlRegistry*`,
+  `ControlCommands*`, `ControlReversibilityTable*` and
+  `tools/mcp-zene-control/zene_control/commands_snapshot.json` are untouched, and
+  the pre-submit check's own sibling computation ran against command files that
+  other lanes committed between the base and HEAD, not against mine.
 
 ## Other findings
 
