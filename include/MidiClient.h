@@ -255,7 +255,8 @@ protected:
 	/*! Q050-277: only a one-byte System Real-Time message (0xF8..0xFF: the clock's pulse, START, CONTINUE, STOP) is
 	 *  sent from a second thread. MIDI 1.0 lets such a byte stand anywhere in a stream, even between the bytes of
 	 *  another message, and each client writes it as one unit - MidiOss/MidiSndio one write() of one byte into a pipe
-	 *  (atomic below PIPE_BUF), MidiAlsaRaw one snd_rawmidi_write() of one byte, MidiJack one message on its
+	 *  (atomic below PIPE_BUF), MidiAlsaRaw one message on its multi-producer output queue (cluster new-p12-118: it
+	 *  was one snd_rawmidi_write() of one byte, on the calling thread), MidiJack one message on its
 	 *  multi-producer queue - so it cannot split or corrupt what the audio thread is sending. Anything longer is refused. */
 	bool processNonAudioOutEvent( const MidiEvent& event, const MidiPort* port ) override;
 

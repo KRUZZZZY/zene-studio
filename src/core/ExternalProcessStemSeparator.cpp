@@ -23,6 +23,7 @@
 
 #include "StemSeparation/ExternalProcessStemSeparator.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -135,60 +136,17 @@ bool readStems(const QString& outDir, int sampleRate, std::size_t frames, StemSe
 } // namespace
 
 
-
-
 ExternalProcessStemSeparator::ExternalProcessStemSeparator(QString pythonExecutable,
 	QString cliPath,
 	QString modelPath) :
-	m_python(pythonExecutable.isEmpty() ? locatePython() : std::move(pythonExecutable)),
+	// The interpreter is resolved by separate() (see the header): probing here
+	// let a hanging `import onnxruntime` freeze the thread that constructed the
+	// backend, which can be the GUI thread.
+	m_python(std::move(pythonExecutable)),
 	m_cli(cliPath.isEmpty() ? locateCli() : std::move(cliPath)),
 	m_model(modelPath.isEmpty() ? defaultModelPath() : std::move(modelPath))
 {
 }
-
-
-
-
-QString ExternalProcessStemSeparator::locatePython(QString* error)
-{
-	QStringList candidates;
-	const auto env = qEnvironmentVariable("LMMS_STEM_PYTHON");
-	if (!env.isEmpty())
-	{
-		candidates << env;
-	}
-	candidates << QStringLiteral("/usr/bin/python3")
-		<< QStringLiteral("python3")
-		<< QStringLiteral("/usr/local/bin/python3");
-
-	QStringList tried;
-	for (const auto& candidate : candidates)
-	{
-		tried << candidate;
-		QProcess probe;
-		probe.start(candidate, { QStringLiteral("-c"), QStringLiteral("import onnxruntime") });
-		if (!probe.waitForStarted(5000))
-		{
-			continue;
-		}
-		if (!probe.waitForFinished(30000))
-		{
-			probe.kill();
-			probe.waitForFinished(2000);
-			continue;
-		}
-		if (probe.exitStatus() == QProcess::NormalExit && probe.exitCode() == 0)
-		{
-			return candidate;
-		}
-	}
-	setError(error, QStringLiteral("No Python interpreter with the 'onnxruntime' module "
-		"found (tried: %1). Install onnxruntime or set LMMS_STEM_PYTHON.")
-		.arg(tried.join(QStringLiteral(", "))));
-	return QString();
-}
-
-
 
 
 QString ExternalProcessStemSeparator::locateCli(QString* error)
@@ -238,7 +196,9 @@ QString ExternalProcessStemSeparator::defaultModelPath()
 bool ExternalProcessStemSeparator::isAvailable(QString* error) const
 {
 	QString localError;
-	const auto python = locatePython(&localError);
+	// A caller-supplied interpreter needs no discovery (and no waiting); only an
+	// instance without one waits for the per-process discovery service.
+	const auto python = m_python.isEmpty() ? waitForPythonDiscovery(&localError) : m_python;
 	if (python.isEmpty())
 	{
 		setError(error, localError);
@@ -279,8 +239,18 @@ StemSeparator::Status ExternalProcessStemSeparator::separate(const SampleBuffer&
 {
 	if (m_python.isEmpty())
 	{
-		error = QStringLiteral("No Python interpreter with onnxruntime available");
-		return Status::Failed;
+		// Deferred discovery: the constructor must stay cheap (it can run on the
+		// GUI thread), so the interpreter is resolved here, on the backend's
+		// worker thread, from the per-process discovery service (cached).
+		m_python = waitForPythonDiscovery(&error);
+		if (m_python.isEmpty())
+		{
+			if (error.isEmpty())
+			{
+				error = QStringLiteral("No Python interpreter with onnxruntime available");
+			}
+			return Status::Failed;
+		}
 	}
 	if (m_cli.isEmpty())
 	{

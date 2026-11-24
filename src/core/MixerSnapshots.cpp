@@ -39,6 +39,13 @@ namespace lmms
 namespace
 {
 
+#ifdef LMMS_TESTING
+//! The tap-write probe (see the header). Test builds only, and a plain pointer test - it
+//! allocates nothing, locks nothing and is never set in the product.
+void (*s_tapWriteProbeForTest)(void*) = nullptr;
+void* s_tapWriteProbeContextForTest = nullptr;
+#endif
+
 MixerChannel* channelWithId(int id)
 {
 	Mixer* mixer = Engine::mixer();
@@ -90,6 +97,9 @@ int applySends(MixerChannel* channel, const std::vector<MixerSendState>& sends)
 		(*route)->amount()->setValue(send.amount);
 		(*route)->pan()->setValue(send.pan);
 		(*route)->enabledModel()->setValue(send.enabled);
+#ifdef LMMS_TESTING
+		if (s_tapWriteProbeForTest != nullptr) { s_tapWriteProbeForTest(s_tapWriteProbeContextForTest); }
+#endif
 		// Luna cluster 1501: the tap point is restored with the rest of the send, so a send switched to
 		// the other side of the fader since the capture comes back to where the snapshot found it.
 		(*route)->setPreFader(send.preFader);
@@ -168,6 +178,14 @@ MixerSnapshots& MixerSnapshots::instance()
 	}();
 	return *snapshots;
 }
+
+#ifdef LMMS_TESTING
+void MixerSnapshots::setTapWriteProbeForTest(void (*probe)(void* context), void* context)
+{
+	s_tapWriteProbeForTest = probe;
+	s_tapWriteProbeContextForTest = context;
+}
+#endif
 
 const MixerSnapshot* MixerSnapshots::find(const QString& name) const
 {

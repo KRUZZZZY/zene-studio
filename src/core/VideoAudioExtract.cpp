@@ -25,8 +25,10 @@
 #include "VideoAudioExtract.h"
 
 #include <QFileInfo>
+#include <QMutex>
 #include <QObject>
 #include <QSaveFile>
+#include <QSet>
 
 #include "VideoDecoder.h"
 #include "VideoFfmpeg.h"
@@ -47,6 +49,43 @@ extern "C" {
 
 namespace lmms
 {
+
+namespace
+{
+
+/*! cluster new-p9-67: the WAVs extractions are writing right now. The file appears only when its decode commits
+ *  (QSaveFile, in WavSink), so the file system alone cannot keep two extractions off one path - a name is therefore
+ *  claimed when it is handed out and given back when the extraction that took it returns. Both sides run on the
+ *  calling (control or worker) thread, never on the audio thread. */
+QMutex PathClaimMutex;
+QSet<QString> PathsInFlight;
+
+//! One spelling per path, so a claim and its release never miss each other.
+QString claimKey(const QString& path)
+{
+	return QFileInfo(path).absoluteFilePath();
+}
+
+//! The first default name neither a file nor an extraction in flight takes; the caller holds PathClaimMutex.
+QString firstUnclaimedAudioName(const QDir& dir, const QString& stem, int maxNames)
+{
+	QString candidate = dir.filePath(stem + QStringLiteral(".wav"));
+	for (int n = 2; QFileInfo::exists(candidate) || PathsInFlight.contains(claimKey(candidate)); ++n)
+	{
+		if (n > maxNames) { return QString(); }
+		candidate = dir.filePath(QStringLiteral("%1-%2.wav").arg(stem).arg(n));
+	}
+	return candidate;
+}
+
+//! Give @a path back: the extraction that claimed it has ended, so it can be named again.
+void releaseClaim(const QString& path)
+{
+	QMutexLocker lock(&PathClaimMutex);
+	PathsInFlight.remove(claimKey(path));
+}
+
+} // namespace
 
 #ifdef ZENE_HAVE_FFMPEG
 
@@ -243,14 +282,16 @@ QString extract(const QString& video, const QString& wav, VideoAudio* out, Video
 bool extractVideoAudio(const QString& video, const QString& wav, VideoAudio* out, QString* error, VideoExtractControl* control)
 {
 	*error = extract(video, wav, out, control);
+	releaseClaim(wav);  // the WAV is on disk by now, or nothing was written: either way the name is free again
 	return error->isEmpty();
 }
 
 #else // no FFmpeg
 
-bool extractVideoAudio(const QString&, const QString&, VideoAudio*, QString* error, VideoExtractControl*)
+bool extractVideoAudio(const QString&, const QString& wav, VideoAudio*, QString* error, VideoExtractControl*)
 {
 	*error = VideoDecoder::unavailableReason();
+	releaseClaim(wav);
 	return false;
 }
 
@@ -263,13 +304,10 @@ bool extractVideoAudio(const QString& video, const QString& wav, VideoAudio* out
 
 QString firstFreeAudioPath(const QDir& dir, const QString& stem, int maxNames)
 {
-	QString candidate = dir.filePath(stem + QStringLiteral(".wav"));
-	for (int n = 2; QFileInfo::exists(candidate); ++n)
-	{
-		if (n > maxNames) { return QString(); }
-		candidate = dir.filePath(QStringLiteral("%1-%2.wav").arg(stem).arg(n));
-	}
-	return candidate;
+	QMutexLocker lock(&PathClaimMutex);
+	const QString path = firstUnclaimedAudioName(dir, stem, maxNames);
+	if (!path.isEmpty()) { PathsInFlight.insert(claimKey(path)); }
+	return path;
 }
 
 } // namespace lmms

@@ -1720,6 +1720,8 @@ set(LMMS_TESTS
 	src/plugins/BitInvaderAllocationTest.cpp
 	# BitInvader's loadSettings clamps out-of-range wavetable values and refuses malformed payloads.
 	src/plugins/BitInvaderLoadSettingsTest.cpp
+	# new-p16-228: an extreme Sfxr pitch renders a bounded amount of synth per audio period.
+	src/plugins/SfxrPitchBoundTest.cpp
 	src/tracks/AutomationTrackTest.cpp
 	# Inherited clip paths that dereferenced getGUI() unguarded, run headless.
 	src/tracks/HeadlessGuiGuardTest.cpp
@@ -1742,6 +1744,10 @@ set(LMMS_TESTS
 	src/tracks/SampleClipTransientRepeatSafetyTest.cpp
 	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
+	# cluster new-p12-223: muting a track keeps the sample cursor in step - the resample
+	# path, the pitch-preserving path, and the muted pass's allocation budget. Its own
+	# target because Gate 7 measures SampleClipWindowTest.cpp at 494 of its 500 lines.
+	src/tracks/SampleClipMuteCursorTest.cpp
 	# Soundpipe lifecycle methods must report SP_OK on successful setup and teardown.
 	src/plugins/ReverbSCBaseTest.cpp
 	# The undo half of session.arrangement_record_land: the pass is ONE undo step, whatever it lands.
@@ -1798,6 +1804,11 @@ IF(LMMS_HAVE_STEM_SPLIT)
 		src/gui/StemSplitBackgroundTest.cpp
 		# new-p21-107: the stem WAV writer's header arithmetic and its refusals (ControlStemWav.cpp).
 		src/core/ControlStemWavTest.cpp
+		# new-p15-64: interpreter discovery is deferred out of the constructor and the
+		# whole probe sequence is bounded (ExternalProcessStemSeparator).
+		src/core/StemPythonDiscoveryTest.cpp
+		# new-p15-64: the non-blocking, cached discovery service GUI-thread callers use.
+		src/core/StemPythonDiscoveryServiceTest.cpp
 	)
 	IF(LMMS_HAVE_ONNXRUNTIME)
 		LIST(APPEND LMMS_TESTS src/core/OnnxRuntimeStemSeparatorTest.cpp)
@@ -2201,6 +2212,21 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	if(LMMS_TEST_NAME STREQUAL "MidiWinMMShortMessageTest")
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			ZENE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+	endif()
+	# cluster new-p20-95: the coefficient-publication regression drives the real Peak
+	# Controller effect - its attack/decay models and its measured lastSample() - through
+	# the controller the effect itself creates, so the plugin's sources are compiled into
+	# this test the same way PeakControllerEffectZeroFrameTest compiles them.
+	if(LMMS_TEST_NAME STREQUAL "PeakControllerNullEffectTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect/PeakControllerEffect.cpp
+			${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect/PeakControllerEffectControls.cpp
+			${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect/PeakControllerEffectControlDialog.cpp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/PeakControllerEffect
+			${CMAKE_BINARY_DIR}/plugins/PeakControllerEffect)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_STATIC_DEFINE PLUGIN_NAME=peakcontrollereffect)
 	endif()
 	# Q050-317.1: the release-sequence tests open a real mastering document through
 	# project.new_document, so the build's own template devices must exist (the same reason
@@ -2680,6 +2706,24 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader ${CMAKE_BINARY_DIR}/plugins/BitInvader)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=bitinvader)
+	endif()
+	# cluster new-p16-228: the Sfxr pitch-bound regression compiles the plug-in's own note path
+	# into the test (the Watsyn/Vestige shape), so the period it measures is the shipping one.
+	# Sfxr's view lives in the same source file and reads the plug-in's artwork, which is
+	# generated in its build directory; without CMP0118 the GENERATED mark is per-directory, so a
+	# fresh configure of THIS directory would refuse a file that does not exist yet.
+	# add_dependencies below orders its build.
+	if(LMMS_TEST_NAME STREQUAL "SfxrPitchBoundTest")
+		set_source_files_properties("${CMAKE_BINARY_DIR}/plugins/Sfxr/qrc_sfxr.cpp"
+			PROPERTIES GENERATED TRUE)
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Sfxr/Sfxr.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Sfxr/Sfxr.h
+			${CMAKE_BINARY_DIR}/plugins/Sfxr/qrc_sfxr.cpp)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Sfxr ${CMAKE_BINARY_DIR}/plugins/Sfxr)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=sfxr)
+		add_dependencies(${LMMS_TEST_NAME} sfxr)
 	endif()
 	# cluster new-p17-203: the Watsyn wavetable-snapshot regression compiles the plug-in's
 	# own sources into the test (the SlicerT/Vibed/BitInvader shape), so the note path under
@@ -4790,6 +4834,17 @@ set_tests_properties(OpulenZZeroFrameCount PROPERTIES ENVIRONMENT "QT_QPA_PLATFO
 # Cluster new-p16-157: Hz2fnum() range-checks the float before the unsigned conversion.
 add_test(NAME OpulenZHz2fnumRange COMMAND PluginPortsMigrationTest opulenzHz2fnumChecksRangeBeforeUnsignedCast)
 set_tests_properties(OpulenZHz2fnumRange PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Cluster new-p18-65: the NES coarse detune must reach the renderer through the
+# model, not through a control-thread mirror. The NES held-note regressions get
+# focused entries so they can be run without the whole migration suite.
+add_test(NAME NesDetunePublication
+	COMMAND PluginPortsMigrationTest nesDetuneReachesRendererWithoutControlSignal)
+add_test(NAME NesDetuneRenderPath
+	COMMAND PluginPortsMigrationTest nesDetuneReadsTheModelOnTheRenderPath)
+add_test(NAME NesCoarseDetune
+	COMMAND PluginPortsMigrationTest nesCoarseDetuneRetunesHeldNote)
+set_tests_properties(NesDetunePublication NesDetuneRenderPath NesCoarseDetune PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 target_include_directories(PluginPortsMigrationTest PRIVATE
 	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
 	${CMAKE_SOURCE_DIR}/plugins/LadspaEffect
@@ -4809,6 +4864,7 @@ target_compile_definitions(PluginPortsMigrationTest PRIVATE
 	# Cluster new-p17-202: the Watsyn regression reads the plugin's own
 	# sources, so it needs to know where they are.
 	WATSYN_PLUGIN_SOURCE_DIR="${CMAKE_SOURCE_DIR}/plugins/Watsyn"
+	NES_PLUGIN_SOURCE_DIR="${CMAKE_SOURCE_DIR}/plugins/Nes"
 	${PART_C_MIGRATED_DEFINITIONS}
 )
 if(BUILD_TESTING AND TARGET freeboy)

@@ -235,6 +235,27 @@ private:
 	 *  is what the next period's rate is derived from. */
 	void renderPreservingPitch(SampleFrame* dst, f_cnt_t frames);
 
+	/*! cluster new-p12-223: keeps the source cursor in step while the track is muted.
+	 *
+	 *  A muted pass renders no audio (`PlayHandle::doProcessing` already zeroed the
+	 *  caller's buffer, src/core/PlayHandle.cpp:58), but the clip's timeline keeps
+	 *  moving: `m_frame` advances whether or not anything sounded. This drives
+	 *  exactly what the audible branch of `play()` drives - the same
+	 *  `Sample::play` with the same ratio, the same pitch-preserving render, the
+	 *  same comp-slip readers - and discards the frames into a scratch that
+	 *  belongs to the handle. Without it the playback state stayed on the frame the
+	 *  mute began on, so unmuting inside the clip replayed audio that had already
+	 *  sounded and cut the tail short.
+	 *
+	 *  In DEFAULT_BUFFER_SIZE chunks, the pattern `CompSlipReaders::render` uses
+	 *  (src/core/CompSlip.cpp:89-104). No fades, no take gate, no comp and no clip
+	 *  effects: a muted clip does not sound, so only the read position keeps step.
+	 *  Nothing here allocates or locks (I8). */
+	void advanceSourceSilently(f_cnt_t frames);
+	//! The muted pass's discard target: the handle's own storage, so the audio
+	//! thread pays no allocation for it. It never reaches a caller.
+	std::array<SampleFrame, DEFAULT_BUFFER_SIZE> m_silentScratch{};
+
 	/*! Multiplies the clip's fade-and-gain envelope into the frames this period
 	 *  just rendered. Never called for a neutral clip, so the default path pays
 	 *  nothing at all for this feature - not a branch, not a multiply. */

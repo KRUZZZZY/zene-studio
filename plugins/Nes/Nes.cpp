@@ -97,9 +97,9 @@ NesObject::NesObject( NesInstrument * nes, const sample_rate_t samplerate, NoteP
 	m_nsf = NES_SIMPLE_FILTER * ( m_samplerate / 44100.0 );
 	
 	m_lastNoteFreq = 0;
-	m_lastFreq1 = 0.0f;
-	m_lastFreq2 = 0.0f;
-	m_lastFreq3 = 0.0f;
+	m_lastCrs1 = 0.0f;
+	m_lastCrs2 = 0.0f;
+	m_lastCrs3 = 0.0f;
 	m_lastNoiseFreq = -1.0f; // value that is always different than noisefreq so it gets updated at start
 	m_lastNoiseFreqMode = m_parent->m_ch4NoiseFreqMode.value();
 	m_lastNoiseQuantize = m_parent->m_ch4NoiseQuantize.value();
@@ -458,16 +458,23 @@ void NesObject::updatePitch()
 	{
 		updateVibrato( &freq );
 	}
-	// update wavelengths when the note frequency or a channel detune changes
-	if( freq != m_lastNoteFreq || m_parent->m_freq1 != m_lastFreq1 ||
-		m_parent->m_freq2 != m_lastFreq2 || m_parent->m_freq3 != m_lastFreq3 )
+	// update the wavelengths when the note frequency or a channel detune changes.
+	// The coarse detunes are read here, on the audio thread, from the models
+	// themselves: a model publishes the value a render reads through an atomic
+	// (AutomatableModel::publishedValue()), so no plain cache carries them from
+	// the control thread to the render path.
+	const float crs1 = m_parent->m_ch1Crs.value();
+	const float crs2 = m_parent->m_ch2Crs.value();
+	const float crs3 = m_parent->m_ch3Crs.value();
+	if( freq != m_lastNoteFreq || crs1 != m_lastCrs1 ||
+		crs2 != m_lastCrs2 || crs3 != m_lastCrs3 )
 	{
-		m_wlen1 = wavelength( freq * m_parent->m_freq1 );
-		m_wlen2 = wavelength( freq * m_parent->m_freq2 );
-		m_wlen3 = wavelength( freq * m_parent->m_freq3 );
-		m_lastFreq1 = m_parent->m_freq1;
-		m_lastFreq2 = m_parent->m_freq2;
-		m_lastFreq3 = m_parent->m_freq3;
+		m_wlen1 = wavelength( freq * std::exp2( crs1 / 12.0f ) );
+		m_wlen2 = wavelength( freq * std::exp2( crs2 / 12.0f ) );
+		m_wlen3 = wavelength( freq * std::exp2( crs3 / 12.0f ) );
+		m_lastCrs1 = crs1;
+		m_lastCrs2 = crs2;
+		m_lastCrs3 = crs3;
 	}
 	// noise channel can use either note freq or preset freqs
 	const bool noiseFreqMode = m_parent->m_ch4NoiseFreqMode.value();
@@ -549,13 +556,9 @@ NesInstrument::NesInstrument( InstrumentTrack * instrumentTrack ) :
 	m_masterVol( 1.0f, 0.0f, 2.0f, 0.01f, this, tr( "Master volume" ) ),
 	m_vibrato( 0.0f, 0.0f, 15.0f, 1.0f, this, tr( "Vibrato" ) )
 {
-	connect( &m_ch1Crs, SIGNAL( dataChanged() ), this, SLOT( updateFreq1() ), Qt::DirectConnection );
-	connect( &m_ch2Crs, SIGNAL( dataChanged() ), this, SLOT( updateFreq2() ), Qt::DirectConnection );
-	connect( &m_ch3Crs, SIGNAL( dataChanged() ), this, SLOT( updateFreq3() ), Qt::DirectConnection );
-	
-	updateFreq1();
-	updateFreq2();
-	updateFreq3();
+	// The channel coarse detunes are read from the models on the render path
+	// (see NesObject::updatePitch()), so there is no cached factor here to
+	// publish: a plain cache written by a knob would race the audio thread.
 }
 
 
@@ -564,6 +567,11 @@ void NesInstrument::playNoteImpl(NotePlayHandle* n, std::span<SampleFrame> out)
 {
 	const f_cnt_t frames = n->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = n->noteOffset();
+	if (n->frequency() == 0.0f)
+	{
+		zeroSampleFrames(out.data() + offset, frames);
+		return;
+	}
 	
 	if (!n->m_pluginData)
 	{
@@ -719,24 +727,6 @@ gui::PluginView* NesInstrument::instantiateView( QWidget * parent )
 	return( new gui::NesInstrumentView( this, parent ) );
 }
 
-
-
-void NesInstrument::updateFreq1()
-{
-	m_freq1 = std::exp2(m_ch1Crs.value() / 12.0f);
-}
-
-
-void NesInstrument::updateFreq2()
-{
-	m_freq2 = std::exp2(m_ch2Crs.value() / 12.0f);
-}
-
-
-void NesInstrument::updateFreq3()
-{
-	m_freq3 = std::exp2(m_ch3Crs.value() / 12.0f);
-}
 
 
 namespace gui

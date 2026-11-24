@@ -45,6 +45,8 @@ const f_cnt_t minimumFrames = 1;
 
 
 EnvelopeAndLfoParameters::LfoInstances * EnvelopeAndLfoParameters::s_lfoInstances = nullptr;
+std::atomic<std::uint64_t> EnvelopeAndLfoParameters::s_frameCounter { 0 };
+std::atomic<std::uint64_t> EnvelopeAndLfoParameters::s_frameCounterAtReset { 0 };
 
 namespace
 {
@@ -56,12 +58,11 @@ std::function<void()> g_publicationStartHook;
 
 void EnvelopeAndLfoParameters::LfoInstances::trigger()
 {
-	QMutexLocker m( &m_lfoListMutex );
-	for (const auto& lfo : m_lfos)
-	{
-		// the LFO phase moved, so the shape cache of that LFO is stale
-		lfo->m_lfoFrame += Engine::audioEngine()->framesPerPeriod();
-	}
+	// The audio thread's per-period advance: one relaxed add of the period's
+	// frames. No lock, no walk over m_lfos and no work that grows with the
+	// number of LFOs - an LFO reads its phase from this counter (lfoFrame()).
+	s_frameCounter.fetch_add( Engine::audioEngine()->framesPerPeriod(),
+		std::memory_order_relaxed );
 }
 
 
@@ -69,11 +70,11 @@ void EnvelopeAndLfoParameters::LfoInstances::trigger()
 
 void EnvelopeAndLfoParameters::LfoInstances::reset()
 {
-	QMutexLocker m( &m_lfoListMutex );
-	for (const auto& lfo : m_lfos)
-	{
-		lfo->m_lfoFrame = 0;
-	}
+	// Also on the audio thread (Song's scheduling at the start of the song):
+	// the reset marks the moment, and every LFO's phase is measured from it
+	// until an LFO starts later, which measures from its own construction.
+	s_frameCounterAtReset.store( s_frameCounter.load( std::memory_order_relaxed ),
+		std::memory_order_relaxed );
 }
 
 
@@ -119,7 +120,7 @@ EnvelopeAndLfoParameters::EnvelopeAndLfoParameters(
 	m_lfoWaveModel( static_cast<int>(LfoShape::SineWave), 0, NumLfoShapes, this, tr( "LFO wave shape" ) ),
 	m_x100Model( false, this, tr( "LFO frequency x 100" ) ),
 	m_controlEnvAmountModel( false, this, tr( "Modulate env amount" ) ),
-	m_lfoFrame( 0 ),
+	m_frameCounterOrigin( s_frameCounter.load( std::memory_order_relaxed ) ),
 	m_lfoShapeData(nullptr),
 	m_lfoShapeDataVersion( 0 ),
 	m_lfoShapeDataFrame( 0 ),
@@ -261,10 +262,26 @@ inline sample_t EnvelopeAndLfoParameters::lfoShapeSample( f_cnt_t _frame_offset,
 
 
 
+f_cnt_t EnvelopeAndLfoParameters::lfoFrame() const
+{
+	// The origin is this LFO's construction or the last reset, whichever came
+	// later: an LFO that starts after a reset counts from its own first frame,
+	// exactly as it did when each period added to its own frame counter, and a
+	// reset puts every older LFO back to frame zero.
+	const std::uint64_t origin = m_frameCounterOrigin.load( std::memory_order_relaxed );
+	const std::uint64_t reset = s_frameCounterAtReset.load( std::memory_order_relaxed );
+	const std::uint64_t start = origin > reset ? origin : reset;
+	const std::uint64_t counter = s_frameCounter.load( std::memory_order_relaxed );
+	return static_cast<f_cnt_t>( counter > start ? counter - start : 0 );
+}
+
+
+
+
 void EnvelopeAndLfoParameters::updateLfoShapeData( const AudioState & _state )
 {
 	const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
-	const f_cnt_t lfoFrame = m_lfoFrame.load(std::memory_order_relaxed);
+	const f_cnt_t lfoFrame = this->lfoFrame();
 	for( f_cnt_t offset = 0; offset < frames; ++offset )
 	{
 		m_lfoShapeData[offset] = lfoShapeSample( offset, _state, lfoFrame );
@@ -308,8 +325,7 @@ inline void EnvelopeAndLfoParameters::fillLfoLevel( float * _buf,
 	// and for the phase it was built at: a snapshot that was published while
 	// this one was held cannot be answered with this cache.
 	if( m_lfoShapeDataVersion.load(std::memory_order_acquire) != _state.version ||
-		m_lfoShapeDataFrame.load(std::memory_order_acquire) !=
-			m_lfoFrame.load(std::memory_order_relaxed) )
+		m_lfoShapeDataFrame.load(std::memory_order_acquire) != lfoFrame() )
 	{
 		updateLfoShapeData( _state );
 	}

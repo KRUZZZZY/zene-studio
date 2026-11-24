@@ -15,6 +15,7 @@ IF(LMMS_HAVE_STEM_SPLIT)
 		core/ExternalProcessStemSeparator.cpp
 		core/StemJobManager.cpp
 		core/StemModelStore.cpp
+		core/StemPythonDiscovery.cpp
 		core/StemTrackBuilder.cpp
 		# The agent surface of the same engine (feature row 26, task #653): the
 		# socket-facing half - the instance's one job manager, its availability

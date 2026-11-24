@@ -31,6 +31,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <thread>
 #include <vector>
@@ -57,6 +58,7 @@
 #include "SampleFrameRingBuffer.h"
 #include "SampleRecordAccumulator.h"
 #include "SampleBuffer.h"
+#include "SamplePlayHandle.h"
 #include "SampleRecordHandle.h"
 #include "SampleTrack.h"
 #include "Song.h"
@@ -89,6 +91,18 @@ SampleFrame frameAt(std::uint64_t index)
 }
 
 qulonglong asNumber(std::size_t value) { return static_cast<qulonglong>(value); }
+
+//! The SamplePlayHandles the engine holds for @a track right now.
+std::vector<lmms::SamplePlayHandle*> sampleHandlesOf(lmms::SampleTrack* track)
+{
+	std::vector<lmms::SamplePlayHandle*> handles;
+	for (lmms::PlayHandle* handle : lmms::Engine::audioEngine()->playHandles())
+	{
+		auto* sample = dynamic_cast<lmms::SamplePlayHandle*>(handle);
+		if (sample != nullptr && sample->isFromTrack(track)) { handles.push_back(sample); }
+	}
+	return handles;
+}
 
 } // namespace
 
@@ -919,25 +933,84 @@ private slots:
 		QVERIFY2(installed, "the claimed take that exceeded the 256-slot queue was lost");
 	}
 
-	//! A pass that starts more clips than the per-pass cap defers the rest, and counts them.
-	void clipStartsBeyondThePerPassCapAreDeferredAndCounted()
+	//! new-p12-218: the scheduling storage in SampleTrack::play is a BATCH, not a cap. A pass that
+	//! starts more clips than one batch starts them all, each from the position the pass entered, so
+	//! none loses its opening frames to a retry on a later pass.
+	void clipStartsBeyondOneBatchAllStartInTheSamePass()
 	{
 		auto* song = lmms::Engine::getSong();
 		song->stop();
-		auto* track = new lmms::SampleTrack(song);
+		// Owned: an early return on a failed check still deletes the track and its handles.
+		const auto owned = std::make_unique<lmms::SampleTrack>(song);
+		auto* track = owned.get();
 		const auto before = lmms::SampleTrack::deferredClipStarts();
-		std::vector<lmms::SampleFrame> sample(100, lmms::SampleFrame(0.25f, 0.25f));
-		for (int i = 0; i < 65; ++i)
+		const int rate = static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate());
+		// Half a second of audio, so the handles outlast the single period this test renders.
+		std::vector<lmms::SampleFrame> sample(static_cast<std::size_t>(rate) / 2, lmms::SampleFrame(0.25f, 0.25f));
+		std::vector<lmms::SampleClip*> clips;
+		for (int i = 0; i < 65; ++i)  // one clip past the 64-clip scheduling batch
 		{
 			auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
-			clip->setSampleBuffer(std::make_shared<lmms::SampleBuffer>(sample.data(), sample.size(),
-				static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate())));
+			QVERIFY(clip != nullptr);
+			clip->setSampleBuffer(std::make_shared<lmms::SampleBuffer>(sample.data(), sample.size(), rate));
 			clip->changeLength(lmms::TimePos(song->ticksPerBar()));
+			clips.push_back(clip);
 		}
 		track->play(lmms::TimePos(0), lmms::Engine::audioEngine()->framesPerPeriod(), 0, -1);
-		QCOMPARE(static_cast<qulonglong>(lmms::SampleTrack::deferredClipStarts() - before), static_cast<qulonglong>(1));
-		lmms::Engine::audioEngine()->clear();
-		delete track;
+
+		QCOMPARE(static_cast<qulonglong>(lmms::SampleTrack::deferredClipStarts() - before), static_cast<qulonglong>(0));
+		for (std::size_t i = 0; i < clips.size(); ++i)
+		{
+			QVERIFY2(clips[i]->isPlaying(), qPrintable(QStringLiteral(
+				"clip %1 was deferred past the pass that entered its span").arg(i)));
+		}
+
+		// The engine holds one handle per clip, each rendering the clip's whole window.
+		lmms::Engine::audioEngine()->renderNextPeriod();
+		const auto handles = sampleHandlesOf(track);
+		QVERIFY2(handles.size() == clips.size(), qPrintable(QStringLiteral(
+			"%1 handles were scheduled for %2 clips started in one pass")
+			.arg(static_cast<qulonglong>(handles.size())).arg(static_cast<qulonglong>(clips.size()))));
+		const f_cnt_t whole = handles.front()->totalFrames();
+		QVERIFY2(whole > 0, "the scheduled handles render nothing");
+		for (const auto* handle : handles) { QCOMPARE(handle->totalFrames(), whole); }
+
+		// The next pass starts none of them again: no clip loses its opening frames to a retry.
+		track->play(lmms::TimePos(1), lmms::Engine::audioEngine()->framesPerPeriod(), 0, -1);
+		QCOMPARE(static_cast<qulonglong>(lmms::SampleTrack::deferredClipStarts() - before), static_cast<qulonglong>(0));
+		lmms::Engine::audioEngine()->renderNextPeriod();
+		QCOMPARE(static_cast<qulonglong>(sampleHandlesOf(track).size()),
+			static_cast<qulonglong>(clips.size()));
+	}
+
+	//! new-p12-218: a clip whose span is shorter than the gap between two scheduling passes still
+	//! plays. Deferring its start to the next pass misses it entirely.
+	void shortClipBeyondOneBatchIsNotMissed()
+	{
+		auto* song = lmms::Engine::getSong();
+		song->stop();
+		const auto owned = std::make_unique<lmms::SampleTrack>(song);
+		auto* track = owned.get();
+		const auto before = lmms::SampleTrack::deferredClipStarts();
+		const int rate = static_cast<int>(lmms::Engine::audioEngine()->outputSampleRate());
+		std::vector<lmms::SampleFrame> sample(100, lmms::SampleFrame(0.25f, 0.25f));
+		lmms::SampleClip* shortClip = nullptr;
+		for (int i = 0; i < 65; ++i)  // the short clip is the 65th: past the 64-clip batch
+		{
+			auto* clip = dynamic_cast<lmms::SampleClip*>(track->createClip(lmms::TimePos(0)));
+			QVERIFY(clip != nullptr);
+			clip->setSampleBuffer(std::make_shared<lmms::SampleBuffer>(sample.data(), sample.size(), rate));
+			clip->changeLength(lmms::TimePos(i == 64 ? 1 : song->ticksPerBar()));
+			if (i == 64) { shortClip = clip; }
+		}
+		QVERIFY(shortClip != nullptr);
+		track->play(lmms::TimePos(0), lmms::Engine::audioEngine()->framesPerPeriod(), 0, -1);
+		QVERIFY2(shortClip->isPlaying(),
+			"the clip shorter than one scheduling step was deferred past its own span");
+		QCOMPARE(static_cast<qulonglong>(lmms::SampleTrack::deferredClipStarts() - before), static_cast<qulonglong>(0));
+		// The next pass is already past that span: a deferred start here never happens.
+		track->play(lmms::TimePos(1), lmms::Engine::audioEngine()->framesPerPeriod(), 0, -1);
+		QVERIFY(!shortClip->isPlaying());
 	}
 
 	//! The scheduling pass uses bounded inline storage even when a clip starts but is muted.
