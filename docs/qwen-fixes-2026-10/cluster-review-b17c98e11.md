@@ -38,3 +38,11 @@ Delegation: Haiku ran the GREEN build+ctest and the RED/GREEN reverse-patch proo
 
 ## Other findings
 None.
+
+## Self-check
+- Red/green: with the five product files reverted (`git apply -R fix.patch`) the test fails, EXIT=8, at ProjectMarkersTest.cpp:381 (test-red.log); with the fix re-applied it passes, EXIT=0 (test-green2.log).
+- Deterministic: the test uses a fixed generated file (515 markers, ids/ticks computed from the loop index), a QTemporaryDir and direct `Song::loadProject` / `saveProjectFile` calls; no clock, sleep, thread or race.
+- Cause and completeness: the loss was in the load-then-save pair. Load now records and reports it (`collectError`, `droppedOnLoad`), and the one save entry point, `Song::saveProjectFile`, refuses. Every other writer (project.save, handoff, collab sync, render temp files) goes through `saveProjectFile` and already surfaces `saveRefusal()` (ControlCommandsProjectFiles.cpp:242, ControlCommandsProjectLifecycle.cpp:338, ControlCommandsHandoff.cpp:221, CollabSessionSync.cpp:176). `captureUndoSnapshot` uses `buildProjectDocument` directly (SongUndoSnapshot.cpp), so undo snapshots are unaffected. The other ProjectSection subclasses (SubprojectSection, AlternativesSection) inherit the empty default `saveRefusal()`.
+- Collateral: the cap is unchanged and files at or under 512 markers load and save byte-for-byte as before (refusal only when `m_droppedOnLoad > 0`; `clear()` and each `load()` reset it, so Song::clearProject / opening another project lifts it - covered by the test's final clear-and-save step; PartialLoadTest and ProjectSectionTest still pass). No other caller legitimately exceeds the cap: `add()` already returns -1 at MaxMarkers.
+- Not ALREADY-FIXED / FALSE-POSITIVE: verdict is FIXED (b17c98e11 only warned; shown by test-red.log).
+- Sibling commands: I changed no command file (no src/core/ControlCommands*.cpp, no app.* command) and added no control command, so the app.* commands are not affected.
