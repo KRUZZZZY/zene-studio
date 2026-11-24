@@ -46,6 +46,9 @@
 # to a saved workflow run it through workflow.run, read back, survive a config reload and follow the library in
 # use, and the Launcher > Controller > Bind a Workflow entries drive the same path over the real application.
 # No other entry changed.
+# 2026-11-23 (Q050-367): tests/src/gui/EffectEditorTeardownTest.cpp is fork-NEW - the regression for a device's own
+# editor being closed and detached before the device is removed (the rack's Remove this plugin entry and
+# plugin.unload) or its chain is cleared. Emitted in the sorted source list below; no other entry changed.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -3250,6 +3253,7 @@ tests/src/gui/PluginControlDialogsTest.cpp
 tests/src/gui/MixerWindowsTest.cpp
 tests/src/gui/SurroundPannerTest.cpp
 tests/src/gui/EffectDeviceMenuTest.cpp
+tests/src/gui/EffectEditorTeardownTest.cpp
 tests/src/gui/EffectPickerOrganiserTest.cpp
 tests/src/gui/PluginNativeEditorTest.cpp
 tests/src/gui/ReferenceProjectPanelTest.cpp
