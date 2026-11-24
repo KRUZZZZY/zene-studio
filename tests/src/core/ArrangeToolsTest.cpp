@@ -223,6 +223,7 @@ private slots:
 	//! W6: notes that start together but end apart are written as voices - the short one in voice 1, the long one in
 	//! voice 2 after a <backup> to the bar line - so each keeps its own duration (it used to be cut to the chord's).
 	void aChordOfMixedLengthsBecomesVoices();
+	void aScoreRefusesTicksTooLargeToSnap();
 
 	void notesRotateInsideTheClip();
 
