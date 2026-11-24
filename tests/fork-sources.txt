@@ -778,6 +778,7 @@ tests/src/core/CustomAccessTestParts1.h
 tests/src/core/CustomAccessTestParts2.h
 tests/src/core/DataFileSaveIntegrityTestParts1.h
 tests/src/core/DataFileSaveIntegrityTestParts2.h
+tests/src/core/DataFileSaveIntegrityTestParts3.h
 tests/src/core/DeviceDspTestParts1.h
 tests/src/core/DeviceDspTestParts2.h
 tests/src/core/DeviceToolsTestParts1.h
@@ -1314,7 +1315,9 @@ include/ProjectInfo.h
 include/ProjectKey.h
 include/ProjectMarkers.h
 include/ProjectRecovery.h
+include/DataFileSaveLock.h
 include/ProjectRevisions.h
+src/core/DataFileSaveLock.cpp
 include/ProjectSection.h
 include/ProjectSectionRegistry.h
 include/ProjectWorkspace.h

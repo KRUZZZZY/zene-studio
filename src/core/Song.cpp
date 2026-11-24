@@ -2471,7 +2471,8 @@ Song::SaveFormat Song::plannedSaveFormat(const QString & target) const
 
 
 
-bool Song::saveProjectFile(const QString & filename, bool withResources, SaveFormat format)
+bool Song::saveProjectFile(const QString & filename, bool withResources, SaveFormat format,
+	DataFileSaveLock * held)
 {
 	// ARCH-4 S2b, and the whole of the read-only policy for a partial load. A
 	// session that holds LESS than the file it came from must not write that
@@ -2509,7 +2510,7 @@ bool Song::saveProjectFile(const QString & filename, bool withResources, SaveFor
 	// its fingerprint covers the document exactly as it is about to be written.
 	UndoHistory::instance().seal( dataFile, withResources );
 	dataFile.setContainerV2(format == SaveFormat::V2Container);
-	const bool written = dataFile.writeFile(filename, withResources);
+	const bool written = dataFile.writeFile(filename, withResources, held);
 	m_lastSavedFormat = written && dataFile.containerV2Written() ? SaveFormat::V2Container : SaveFormat::Legacy;
 	return written;
 }

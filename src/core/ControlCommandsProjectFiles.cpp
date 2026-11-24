@@ -21,6 +21,8 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <memory>
+
 #include <QCryptographicHash>
 #include <QFile>
 #include <QFileInfo>
@@ -28,6 +30,7 @@
 #include <QJsonObject>
 
 #include "ControlRegistry.h"
+#include "DataFileSaveLock.h"
 
 #include "ControlReversibility.h"
 #include "SessionCheckpoint.h"
@@ -268,6 +271,18 @@ void registerProjectSave(ControlRegistry& registry)
 		ControlResult formatError;
 		if (!requestedSaveFormat(args, *song, target, &format, &formatError)) { return formatError; }
 
+		// Cluster new-p10-89. The save lock is taken BEFORE the rotation and held
+		// through the write: the rotation shifts the revision set and copies the
+		// live file, and another instance's save in flight must not have either
+		// done from under it - nor be charged a revision for a write this one
+		// then refuses. Contention is a typed refusal that touches no revision,
+		// no .new and no .bak.
+		QString lockRefusal;
+		std::unique_ptr<DataFileSaveLock> saveLock = DataFileSaveLock::tryAcquireForProject(target, &lockRefusal);
+		if (!saveLock) { return ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("%1 was NOT saved: %2. No revision was rotated and nothing was "
+				"written or discarded.").arg(target, lockRefusal)); }
+
 		// SPEC A16 deliverable 4: keep the previous revision BEFORE it is
 		// overwritten. A file over the per-revision cap is not copied at all (a
 		// truncated project is a corrupt one) and the result says so.
@@ -282,10 +297,9 @@ void registerProjectSave(ControlRegistry& registry)
 
 		// WF-033: a real save - the undo history goes with it when the project opted in.
 		const UndoHistory::SaveScope historyScope;
-		if (!song->saveProjectFile(target, false, format))
-		{
-			return refusalOf();
-		}
+		const bool saved = song->saveProjectFile(target, false, format, saveLock.get());
+		saveLock.reset();	// the write is done: release before the reply is built
+		if (!saved) { return refusalOf(); }
 
 		// The file is written; the SESSION state a successful save records is the
 		// step this handler used to skip, so its reply said saved:true while
