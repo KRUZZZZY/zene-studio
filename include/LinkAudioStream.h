@@ -153,7 +153,7 @@ struct AudioStreamReport
 	std::uint64_t packetsReceived = 0;
 	std::uint64_t framesSent = 0;
 	std::uint64_t framesReceived = 0;
-	std::uint64_t underruns = 0;       //!< periods the RX ring could not fill (silence output)
+	std::uint64_t underruns = 0;       //!< periods the RX ring could not fill (silence output, partial frames dropped)
 	std::uint64_t trims = 0;           //!< times the RX ring was cut back to the target (clock drift / burst)
 	std::uint64_t txOverruns = 0;      //!< periods the TX ring had no room for (I/O thread behind)
 	std::uint64_t rxOverruns = 0;      //!< frames dropped because the RX ring was full
@@ -282,6 +282,9 @@ private:
 
 	// audio-thread private state
 	std::uint64_t m_seenEpoch = 0;
+	/*! The RX side plays once the jitter target is buffered. A period the ring cannot fill is
+	 *  an underrun: the partial frames it holds were queued before the gap, so they are
+	 *  discarded with it - the re-prime starts on fresh audio, never on stale frames. */
 	bool m_primed = false;
 	std::uint64_t m_txRateEpoch = 0;         //!< bumped when the engine's sample rate changes
 	std::uint64_t m_rxRateEpoch = 0;         //!< bumped when the engine's sample rate changes
