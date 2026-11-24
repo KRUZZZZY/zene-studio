@@ -75,6 +75,7 @@ source state. The GREEN run compiles and links all three call spellings with no 
 | `python3 tests/VideoClipsNoFfmpegCheck.py --source-root "$PWD" --build-dir "$PWD/build" --moc /usr/lib/qt6/moc` | `0` | `test-1-noffmpeg-check.log`: both callers compile as configured and with `ZENE_HAVE_FFMPEG` removed |
 | `cd build/tests && ctest -R '^(VideoTestClipPortabilityTest\|VideoClipsNoFfmpegCheck\|VideoClipsTest\|VideoClipsGuiTest)$' --output-on-failure` | `0` | `test-2-green.log`: 4/4 passed (`VideoClipsTest`, `VideoTestClipPortabilityTest`, `VideoClipsGuiTest`, `VideoClipsNoFfmpegCheck`) |
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | `0` | `gates-1.log`: all 8 rows PASS, `RESULT: PASS` |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-e8063221c62bcc38-port` | `0` | `submit-check-1.log`: every mechanical row PASS, `RESULT: PASS - submit` |
 
 The full-build command is refused by the lane guard (`build-2-full.log`, EXIT `97`); named
 targets are the allowed form and were used above.
@@ -112,8 +113,11 @@ targets are the allowed form and were used above.
 - **ALREADY-FIXED evidence:** `VideoTestClip.h:238-247` (fallback declaration), its
   introduction in ancestor commit `9feb23eb1b`, and the guarded callers at
   `VideoClipsTest.cpp:529-538` and `VideoClipsGuiTest.cpp:336-345`.
-- **Sibling commands:** this job changes no command file, so the command-family item is
-  not applicable.
+- **Sibling commands:** this job changes no command file. `submit_check` lists
+  `app.*` and `arrangement.*` from the branch-wide diff against its `FIX-BASE`
+  (`050/m0-train-35`, 653 changed files); the job's commit `9e3e9c237` changes only this
+  report. None of those commands reads the video fixture, and the fix is a test-only
+  preprocessor branch, so every listed command keeps its existing behaviour.
 
 ## Other findings
 
