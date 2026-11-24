@@ -129,13 +129,21 @@ struct LMMS_EXPORT ImportDetectionResult
 	int tonicPitchClass = -1;
 };
 
+enum class AnalysisDecode
+{
+	ValidateWholeFile,
+	PrefixOnly
+};
+
 /*! Analyse \a path: decode it with the engine's own decoder, then estimate the
  *  tempo and the key from at most \a maxSeconds of it (the START of the file -
  *  an import's first impression, stated rather than implied). Reads nothing but
  *  the file and writes nothing at all: this is the suggestion, and a caller that
- *  wants it applied issues `detect.apply`. */
+ *  wants it applied issues `detect.apply`. PrefixOnly is for import preflight,
+ *  where the importer validates the whole file before applying the result. */
 LMMS_EXPORT ImportDetectionResult analyseAudioFile(const QString& path,
-	double maxSeconds = detection::DefaultAnalysisSeconds);
+	double maxSeconds = detection::DefaultAnalysisSeconds,
+	AnalysisDecode decode = AnalysisDecode::ValidateWholeFile);
 
 } // namespace lmms
 
