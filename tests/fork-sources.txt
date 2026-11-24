@@ -4076,3 +4076,6 @@ docs/qwen-fixes-2026-10/cluster-ci-8764ffa3b495466c-port.md
 
 # Cluster ci-3eb9bda8aa6785a3-port: mingw64 unused gig allocation helper; report records the guard and the no-POSIX-hook compile check.
 docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3-port.md
+# cluster ci-c487f7d0c9f0a1ac (2026-11): every target compiling the NAM engine must carry the Eigen
+# -Wno-error=deprecated-enum-enum-conversion suppression (linux-arm64 -DUSE_WERROR; fork-NEW test).
+tests/nam-eigen-options-coverage-check.py
