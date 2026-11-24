@@ -26,6 +26,11 @@
 
 #ifdef LMMS_HAVE_WINMM
 
+#include <cstdint>
+#include <utility>
+#include <vector>
+
+#include "MidiWinMMOutRouting.h"
 #include "MidiWinMMShortMessage.h"
 
 
@@ -58,26 +63,30 @@ void MidiWinMM::processOutEvent( const MidiEvent& event, const TimePos& time, co
 {
 	const DWORD shortMsg = static_cast<DWORD>( winmmShortMessage( event ) );
 
-	QStringList outDevs;
-	for( SubMap::ConstIterator it = m_outputSubs.begin(); it != m_outputSubs.end(); ++it )
+	// Cluster new-p9-276: nothing is built here any more. The routing was precomputed when the
+	// subscriptions or the device list last changed (refreshOutputRouting), so this is one atomic
+	// load and a scan over a POD table: no container, no allocation, no lock - the audio thread
+	// may run this path.
+	m_outputRouting.forEachDevice( port, [shortMsg]( const MidiWinMMOutRoute& route )
 	{
-		for( MidiPortList::ConstIterator jt = it.value().begin(); jt != it.value().end(); ++jt )
-		{
-			if( *jt == port )
-			{
-				outDevs += it.key();
-				break;
-			}
-		}
-	}
+		midiOutShortMsg( static_cast<HMIDIOUT>( reinterpret_cast<void*>( route.device ) ), shortMsg );
+	} );
+}
 
-	for( QMap<HMIDIOUT, QString>::Iterator it = m_outputDevices.begin(); it != m_outputDevices.end(); ++it )
+
+
+
+void MidiWinMM::refreshOutputRouting()
+{
+	// The subscriptions and the open-device map are edited on this (the GUI) thread; the audio
+	// thread only reads the snapshot published here.
+	std::vector<std::pair<QString, std::uintptr_t>> devices;
+	devices.reserve( static_cast<std::size_t>( m_outputDevices.size() ) );
+	for( QMap<HMIDIOUT, QString>::ConstIterator it = m_outputDevices.begin(); it != m_outputDevices.end(); ++it )
 	{
-		if( outDevs.contains( *it ) )
-		{
-			midiOutShortMsg( it.key(), shortMsg );
-		}
+		devices.emplace_back( it.value(), reinterpret_cast<std::uintptr_t>( it.key() ) );
 	}
+	m_outputRouting.publish( MidiWinMMOutRouting::buildRoutes( devices, m_outputSubs ) );
 }
 
 
@@ -102,6 +111,8 @@ void MidiWinMM::applyPortMode( MidiPort* port )
 			it.value().removeAll( port );
 		}
 	}
+
+	refreshOutputRouting();
 }
 
 
@@ -118,6 +129,8 @@ void MidiWinMM::removePort( MidiPort* port )
 	{
 		it.value().removeAll( port );
 	}
+
+	refreshOutputRouting();
 
 	MidiClient::removePort( port );
 }
@@ -169,6 +182,8 @@ void MidiWinMM::subscribeWritablePort( MidiPort* port, const QString& dest, bool
 	{
 		m_outputSubs[dest].push_back( port );
 	}
+
+	refreshOutputRouting();
 }
 
 
@@ -267,6 +282,8 @@ void MidiWinMM::closeDevices()
 
 	m_inputDevices.clear();
 	m_outputDevices.clear();
+
+	refreshOutputRouting();
 }
 
 
@@ -302,6 +319,8 @@ void MidiWinMM::openDevices()
 			m_outputDevices[hm] = QString::fromWCharArray(c.szPname);
 		}
 	}
+
+	refreshOutputRouting();
 }
 
 

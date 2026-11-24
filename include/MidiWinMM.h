@@ -34,6 +34,7 @@
 #include "MidiClient.h"
 #include "MidiInputGate.h"
 #include "MidiPort.h"
+#include "MidiWinMMOutRouting.h"
 
 
 class QLineEdit;
@@ -131,6 +132,10 @@ private:
 	void openDevices();
 	void closeDevices();
 
+	//! Cluster new-p9-276: republishes the output routing after a subscription or device-list
+	//! edit, so the playback path only ever reads a precomputed snapshot (MidiWinMMOutRouting).
+	void refreshOutputRouting();
+
 	static void WINAPI CALLBACK inputCallback( HMIDIIN _hm, UINT _msg,
 						DWORD_PTR _inst,
 						DWORD_PTR _param1,
@@ -145,6 +150,9 @@ private:
 	using SubMap = QMap<QString, MidiPortList>;
 	SubMap m_inputSubs;
 	SubMap m_outputSubs;
+
+	//! The precomputed output routing the playback path sends through (cluster new-p9-276).
+	MidiWinMMOutRouting m_outputRouting;
 
 
 signals:
