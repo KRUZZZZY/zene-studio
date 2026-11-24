@@ -87,6 +87,7 @@ All logs are under
 | Family | `cd build/tests && ctest -R Wasm --output-on-failure` | 0 | `test-family-001.log`: one test, `100% tests passed out of 1` |
 | Product build | `cmake --build build --target zene -j4` | 0 | `build-zene-001.log`: `[100%] Built target zene` |
 | Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `feature-check-002.log`: all eight rows PASS, `RESULT: PASS` |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 3647-port` | 0 | `submit-check-001.log`: `RESULT: PASS - submit` |
 
 The first gate run (`feature-check-001.log`, EXIT=1) failed only
 `fork-sources` and `all-sources-reproduce`: the two new test files were still
@@ -140,6 +141,13 @@ manifest content was hand-edited to bypass the recipe.
 6. **Undo/GUI:** no model edit, no undo step and no GUI path changed.
 7. **Portability:** the new target and test use Qt Test plus standard C++20
    types; no Qt-6-only API, no Windows headers, no filesystem assumptions.
+8. **Sibling commands:** this cluster commit changes no
+   `ControlCommands*`, `ControlReversibility*` or `ControlRegistry` file. The
+   `app.*` and `arrangement.*` ids in the completion-check prompt come from the
+   branch's base-to-HEAD train delta, not from this fix. The only relevant
+   command is `wasm.render_offline`, whose schema cap remains the unchanged
+   4194304 at `src/core/ControlCommandsWasmRender.cpp:336`, equal to the cap
+   added here; its handler and the other command paths are unaffected.
 
 ## Other findings
 
