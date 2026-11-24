@@ -6598,6 +6598,19 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(Qt5QStringListAssignmentCheck PROPERTIES TIMEOUT 600)
 endif()
 
+# Cluster ci-8764ffa3b495466c: the sends-on-faders regression used Qt 6's inherited
+# QStringList(size, value) constructor, which Qt 5.15 does not have. The check derives the
+# faders/volume comparison from the test source and compiles it against Qt 5 (and Qt 6 when
+# that tree is installed), with the Qt 6-only spelling as its failing control.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5QStringListSizeConstructorCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QStringListSizeConstructorCheck.py
+			--root ${CMAKE_SOURCE_DIR}
+			--cxx ${CMAKE_CXX_COMPILER})
+	set_tests_properties(Qt5QStringListSizeConstructorCheck PROPERTIES TIMEOUT 120)
+endif()
+
 if(PYTHON3_EXECUTABLE)
 	add_test(NAME Qt5WorkerThreadCheck
 		COMMAND ${PYTHON3_EXECUTABLE}
