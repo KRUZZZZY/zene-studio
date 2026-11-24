@@ -79,6 +79,10 @@ RESULT: PASS
 * **ALREADY-FIXED evidence.** `68cef118c091bcb31355eb890fa1d5d316ca4325` is an ancestor of this branch (`git merge-base --is-ancestor` EXIT=0), and the current code and tests at `src/core/Song.cpp:1745`, `:1885`, `tests/src/gui/MainWindowTest.cpp:278` and `tests/src/core/ProjectOpenIntegrityTest.cpp:430` show the fixed contract and its coverage.
 * **Sibling commands and snapshot.** `submit_check.py` lists `app.*` and `arrangement.*` ids because it diffs the whole branch against the train merge-base; those changes come from the branch's merged history, not from this cluster. `git show --stat --oneline HEAD` for the commit holding this report shows exactly two paths: this report and `tests/src/core/ProjectOpenIntegrityTest.cpp`. No command file, command id, reversibility table or `commands_snapshot.json` changed, so none of those sibling handlers is affected.
 
+## Completion check
+
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-gui-1112-menu-edit-undo-port gui-1112-menu-edit-undo-port` exited 0 (`032-submit-check-final.log`). Every mechanical row is PASS, including the report, clean working tree, tests and gates; every ASK item is answered in the Self-check above.
+
 ## Other findings
 
 None.
