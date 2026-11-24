@@ -61,6 +61,29 @@ Supporting suite: `ctest -R 'CrashReporterTest|CrashReporterArmTest|CrashReporte
 - **Manual:** `data/manual/index.html` already documents the report file, the offer dialog and the raw
   frame list (committed in `913d2e38`); this round changes how the list is captured, not what the user sees.
 
+## Round 3 re-verification (no source change)
+
+The round-2 logs named below (`test-21-red-exact.log` etc., run `Q050-224.2.r2`) are no longer on disk, so this
+round re-ran the evidence against the unchanged product code (`src/core/CrashReporter*.cpp` and
+`include/CrashReporter*.h` are byte-identical to `2ff68a5036`). Logs: `~/.config/kads/zene/state/runs/Q050-224.2.r3/logs/`.
+The cycle below supersedes every `r2` log name in the Self-check section.
+
+| Step | Command | Log | Exit |
+|---|---|---|---|
+| Existing binaries, suite | `ctest -R 'CrashReporterTest\|CrashReporterArmTest\|CrashReporterFramesTest\|WorkerAltStackTest\|CrashReporterAppleSignalCheck\|ControlCrashReporter'` (6/6) | `test-1-suite.log` | 0 |
+| Existing binaries, frames test | `./CrashReporterFramesTest` (6 passed) | `test-2-frames-direct.log` | 0 |
+| RED: the four product files reverted to `2ff68a5036~1` (the `_Unwind_Backtrace` handler), test kept; rebuilt | `cmake --build build --target CrashReporterFramesTest -- -j4` | `build-3-red.log` | 0 |
+| RED run | `./CrashReporterFramesTest`: `FAIL! fatal_handler_enters_neither_allocator_nor_loader() the fatal handler entered the loader's object walk (child exit 42)` | `test-3-red.log` | **1** |
+| GREEN: product restored with `git checkout HEAD -- <four files>` (tree clean), rebuilt | `cmake --build build --target zene CrashReporterFramesTest CrashReporterTest CrashReporterArmTest WorkerAltStackTest -- -j4` | `build-4-green.log` | 0 |
+| GREEN run | `./CrashReporterFramesTest` (6 passed) | `test-4-green.log` | **0** |
+| GREEN suite | the same six-test `ctest -R` as the first row (6/6) | `test-5-suite.log` | 0 |
+| Completion check | `submit_check.py` | `submit-check-1.log` | 0 (PASS) |
+
+macOS thread id, by source inspection: `currentThreadId()` (`src/core/CrashReporterFormat.cpp:192-201`) returns
+`mach_thread_self()`'s port on Apple after releasing the extra send right with `mach_port_deallocate()`
+(no pthread lock, no allocation, nonzero for a live thread), and `tests/src/core/CrashReporterFramesTest.cpp`
+still asserts a nonzero `thread=` with no platform gate. Not executable on this Linux box; CI compiles it.
+
 ## Self-check
 
 **? Each new test FAILS with your product change reverted (reverse the non-test hunks, rebuild, run: exit
