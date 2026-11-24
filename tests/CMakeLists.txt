@@ -5625,7 +5625,7 @@ target_link_libraries(WasmOfflineRenderLimitTest PRIVATE
 	${QT_QTTEST_LIBRARY}
 )
 target_compile_features(WasmOfflineRenderLimitTest PRIVATE cxx_std_20)
-target_compile_definitions(WasmOfflineRenderLimitTest PRIVATE LMMS_TESTING)
+target_compile_definitions(WasmOfflineRenderLimitTest PRIVATE LMMS_STATIC_DEFINE LMMS_TESTING)
 set_tests_properties(WasmOfflineRenderLimitTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 

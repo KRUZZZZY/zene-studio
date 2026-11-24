@@ -12,7 +12,7 @@ queue. At the pre-fix commit `e4194e0bf5`, `renderOffline` checked only
   `if (modulePath.empty() || frames == 0 || blockFrames == 0 || blockFrames > WasmWorker::maxBlockFrames)`.
 - `renderInline` then did `render.output.assign(frames, 0.0f)` at
   `e4194e0bf5:src/wasm/WasmOfflineRender.cpp:90`, so `frames = UINT32_MAX`
-  asks for about 16 GiB before a module is even usefully loaded.
+  asks for about 16 GiB after a module with a `process()` export loads.
 - Both block loops used a 32-bit offset
   (`e4194e0bf5:src/wasm/WasmOfflineRender.cpp:94` and `:173`). With
   `frames` near `UINT32_MAX`, `offset += blockFrames` wraps, so the loop can
@@ -58,7 +58,7 @@ on this box (`WANT_WASM:BOOL=OFF` in `build/CMakeCache.txt`).
 | Existing validation | `keepsTheExistingRejections` covers zero frames and an oversized block |
 | Reconfiguration | Not applicable: `renderOffline` has no persisted or reconfigurable state; the cap is a pure argument check |
 | Audio thread | Not applicable: `renderOffline` is a control-thread API; no process/render-period code changed |
-| Platform build | The new target uses only Qt Test and the stubs, so it does not need wasmtime, Qt 6-only API, or a POSIX absolute-path assumption |
+| Platform build | The target uses Qt Test and test-only stubs without wasmtime. It sets `LMMS_STATIC_DEFINE` because it compiles functions declared with `LMMS_EXPORT` directly into the test executable. |
 
 The seam is the stub's `loadModuleFileCalls` counter. The refusal cases assert
 it stays 0, which distinguishes a real refusal from a failure later in a render.
