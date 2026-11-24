@@ -2,68 +2,79 @@ ALREADY-FIXED
 
 # cluster ci-48dcc062d04c645f-port: "Port: CI regression: build / linux-x86_64"
 
-Verdict: ALREADY-FIXED on branch `bugs/qwen-ci-48dcc062d04c645f-port-port`. No product or test change is needed.
+Verdict: ALREADY-FIXED on branch `bugs/qwen-ci-48dcc062d04c645f-port-port`. No product or test code was changed.
+Only this report is committed.
 
 ## What the original failure was
 
 The original cluster `ci-48dcc062d04c645f` (report: `docs/qwen-fixes-2026-10/cluster-ci-48dcc062d04c645f.md`)
 was a Qt 5-only compile error in the hosted `build / linux-x86_64` job. Three test files assigned brace lists to
-`QStringList` members (`m_client.readable = {QStringLiteral(...)}`). In Qt 5 that call is ambiguous because
-`QStringList` has extra `operator=(const QList<QString>&)` / `operator=(QList<QString>&&)` overloads. The fix
-made each assignment explicit as `= QStringList{...}`.
+`QStringList` members, for example `m_client.readable = {QStringLiteral("Pad:in")}`. Qt 5's `QStringList` has extra
+`operator=(const QList<QString>&)` / `operator=(QList<QString>&&)` overloads, so the brace assignment is ambiguous
+there. Qt 6 compiles it. The fix spelled the type out: `= QStringList{...}`.
 
-## Evidence that the fix is already on this branch
+## Evidence that the fix is on this branch
 
-- The fix commit `6474195bd62e4eb990ca35647be6fc260825f357` ("fix(ci): CI regression: build / linux-x86_64",
-  cherry-picked from `45a1f7fe78`) is an ancestor of HEAD `e4194e0bf51c264ca8117ba40def20bc54786244`:
-  `git merge-base --is-ancestor 6474195bd6 HEAD` -> EXIT 0.
-- `git diff 6474195bd6 HEAD --stat -- <the three files>` prints nothing, so the fixed lines have not changed since then.
+- The fix commit `6474195bd62e4eb990ca35647be6fc260825f357` (cherry-picked from `45a1f7fe78`) is an ancestor of this
+  branch: `git merge-base --is-ancestor 6474195bd6 HEAD` -> EXIT 0. `git diff 6474195bd6 HEAD -- <the three files>` is empty.
 - The fixed lines in HEAD:
-  - `tests/src/core/ControllerScriptTest.cpp:139,140,299,318`: `m_client.readable/writable = QStringList{QStringLiteral(...)}`
-  - `tests/src/core/ExternalMidiDeviceTest.cpp:155,292,301`: `m_client.writable = QStringList{...}`
-  - `tests/src/gui/ExternalDeviceCardTest.cpp:123,232`: `m_client.writable = QStringList{...}`
-- An fff search of `tests/` for `readable = {`, `writable = {` and `List = {QString` found 0 matches. A search for
-  ` = {QStringLiteral(` found only copy-initialised declarations (`const QStringList x = {...}`, which is
-  unambiguous in Qt 5) and the fixtures inside the guard scripts themselves.
-- The repository already has guard tests for this pattern (`tests/CMakeLists.txt:6570,6590,6599`). All of them pass on this branch:
+  - `tests/src/core/ControllerScriptTest.cpp:139,140,299,318`
+  - `tests/src/core/ExternalMidiDeviceTest.cpp:155,292,301`
+  - `tests/src/gui/ExternalDeviceCardTest.cpp:123,232`
 
-| Command (run from `build/tests`) | EXIT | Log |
+All logs below are in `/home/kruzzzzy/.config/kads/zene/state/runs/ci-48dcc062d04c645f-port.r3/logs/`.
+
+### The three test targets build and pass
+
+| Command | EXIT | Log |
 |---|---|---|
-| `ctest -R Qt5QStringList --output-on-failure` (3 tests: Qt5QStringListAssignmentCheck, Qt5QStringListBraceCheck, Qt5QStringListAssignCheck; "100% tests passed out of 3") | 0 | `logs/test-1.log` |
-| `ctest -R Qt5QStringListAssignCheck -V` (prints "Qt5QStringListAssignCheck: PASS (no bare QStringList brace assignments)") | 0 | `logs/test-2.log` |
+| `cmake --build build --target ControllerScriptTest ExternalMidiDeviceTest ExternalDeviceCardTest -j4` | 0 | `build-1.log` |
+| `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^(ControllerScriptTest\|ExternalMidiDeviceTest\|ExternalDeviceCardTest)$' --output-on-failure` ("100% tests passed out of 3") | 0 | `test-1.log` |
 
-Logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/ci-48dcc062d04c645f-port.r2/logs/`.
+### Red/green: the pre-fix files are caught, HEAD is clean
 
-Unverified: I did not run a full Qt 5 configure and build of the test targets in this session. The evidence above
-is the ancestry of the fix commit, the unchanged fixed lines, and the guard scripts.
+To get the red run, I checked out the three files as they were before the fix (`git show 6474195bd6^:<path> > <path>`)
+and ran the guard. Then I ran `git checkout HEAD -- <the three paths>` (`git status --short` was empty afterwards) and ran the guard again.
 
-## Gates
+| Run | Command | EXIT | Log |
+|---|---|---|---|
+| red (pre-fix files) | `python3 tests/Qt5QStringListBraceCheck.py --root . --cxx /usr/bin/c++` | 1 | `red-3.log`: "FAIL: 9 ambiguous QStringList brace assignment(s)". It lists exactly the nine lines above. |
+| green (HEAD) | same | 0 | `green-3.log`: "PASS: no ambiguous QStringList brace assignment in the first-party tree" |
 
-`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` -> EXIT 0, `RESULT: PASS`
-(fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures,
-complexity, file-length all PASS). Log: `logs/gates-1.log`.
+Both runs print `probe: Qt 5 rejects the brace assignment and accepts QStringList{...}`. That means the guard's compile probe
+ran against this box's Qt 5 tree, so the red result is backed by a real Qt 5 compiler rejection, not only by the source scan.
+`Qt5QStringListBraceCheck` is registered as a ctest (`tests/CMakeLists.txt:6590`). `/usr/bin/c++` is `CMAKE_CXX_COMPILER`
+from `build/CMakeCache.txt`.
+
+The brief named `tests/Qt5QStringListAssignCheck.py` for this step. I ran it the same way, and it gives EXIT 0 on the pre-fix
+files too (`red-2.log`, `green-2.log`). So that guard does not detect this pattern, and I used the sibling guard above for the
+red/green proof (see Other findings). `red-1.log` / `green-1.log` are a void first attempt: zsh did not split the path list,
+so no files were swapped (`git status` was empty).
+
+### Gates
+
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` -> EXIT 0, `RESULT: PASS` (`gates-1.log`).
 
 ## Self-check
 
-- Regression test: none was added because nothing was fixed in this job. The fix shipped earlier in `6474195bd6`, and
-  the existing guards `Qt5QStringListBraceCheck`, `Qt5QStringListAssignCheck` and `Qt5QStringListAssignmentCheck`
-  already cover the pattern (EXIT 0 above).
-- Product code changed: none. Only this report is committed. Realtime, undo, control commands and registration are unaffected.
-- Git: no push, merge, rebase or stash was used. Only this report was staged, by explicit path.
-- Fails without the fix and passes with it: not applicable. This job changes no product code, so there is no fix to revert. The
-  guard `Qt5QStringListAssignCheck` reports "PASS (no bare QStringList brace assignments)" on HEAD (EXIT 0, `logs/test-2.log`).
-- Deterministic: the guard tests are static source scans plus a compile probe. They use no timing, sleeps or threads.
-- At the cause and complete: all nine assignments named in the original report are explicit `QStringList{...}` on HEAD (file:line listed above).
-  The fff searches for the same pattern across `tests/` found no further sibling.
-- No collateral damage: no files changed apart from this report, so project loading and other behaviour are unaffected.
+- Fails without the fix and passes with it: red EXIT 1 (`red-3.log`, pre-fix files) and green EXIT 0 (`green-3.log`, HEAD), as shown above.
+- Deterministic: `Qt5QStringListBraceCheck.py` is a static source scan plus a fixed compile probe. It uses no timing, sleeps or threads.
+- At the cause and complete: the red run flags exactly nine sites, and the green run on HEAD flags none anywhere in the first-party tree.
+- No collateral damage: this round changes no product or test code. The three test targets still pass (`test-1.log`, EXIT 0).
 - ALREADY-FIXED evidence: `tests/src/core/ControllerScriptTest.cpp:139`, `tests/src/core/ExternalMidiDeviceTest.cpp:155`,
-  `tests/src/gui/ExternalDeviceCardTest.cpp:123` (and the other lines above). Fix commit `6474195bd6` is an ancestor of HEAD (EXIT 0).
-- Sibling commands (app.about, app.ask, app.help, ...): not affected. This job changes no command file. The check lists them
-  because of the branch's inherited diff against its base, not because of this job's change.
-- Completion check: `python3 .../submit_check.py <worktree> ci-48dcc062d04c645f-port` -> EXIT 0, `RESULT: PASS - submit` (`logs/submit-1.log`).
+  `tests/src/gui/ExternalDeviceCardTest.cpp:123` (and the other lines above). Fix commit `6474195bd6` is an ancestor of HEAD.
+- Sibling commands: this job changes no command file. If the check lists commands, they come from the branch's inherited
+  diff against its base.
+- Gates: `feature_check.py` -> EXIT 0, `RESULT: PASS`, all eight rows PASS (`gates-1.log`).
 
-Delegation: Haiku ran the `ctest -R Qt5QStringList` guard suite and `feature_check.py`, and reported their exit codes. I re-read both log tails myself before relying on them. I ran the verbose single-test rerun and the ancestry and line checks myself because they were one-liners. Sonnet and DeepSeek were not used because there was no code to write.
+Delegation: Haiku built the three test targets and ran their ctest (`build-1.log`, `test-1.log`); I checked both log tails.
+I ran the guard red/green runs myself because they swap files in the worktree and had to be sequenced and checked one step at a time.
+Sonnet and DeepSeek were not used because there was no code to write.
 
 ## Other findings
 
-None.
+- `tests/Qt5QStringListAssignCheck.py` misses `m_client.readable = {...}` / `m_client.writable = {...}` in these three files.
+  On the pre-fix sources it prints "PASS (no bare QStringList brace assignments)" and exits 0 (`red-2.log`). Its scan
+  (`scan_text`/`assigned_type`, lines 141-165) resolves a member receiver through a declaration it can find locally, and it
+  does not resolve these fake-client members. `Qt5QStringListBraceCheck.py` catches them, so CI still has coverage. I did not
+  change the guard here.
