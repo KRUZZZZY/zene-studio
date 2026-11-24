@@ -1804,6 +1804,10 @@ list(APPEND LMMS_TESTS src/core/SampleDecoderShortReadTest.cpp)
 IF(LMMS_HAVE_STEM_SPLIT)
 	LIST(APPEND LMMS_TESTS
 		src/core/StemJobManagerTest.cpp
+		# cluster new-p14-325: a throwing backend or provisioner fails its job instead of
+		# ending the process. Its own target, because the suite above sits at the
+		# file-length ratchet's 500 code lines and cannot carry these cases.
+		src/core/StemJobManagerThrowTest.cpp
 		# Q050-010: a stem job's mix is decoded and resampled on the worker, not before submit.
 		src/core/StemJobLoaderTest.cpp
 		src/core/StemModelStoreTest.cpp
