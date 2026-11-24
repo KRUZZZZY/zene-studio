@@ -48,8 +48,11 @@ so it only connects Zene instances, never Live or Bitwig.
 ## The jitter buffer, and what "bounded" means
 
 * The RX side starts playing once `latency_ms` (default 20, 5..200) is buffered.
-* An empty buffer is an **underrun**: that period outputs nothing from the peer, and playback
-  re-primes. `underruns` counts those events, not silent periods.
+* A period the ring cannot fill - it holds fewer frames than one period - is an **underrun**:
+  that period outputs nothing from the peer, the partial frames still in the ring are dropped
+  (they were queued before the gap, and playing them afterwards would be a discontinuity on
+  stale audio), and playback re-primes on fresh audio. `underruns` counts those events, not
+  silent periods; the reported latency is the ring after the period, so it reads 0 after one.
 * The two machines' audio clocks differ, so the buffer drifts. When it grows past
   `2 x target + one period` it is cut back to the target (`trims`). Latency is therefore
   bounded at that high-water mark, and the cost of drift is an occasional trim or
