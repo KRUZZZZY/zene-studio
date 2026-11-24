@@ -27,6 +27,7 @@
 #include "embed.h"
 #include "plugin_export.h"
 #include "InstrumentTrack.h"
+#include "PluginInstantiationFailure.h"
 
 namespace lmms
 {
@@ -51,6 +52,20 @@ Plugin::Descriptor PLUGIN_EXPORT carlarack_plugin_descriptor =
 
 PLUGIN_EXPORT Plugin* lmms_plugin_main(Model* m, void*)
 {
+    // Q050-359: a build without a Carla runtime links the weak stand-in (plugins/CarlaBase/DummyCarla.cpp),
+    // whose carla_get_native_rack_plugin() answers nullptr - and CarlaInstrument's constructor dereferences
+    // it. Choosing Carla Rack to host a VST3 therefore killed Zene with SIGSEGV in the render/UI path
+    // instead of saying that this build hosts nothing. Decline here, as carlavst2 does: Plugin::instantiate
+    // keeps the track's XML (Q050-018) and plugin.load refuses, typed, quoting the reason below.
+    if (carla_get_native_rack_plugin() == nullptr)
+    {
+        pluginload::noteInstantiationFailure(QStringLiteral(
+            "this build has no Carla runtime, so Carla Rack cannot host anything: the module links the "
+            "weak stand-in. Install a Carla runtime (or build one with tools/build-carla-runtime.sh) to "
+            "load plug-ins inside Carla Rack; a VST3 loads through Zene's own VST3 host instead "
+            "(plugin.list format vst3, then plugin.load its dev-<n>)"));
+        return nullptr;
+    }
     return new CarlaInstrument(static_cast<InstrumentTrack*>(m), &carlarack_plugin_descriptor, false);
 }
 

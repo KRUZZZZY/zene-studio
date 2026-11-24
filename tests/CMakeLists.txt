@@ -1494,6 +1494,10 @@ set(LMMS_TESTS
 	# Q050-481.2 review r1: an export through a stalling VST2 effect never waits inside a render period, and keeps
 	# the effect's output (the exporter waits between periods).
 	src/gui/CarlaVst2EffectExportTest.cpp
+	# Q050-359: Carla Rack and Carla Patchbay in a build with no Carla runtime (the weak stand-in, which is what
+	# a release without a system Carla links): plugin.load and the device card's Replace Instrument refuse, typed,
+	# instead of dying on the stand-in's null descriptor, and a project naming Carla Rack keeps its XML.
+	src/gui/CarlaRackNoRuntimeTest.cpp
 	# M0 coverage: the reference project's window and its track / clip / device copies.
 	src/gui/ReferenceProjectPanelTest.cpp
 	# Q050-501: the update check against a loopback feed (only the commands' absence with -DZENE_UPDATE_CHECK=OFF).
@@ -2803,6 +2807,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "AuHostingTest"
 		# Q050-481.1: the carlavst2 module hosts the VST2 fixture; the device card's swap starts from tripleoscillator.
 		OR LMMS_TEST_NAME STREQUAL "CarlaVst2HostingTest"
+		# Q050-359: the build's carlarack / carlapatchbay modules are the subject (their refusal), and the device
+		# card's replace starts from tripleoscillator.
+		OR LMMS_TEST_NAME STREQUAL "CarlaRackNoRuntimeTest"
 		# Q050-481.2: carlavst2effect hosts the VST2 test effect, carlavst2 the instrument that feeds it.
 		OR LMMS_TEST_NAME STREQUAL "CarlaVst2EffectHostingTest"
 		OR LMMS_TEST_NAME STREQUAL "CarlaVst2EffectExportTest"
@@ -4192,6 +4199,15 @@ set_tests_properties(AuHostingTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offsc
 if(TARGET aueffect AND TARGET auinstrument)
 	add_dependencies(AuHostingTest aueffect auinstrument)
 endif()
+# Q050-359: the subject is the build's own carlarack / carlapatchbay modules over the weak Carla stand-in they
+# link (no Carla runtime is built here), so the refusal they now answer is the one a user meets; the device
+# card's Replace Instrument action starts from tripleoscillator.
+set_tests_properties(CarlaRackNoRuntimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+foreach(module carlarack carlapatchbay tripleoscillator)
+	if(TARGET ${module})
+		add_dependencies(CarlaRackNoRuntimeTest ${module})
+	endif()
+endforeach()
 # Q050-481.1: the VST2 fixture (native and, where winegcc can build PE, Windows), the Carla runtime
 # tools/build-carla-runtime.sh puts in <build>/carla-runtime/lib (ahead of the weak stand-in on the
 # loader path), and a Wine prefix of the build's own. Without the runtime every case reports Skipped.

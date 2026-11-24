@@ -4079,3 +4079,12 @@ docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3-port.md
 # cluster ci-c487f7d0c9f0a1ac (2026-11): every target compiling the NAM engine must carry the Eigen
 # -Wno-error=deprecated-enum-enum-conversion suppression (linux-arm64 -DUSE_WERROR; fork-NEW test).
 tests/nam-eigen-options-coverage-check.py
+
+# Q050-359 (2026-11): a build with no Carla runtime links the weak stand-in (plugins/CarlaBase/DummyCarla.cpp),
+# whose carla_get_native_rack_plugin() / carla_get_native_patchbay_plugin() answer nullptr - and CarlaInstrument's
+# constructor dereferenced it, so choosing Carla Rack to load a VST3 inside it killed Zene with SIGSEGV. The two
+# host modules now decline with a reason the control surface reports; this test is the regression (the agent path,
+# the device card's Replace Instrument action, the Patchbay sibling, and a project that names Carla Rack).
+tests/src/gui/CarlaRackNoRuntimeTest.cpp
+docs/050-features/Q050-359.md
+docs/qwen-fixes-2026-10/cluster-Q050-359.md

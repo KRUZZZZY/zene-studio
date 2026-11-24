@@ -3408,6 +3408,7 @@ tests/src/gui/BrowserTempoKeyGuiTest.cpp
 tests/src/gui/CPULoadWidgetTest.cpp
 tests/src/gui/CanvasKeyboardTest.cpp
 tests/src/gui/CaptureMidiMenuTest.cpp
+tests/src/gui/CarlaRackNoRuntimeTest.cpp
 tests/src/gui/CarlaVst2EffectExportTest.cpp
 tests/src/gui/CarlaVst2EffectHostingTest.cpp
 tests/src/gui/CarlaVst2EffectTestSupport.h
