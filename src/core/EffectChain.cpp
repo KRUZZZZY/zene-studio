@@ -306,9 +306,19 @@ void EffectChain::setEnabledUnjournalled(bool on)
 
 void EffectChain::removeEffect( Effect * _effect )
 {
+	auto found = std::find(m_effects.begin(), m_effects.end(), _effect);
+	// Q050-367: a device's own editor is closed and detached BEFORE the device leaves the chain, because the
+	// plug-in behind that editor is destroyed with the effect (VST2 through Carla or the legacy host, VST3, CLAP,
+	// an AU): an editor still attached to a device that is going is the suspected teardown crash. Every format's
+	// close is a no-op when nothing is open, and it runs outside the change guard so the render thread never waits
+	// on a plug-in's UI call.
+	if( found != m_effects.end() )
+	{
+		_effect->closeNativeEditor();
+	}
+
 	Engine::audioEngine()->requestChangeInModel();
 
-	auto found = std::find(m_effects.begin(), m_effects.end(), _effect);
 	if( found == m_effects.end() )
 	{
 		Engine::audioEngine()->doneChangeInModel();
@@ -530,6 +540,15 @@ auto EffectChain::processThroughGraph(AudioBus& bus) -> bool
 
 void EffectChain::clear()
 {
+	// Q050-367: every device's own editor is closed and detached before any of them is deleted - the same reason
+	// removeEffect() closes one (a chain cleared under its devices is a track or channel going, a preset replacing
+	// what the chain carries, or the project closing) - and before the change guard, so no plug-in's UI call runs
+	// inside it.
+	for( Effect* effect : m_effects )
+	{
+		effect->closeNativeEditor();
+	}
+
 	emit aboutToClear();
 
 	Engine::audioEngine()->requestChangeInModel();
