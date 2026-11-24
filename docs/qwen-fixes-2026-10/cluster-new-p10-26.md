@@ -25,13 +25,13 @@ void stop()
 
 Three facts make that a process terminator, all read in this session:
 
-1. `mThread` is the context's own worker (`Context.hpp:76-98`: the thread body is
+1. `mThread` is the context's own worker (`Context.hpp:81-95`: the thread body is
    `service.run()` in a loop that catches only
    `typename ExceptionHandler::Exception`). A thread that calls
    `std::thread::join()` on itself is refused by libstdc++/glibc with
    `std::system_error` "Resource deadlock avoided" — not the handler's exception
    type — so it escapes the thread body and `std::terminate` runs.
-2. Handlers posted with `async()` run on that worker (`Context.hpp:236`:
+2. Handlers posted with `async()` run on that worker (`Context.hpp:238-240`:
    `::asio::post(*mpService, ...)`), so "a Link callback calls stop()" is exactly
    a self-join. Link itself creates the context with its own handler type
    (`link/Controller.hpp:154`: `mIo(IoContext{UdpSendExceptionHandler{this}})`) and
