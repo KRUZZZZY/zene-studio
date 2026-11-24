@@ -32,6 +32,7 @@
 #include <QJsonObject>
 #include <QProcess>
 #include <QTemporaryFile>
+#include <QUuid>
 #include <QtEndian>
 
 #include "ControlExportPresetSupport.h"
@@ -42,6 +43,7 @@
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "ExportRenderSettings.h"
+#include "LoudnessReport.h"
 #include "OutputSettings.h"
 #include "ProjectRevisions.h"
 #include "ProjectRenderer.h"
@@ -368,11 +370,107 @@ QString renderFailureMessage(int exitCode, const QString& diagnostics)
 	return QStringLiteral("the render failed (exit %1): %2").arg(exitCode).arg(diagnostics);
 }
 
+/*! The path the render child writes: a name of the render's own, beside the destination.
+ *
+ *  The child never writes the caller's path. A child that is killed mid-write (a
+ *  timeout, a crash) or that exits non-zero then leaves its partial file HERE, where
+ *  this file removes it, instead of replacing what a previous render put at the
+ *  requested path with a truncated file (cluster 5735). Beside the destination rather
+ *  than in the temp directory, so publishing is one rename on one filesystem, and
+ *  under the same `.zene-render-` prefix RenderQueue stages its own render jobs with.
+ *  The extension is the format's own: the CLI renderer names a single-file render
+ *  `<base name of -o> + <that format's extension>`, so the name it writes is exactly
+ *  the one it was given.
+ */
+QString stagedRenderPath(const QString& out, const QString& formatName)
+{
+	return QFileInfo(out).dir().filePath(QStringLiteral(".zene-render-")
+		+ QUuid::createUuid().toString(QUuid::WithoutBraces).left(12)
+		+ QLatin1Char('.') + formatName);
+}
+
+//! Removes a staged render and the loudness sidecar the child wrote beside it.
+void discardStagedRender(const QString& staged)
+{
+	QFile::remove(staged);
+	QFile::remove(LoudnessReport::sidecarPathFor(staged));
+}
+
+//! Where a finished render is published: the destination itself, or the file a symlink
+//! at the destination points at - a write through the link reached the target before
+//! this file staged anything, and publishing over the link would replace it with a file.
+QString publishDestination(const QString& out)
+{
+	const QFileInfo destination(out);
+	if (!destination.isSymLink()) { return out; }
+	const QString target = destination.symLinkTarget();
+	if (target.isEmpty()) { return out; }
+	return QFileInfo(target).isAbsolute() ? target : destination.dir().filePath(target);
+}
+
+/*! The loudness report moved beside the caller's own path, naming that path inside it.
+ *
+ *  The child writes the report beside the file it was told to render, so its `file`
+ *  field carries the staged name; the caller asked for `out` and reads a report that
+ *  names it, exactly as it did when the child rendered straight to `out`.
+ */
+void publishRenderSidecar(const QString& staged, const QString& out)
+{
+	const QString sidecar = LoudnessReport::sidecarPathFor(staged);
+	if (!QFile::exists(sidecar)) { return; }
+	const QString published = LoudnessReport::sidecarPathFor(out);
+	QFile::remove(published);
+	if (!QFile::rename(sidecar, published)) { return; }
+	QFile report(published);
+	if (!report.open(QIODevice::ReadOnly | QIODevice::Text)) { return; }
+	QString text = QString::fromUtf8(report.readAll());
+	report.close();
+	if (!text.contains(staged)) { return; }
+	text.replace(staged, out);
+	if (!report.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text)) { return; }
+	report.write(text.toUtf8());
+}
+
+/*! The staged render moved over the caller's path; false when it could not be.
+ *
+ *  A file already at the destination is moved aside first and put back if the move
+ *  fails, so a failed publish leaves a destination rather than neither file: the rule
+ *  RenderQueue::commitStaged applies to its own jobs. A destination that is not a file
+ *  (a directory, say) is never moved aside - the child could not have written there
+ *  either, and the caller's directory stays where it is.
+ */
+bool publishStagedRender(const QString& staged, const QString& out)
+{
+	const QString destination = publishDestination(out);
+	const QFileInfo existing(destination);
+	if (existing.exists() && !existing.isFile()) { return false; }
+	QString aside;
+	if (existing.isFile())
+	{
+		aside = existing.dir().filePath(QStringLiteral(".zene-backup-")
+			+ QUuid::createUuid().toString(QUuid::WithoutBraces).left(12));
+		if (!QFile::rename(destination, aside)) { return false; }
+	}
+	if (!QFile::rename(staged, destination))
+	{
+		if (!aside.isEmpty() && !QFile::exists(destination)) { QFile::rename(aside, destination); }
+		return false;
+	}
+	if (!aside.isEmpty()) { QFile::remove(aside); }
+	// The loudness report travels with the audio it describes.
+	publishRenderSidecar(staged, out);
+	return true;
+}
+
 bool runCliRender(const QString& projectPath, const QString& out, const QString& formatName,
 	const ControlExportPreset& settings, int rangeBegin, int rangeEnd, int* exitCode,
 	QString* diagnostics, OutputSettings::ChannelMode channels = OutputSettings::ChannelMode::Stereo)
 {
-	QStringList arguments = controlRenderCliArguments(projectPath, out, formatName, settings, rangeBegin, rangeEnd);
+	// The child writes a file of this render's own (stagedRenderPath) and the finished
+	// one is published at `out`: a render that does not finish normally leaves the
+	// caller's file exactly as it was (cluster 5735).
+	const QString staged = stagedRenderPath(out, formatName);
+	QStringList arguments = controlRenderCliArguments(projectPath, staged, formatName, settings, rangeBegin, rangeEnd);
 	// 0.5.0 F7: only a surround render passes --channels, so a stereo child's command line is unchanged.
 	if (channels == OutputSettings::ChannelMode::Surround)
 	{
@@ -404,6 +502,20 @@ bool runCliRender(const QString& projectPath, const QString& out, const QString&
 	if (!finished) { renderer.kill(); }
 	*exitCode = finished ? renderer.exitCode() : -1;
 	*diagnostics = finished ? lastWordsOf(errorLog.fileName()) : QString();
+	// The child names the file it was given; the caller can only act on the path it asked
+	// for, so a quoted "Could not open file <staged> for writing" names `out` instead.
+	diagnostics->replace(staged, out);
+	if (!finished || *exitCode != 0)
+	{
+		discardStagedRender(staged);
+		return finished;
+	}
+	if (!publishStagedRender(staged, out))
+	{
+		discardStagedRender(staged);
+		*exitCode = -1;
+		*diagnostics = QStringLiteral("the finished render could not be moved to %1").arg(out);
+	}
 	return finished;
 }
 
