@@ -156,3 +156,23 @@ Artifacts:
 - `code-reference` — `tests/src/core/VideoTestClip.h:243`, the fallback declaration that keeps
   the helper visible in every configuration.
 
+
+## Round 4 (checkpoint re-run, logs in `...ci-6422986f4db9676f-port.r4/logs`)
+
+The round-3 manifest was refused by the schema: its `test` artifact used a `command` field.
+The schema's fields are `green_command` / `green_exit` (and `red_*` for a regression-test),
+so the round-4 manifest uses those. No product or test source changed this round; the
+additive assertion (`1dd178c25b`) was already committed in round 3.
+
+| # | Command | EXIT | Log |
+| --- | --- | ---: | --- |
+| 1 | `git merge-base --is-ancestor d9a26d06ad HEAD`; `git diff --stat 050/m0-train-33..HEAD -- tests/src/core/VideoTestClipPortabilityTest.cpp` | 0; 93 insertions | (session shell) |
+| 2 | `cmake --build build --target VideoTestClipPortabilityTest VideoClipsTest VideoClipsGuiTest -j4` | 0 | `001-build.log` |
+| 3 | RED: `git checkout cc29a63dde -- tests/src/core/VideoClipsTest.cpp tests/src/gui/VideoClipsGuiTest.cpp`, delete the `#else` fallback (`VideoTestClip.h:238-248`), then `python3 tests/no-ffmpeg-video-clips-compile-check.py --source-root $PWD --build-dir $PWD/build` | **1** - `VideoClipsTest.cpp:530:33: error: 'makeClip' is not a member of 'videotest'` | `002-probe-red.log` |
+| 4 | restore: `git checkout HEAD -- <the three paths>`; `git status --porcelain` empty | 0 | `003-restore.log` |
+| 5 | GREEN: the same probe | 0 | `004-probe-green.log` |
+| 6 | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^VideoClipsNoFfmpegCheck$' --output-on-failure` | 0 (1/1) | `005-ctest-noffmpeg.log` |
+| 7 | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^VideoTestClipPortabilityTest$' --output-on-failure` | 0 (1/1) | `006-ctest-portability.log` |
+
+Delegation: Haiku ran rows 2-7 from a fully specified script; I read the logs and the clean
+`git status` myself before using them.
