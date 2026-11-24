@@ -32,6 +32,10 @@
 #include <QDomDocument>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <functional>
+#include <thread>
 
 #include "AudioDevice.h"
 #include "AudioEngine.h"
@@ -319,6 +323,111 @@ private slots:
 	{
 		using namespace lmms;
 		QCOMPARE( Note::releaseVelocityFromMidi( 96, 0 ), 0 );
+	}
+
+	//! Cluster 3192: the MIDI input path writes expression onto a note handle the render
+	//! period is reading - the pitch axis through NotePlayHandle::updateFrequency(), pressure
+	//! and timbre through MpeSynthExpression::applyToNote() - and AudioEngine::renderNextPeriod()
+	//! holds the change lock for the whole period. The write therefore takes the same
+	//! model-change guard every other control-thread edit takes, so it waits for the period
+	//! boundary instead of racing it. The note-off's release velocity (captureMpeReleaseVelocity)
+	//! is the other write this input path makes on a live handle, and is covered the same way.
+	void expressionUpdatesWaitForTheEngineChangeLock()
+	{
+		using namespace lmms;
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create( Track::Type::Instrument, song ) );
+		QVERIFY( track != nullptr );
+		// The note's volume scale and the MIDI velocity scale agree, so the captured release
+		// velocity below is exactly the velocity the note-off carries (as in the slots above).
+		track->midiPort()->setBaseVelocity( DefaultVolume );
+		MpeExpression::setEnabled( true );
+
+		constexpr int kMemberChannel = 4;
+		constexpr int kKey = 60;
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, kKey, 100 ) );
+		NotePlayHandle* note = track->playingNote( kKey );
+		QVERIFY( note != nullptr );
+
+		// The pitch axis: every pitch gesture, and no instrument event of its own.
+		QCOMPARE( note->mpePitchCents(), 0 );
+		requireTheWriteWaitsForTheRenderPeriod(
+			QStringLiteral( "a per-note pitch bend" ),
+			[track] { track->processInEvent( MidiEvent( MidiPitchBend, kMemberChannel, 12288 ) ); },
+			[note] { return note->mpePitchCents() == 0; } );
+		QCOMPARE( note->mpePitchCents(), 2400 );
+
+		// Pressure: the same write, plus the instrument event it forwards afterwards.
+		QCOMPARE( note->mpePressure(), 0 );
+		requireTheWriteWaitsForTheRenderPeriod(
+			QStringLiteral( "a per-note pressure" ),
+			[track] { track->processInEvent( MidiEvent( MidiChannelPressure, kMemberChannel, 96 ) ); },
+			[note] { return note->mpePressure() == 0; } );
+		QCOMPARE( note->mpePressure(), 96 );
+
+		// The release velocity the note-off carries, written by captureMpeReleaseVelocity.
+		QCOMPARE( note->releaseVelocity(), -1 );
+		requireTheWriteWaitsForTheRenderPeriod(
+			QStringLiteral( "an MPE note-off's release velocity" ),
+			[track] { track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, kKey, 96 ) ); },
+			[note] { return note->releaseVelocity() == -1; } );
+		QCOMPARE( note->releaseVelocity(), 96 );
+
+		MpeExpression::setEnabled( false );
+		song->clearProject();
+	}
+
+private:
+	/*! Drives @a write from a second thread while this thread owns the model the way
+	 *  AudioEngine::renderNextPeriod() does for a whole period, and requires the write to wait
+	 *  for the period boundary: it must reach AudioEngine::requestChangeInModel(),
+	 *  must not finish while the model is held, and must not have changed what
+	 *  @a unchangedUnderThePeriod observes.
+	 *
+	 *  AudioEngine::modelChangeWaiters() is the seam that decides the ordering, so no sleep and
+	 *  no clock decides the outcome; the deadline only turns a missing guard into a failure
+	 *  instead of a hang. */
+	void requireTheWriteWaitsForTheRenderPeriod( const QString& what,
+		const std::function<void()>& write,
+		const std::function<bool()>& unchangedUnderThePeriod )
+	{
+		using namespace lmms;
+
+		AudioEngine* engine = Engine::audioEngine();
+		QVERIFY( engine != nullptr );
+
+		std::atomic<bool> written{ false };
+		bool reachedLock = false;
+		bool stillBlocked = false;
+		bool unchanged = false;
+		std::thread writer;
+		{
+			// What renderNextPeriod() holds while this track's notes are rendered.
+			const auto renderPeriod = engine->requestChangesGuard();
+			writer = std::thread( [&write, &written] {
+				write();
+				written.store( true, std::memory_order_release );
+			} );
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 10 );
+			while( engine->modelChangeWaiters() == 0 && !written.load( std::memory_order_acquire )
+				&& std::chrono::steady_clock::now() < deadline )
+			{
+			}
+			reachedLock = engine->modelChangeWaiters() == 1;
+			stillBlocked = !written.load( std::memory_order_acquire );
+			unchanged = unchangedUnderThePeriod();
+		}
+		writer.join();
+		QVERIFY2( reachedLock, qPrintable( QStringLiteral(
+			"%1 never asked for the audio engine's change lock" ).arg( what ) ) );
+		QVERIFY2( stillBlocked, qPrintable( QStringLiteral(
+			"%1 completed while a render period owned the model" ).arg( what ) ) );
+		QVERIFY2( unchanged, qPrintable( QStringLiteral(
+			"%1 wrote the note while a render period owned the model" ).arg( what ) ) );
+		QVERIFY( written.load( std::memory_order_acquire ) );
 	}
 
 };

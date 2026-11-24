@@ -435,6 +435,13 @@ void InstrumentTrack::captureMpeReleaseVelocity( const MidiEvent& event )
 		return;
 	}
 
+	// Cluster 3192: the store lands on a note handle the render period reads
+	// (NotePlayHandle::noteOff emits the release velocity), and the audio thread
+	// holds the change lock for its whole period. The MIDI input thread is a
+	// control thread, so it takes the same guard every other control-thread edit
+	// takes: the write waits for the period boundary instead of racing it.
+	const auto guard = Engine::audioEngine()->requestChangesGuard();
+
 	// The velocity is stored on the note's own volume scale (0..200, 100 =
 	// default) through the conversion that is the exact inverse of the
 	// playback emission (Note::midiReleaseVelocity), so the velocity the
@@ -448,6 +455,18 @@ void InstrumentTrack::captureMpeReleaseVelocity( const MidiEvent& event )
 
 void InstrumentTrack::loadMpeExpressionOntoChannelNotes( int channel )
 {
+	// Cluster 3192: this runs on the MIDI input thread and writes the note handles
+	// the render period is reading - the pitch axis through
+	// NotePlayHandle::updateFrequency(), pressure and timbre through
+	// MpeSynthExpression::applyToNote() - while AudioEngine::renderNextPeriod()
+	// holds the change lock for its whole period. The capture state above stays
+	// lock-free (MpeExpression's own contract); the stores onto the live handles,
+	// and the expression MIDI they forward, wait for the period boundary under the
+	// same guard every other control-thread edit takes. The note-on path in
+	// processInEvent() stamps its handle before addPlayHandle() publishes it to the
+	// engine, so the render thread cannot see that one yet.
+	const auto guard = Engine::audioEngine()->requestChangesGuard();
+
 	const MpeNoteExpression expression = m_mpeExpression.current( channel );
 	const int count = m_mpeExpression.activeNoteCount( channel );
 
