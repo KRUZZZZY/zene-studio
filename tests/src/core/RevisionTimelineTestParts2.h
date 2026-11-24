@@ -307,12 +307,26 @@ void RevisionTimelineTest::undoOfARestoreThatCannotPutTheFileBackFailsTyped() {
 	QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
 	QCOMPARE(readBytes(m_project), documentWith(1));
 
-	// Take away the very artefact the recorded inverse reads.
-	QVERIFY(QFile::remove(projectRevisionPath(m_project, 0)));
+	// Take away EVERY retained copy of the very artefact the recorded inverse
+	// reads - the bytes of the file this restore replaced (Luna cluster
+	// new-p9-58, BUG 2): the undo identifies them by CONTENT, so a copy left in
+	// another slot would still let it put the file back, and the case would then
+	// prove nothing. The same shape as the redo's own exhaustion case below.
+	int removed = 0;
+	for (int rev = 0; rev < ProjectRevisionPolicy::Keep; ++rev)
+	{
+		const QString revPath = projectRevisionPath(m_project, rev);
+		if (QFileInfo::exists(revPath) && readBytes(revPath) == documentWith(3))
+		{
+			QVERIFY(QFile::remove(revPath));
+			++removed;
+		}
+	}
+	QVERIFY2(removed > 0, "no retained revision held the replaced file, so this case proves nothing");
 
 	const ControlResult undo = registry->invoke(QStringLiteral("control.undo"), QJsonObject());
 	QVERIFY2(!undo.ok, "control.undo answered 'undone: true' although the project file was NOT "
-		"restored - the step's own revision 0 was gone");
+		"restored - the step's own replaced bytes were gone from every retained revision");
 	QCOMPARE(undo.errorKind, ControlErrorKind::Refused);
 	QVERIFY2(undo.errorMessage.contains(QStringLiteral("revisions.restore")),
 		qPrintable(undo.errorMessage));
@@ -433,13 +447,25 @@ void RevisionTimelineTest::undoOfAProjectRestoreRevisionThatCannotPutTheFileBack
 	QVERIFY2(restored.ok, qPrintable(restored.errorMessage));
 	QCOMPARE(readBytes(m_project), documentWith(2));
 
-	// Take away the very artefact the recorded inverse reads: revision 0 is
-	// the file the restore rotated in, and the undo restores exactly that.
-	QVERIFY(QFile::remove(projectRevisionPath(m_project, 0)));
+	// Take away EVERY retained copy of the artefact the recorded inverse reads:
+	// the bytes of the file the restore rotated in (Luna cluster new-p9-58,
+	// BUG 2 - the undo identifies them by content, so one surviving copy in
+	// another slot still restores the file and this case would prove nothing).
+	int removed = 0;
+	for (int rev = 0; rev < ProjectRevisionPolicy::Keep; ++rev)
+	{
+		const QString revPath = projectRevisionPath(m_project, rev);
+		if (QFileInfo::exists(revPath) && readBytes(revPath) == documentWith(3))
+		{
+			QVERIFY(QFile::remove(revPath));
+			++removed;
+		}
+	}
+	QVERIFY2(removed > 0, "no retained revision held the replaced file, so this case proves nothing");
 
 	const ControlResult undo = registry->invoke(QStringLiteral("control.undo"), QJsonObject());
 	QVERIFY2(!undo.ok, "control.undo answered 'undone: true' although the project file was NOT "
-		"restored - the sibling step's own revision 0 was gone");
+		"restored - the sibling step's own replaced bytes were gone from every retained revision");
 	QCOMPARE(undo.errorKind, ControlErrorKind::Refused);
 	QVERIFY2(undo.errorMessage.contains(QStringLiteral("project.restore_revision")),
 		qPrintable(undo.errorMessage));
