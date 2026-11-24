@@ -90,6 +90,12 @@ set(LMMS_TESTS
 	# must use array delete.
 	src/core/MonoDelayTest.cpp
 	src/core/AudioPortsModelTest.cpp
+	# Q050-305: pins and channel counts edited while audio renders. One slot proves a routing
+	# edit parks on the engine's model-change guard instead of landing inside a period; the
+	# other renders real periods through AudioPorts::Router while a second thread edits pins and
+	# channel counts, and compares the routing caches and the routed audio with the pins the
+	# period read.
+	src/core/AudioPortsLiveEditStressTest.cpp
 	src/core/AudioPortsTest.cpp
 	# Pitch-preserving time stretch (0.3.0 feature-list row 30): the WSOLA DSP
 	# on its own - the same input through the resampler and through the
