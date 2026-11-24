@@ -67,6 +67,7 @@ Every command below was run from the worktree unless the row says otherwise.
 | 14 | `cmake --build build --target VideoTestClipPortabilityTest -j4 > "$LOGS/build-5.log" 2>&1` | 0 | `build-5.log` |
 | 15 | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^VideoTestClipPortabilityTest$' --output-on-failure > "$LOGS/test-6-green.log" 2>&1` | 0 (1/1 passed) | `test-6-green.log` |
 | 16 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-6422986f4db9676f-port > "$LOGS/gates-1.log" 2>&1` | 0 (`RESULT: PASS`, 8/8) | `gates-1.log` |
+| 17 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-ci-6422986f4db9676f-port ci-6422986f4db9676f-port > "$LOGS/submit-2.log" 2>&1` | 0 (`RESULT: PASS - submit`; every mechanical row PASS) | `submit-2.log` |
 
 Runs 4 and 6 are not code failures: the probes recompile entries from
 `build/compile_commands.json`, and their source files `#include` generated `.moc` files that
@@ -103,8 +104,9 @@ only appear after the corresponding test target is built. Building those targets
   canary is unchanged.
 - **Registration and gates.** The regression is already registered in `tests/CMakeLists.txt`,
   `tests/fork-sources.txt`, `tests/all-sources.txt` and `tests/upstream-modifications.txt`;
-  `feature_check.py` reports 8/8 PASS, `RESULT: PASS` (row 16). No new file over 500 lines
-  and no new function was added.
+  `feature_check.py` reports 8/8 PASS, `RESULT: PASS` (row 16), and `submit_check.py`
+  reports `RESULT: PASS - submit` with every mechanical row PASS (row 17). No new file over
+  500 lines and no new function was added.
 - **Platform.** This host is Linux x86_64 with FFmpeg enabled; the no-FFmpeg arm64
   configuration is reproduced by the header seam and the shadow-configuration compile
   probes. A hosted `linux-arm64` run of this branch was not available in this session; the
