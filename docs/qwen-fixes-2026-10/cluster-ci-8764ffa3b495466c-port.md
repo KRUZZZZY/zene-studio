@@ -66,7 +66,7 @@ control vacuous. The fix:
 | restore | `cp` of the byte backup, then `cmp` against it | — | CMP=0; `git status --porcelain` showed only the 4 intended paths |
 | green 2 | same ctest | test-3-green.log ("Passed") | 0 |
 | gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | gates-1.log (RESULT: PASS, all 8 rows PASS) | 0 |
-| completion | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-8764ffa3b495466c-port` | submit-1.log | see Self-check |
+| completion | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-8764ffa3b495466c-port` | submit-1.log (RESULT: PASS - submit; every "?" item is answered below) | 0 |
 
 ## Self-check
 
