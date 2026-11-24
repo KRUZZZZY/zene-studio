@@ -48,6 +48,14 @@ apply. Row 6 is the equivalent red control.
 - **Regression test:** the existing `ClangTemplateKeywordCheck` passes here (row 2, EXIT=0) and fails on the
   pre-fix header (row 6, EXIT=1). It is deterministic: a source scan plus a `-fsyntax-only` compile, with no
   timing and no threads.
+- **Fix at the cause and complete:** all four sites of the ill-formed construct (`atomic_queue.h:394,400,522,528`)
+  carry the fixed spelling. The checker's tree-wide scan of every tracked C/C++ file for `::template name`,
+  `.template name` or `->template name` not followed by `<` finds none (row 3, first PASS line). So no sibling of
+  the construct was reintroduced on this branch.
+- **Sibling commands:** this unit changes no command file. The only file committed is this report. The
+  `app.*` / `arrangement.*` commands listed by `submit_check.py` come from the train-wide diff against the base
+  (`feature_check` reports 576 changed files inherited by this branch), not from this unit. They are unaffected,
+  and no control command was added, so the ControlCommandsSnapshot canary is unchanged.
 - **No collateral damage, realtime, undo, commands:** no product file was changed in this unit. The only new
   file is this report.
 - **Registration and gates:** `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` → EXIT=0,
