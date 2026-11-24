@@ -83,8 +83,12 @@ Notes:
   - A missing clang++ is handled: `find_program` leaves it out of the command, and the script treats a missing
     binary as "does not enforce".
   - On MSVC or other hosts without clang++, behaviour is unchanged: one `--compiler`, as before.
-- **Sibling commands:** none touched. No control command was added, so the ControlCommandsSnapshot canary is
-  unchanged.
+- **Sibling commands:** this unit touches no command file. The `app.*` and `arrangement.*` commands listed by
+  `submit_check.py` come from the train-wide diff that this branch inherits against its base. This unit does not
+  change them, and they are unaffected. The same holds for `tests/control-audio-test-tone.py` and
+  `tests/control-no-audio-device.py`, which `submit_check.py` lists as changed tests: they come from that train
+  diff too, not from this unit (`git show --stat HEAD~1` lists only the checker, `tests/CMakeLists.txt` and this
+  report). No control command was added, so the ControlCommandsSnapshot canary is unchanged.
 - **No collateral damage, realtime, undo, commands:** only `tests/clang-template-keyword-check.py`,
   `tests/CMakeLists.txt` and this report changed. No product file, no audio-thread code, no saved-data format.
 - **Registration and gates:** both changed files were already registered by `3cc4c0a075`. `feature_check.py` →
