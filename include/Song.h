@@ -64,6 +64,7 @@ namespace lmms
 
 class AutomationTrack;
 class DataFile;
+class DataFileSaveLock;
 class Keymap;
 class MidiClip;
 class Scale;
@@ -484,8 +485,10 @@ public:
 	void loadProject( const QString & filename, const QStringList & skipSections = QStringList() );
 	bool guiSaveProject();
 	bool guiSaveProjectAs(const QString & filename);
+	//! \a held is the save lock the caller already owns for the file this writes
+	//! (cluster new-p10-89; DataFile::writeFile). Null: the write takes its own.
 	bool saveProjectFile(const QString & filename, bool withResources = false,
-		SaveFormat format = SaveFormat::Legacy);
+		SaveFormat format = SaveFormat::Legacy, DataFileSaveLock * held = nullptr);
 
 	/*! WF-033 (docs/UNDO-HISTORY-PERSISTENCE.md): the project as ONE document,
 	 *  built exactly as saveProjectFile() builds it - the same writers, plug-in

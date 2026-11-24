@@ -24,7 +24,10 @@
 
 #include "ProjectRevisions.h"
 
+#include "DataFileSaveLock.h"
+
 #include <atomic>
+#include <memory>
 #include <cstdio>
 #include <filesystem>
 #include <system_error>
@@ -418,6 +421,19 @@ bool restoreProjectRevision(const QString& projectPath, int revision, QString* e
 	{
 		*error = QStringLiteral("no revision %1 of %2 (the retained set is reported by "
 			"project.get_state's revisions)").arg(revision).arg(projectPath);
+		return false;
+	}
+
+	// Cluster new-p10-89. The restore rotates the revision set and replaces the
+	// live file, so it waits for no save: a save in flight in another instance
+	// refuses it before anything is staged, rotated or replaced. Held to the end.
+	QString lockRefusal;
+	const std::unique_ptr<DataFileSaveLock> saveLock = DataFileSaveLock::tryAcquireForProject(
+		projectPath, &lockRefusal);
+	if (!saveLock)
+	{
+		*error = QStringLiteral("%1 was NOT restored: %2. No revision was rotated and the "
+			"project was not replaced.").arg(projectPath, lockRefusal);
 		return false;
 	}
 
