@@ -84,6 +84,8 @@ captured status reads `256 tracks, 512 scenes (showing the first 64 x 64: the la
 - Undo and realtime: no control command, undo action, or audio-path code was added or changed.
 - Registration and gates: all eight `feature_check.py` rows PASS in `gate-1.log`.
 - Portability: the change uses only C++20 and existing Qt APIs; no Qt-6-only call was added.
+- The ALREADY-FIXED/FALSE-POSITIVE evidence prompt is not applicable: the verdict is FIXED and the reproduction is the RED run above.
+- Sibling commands are unaffected: this cluster changed no command-registration file. `session.set_grid`'s 0..256/0..512 schema and handler are untouched (`src/core/ControlCommandsSession.cpp:290-291`), and the `app.*`/`arrangement.*` ids listed by the branch-wide base diff belong to earlier commits, not this patch.
 
 ## Other findings
 
