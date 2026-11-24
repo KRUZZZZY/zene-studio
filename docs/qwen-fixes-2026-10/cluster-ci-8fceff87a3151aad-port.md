@@ -96,3 +96,25 @@ used because there was no fix or test to write.
 ## Other findings
 
 None.
+
+## Self-check
+
+- **RED/GREEN:** does not apply. The verdict is ALREADY-FIXED, so no product change and no new test were made.
+  `git show --stat` on this session's commit lists only this report. The existing guards pass on HEAD:
+  `Qt5OverloadedSignalCheck` + `MocQt5TrailingReturnCheck` → EXIT=0, 2/2 passed (`logs/05-ctest-qt5checks.log`);
+  `python3 tests/qt5-overloaded-signal-check.py .` → EXIT=0 (`logs/01-scan-head.log`). The original lane's
+  RED/GREEN for that guard is in `docs/qwen-fixes-2026-10/cluster-ci-8fceff87a3151aad.md`.
+- **Deterministic:** no test was added. The existing guard is a static source scan with built-in fixtures
+  and no clock, sleep or threads.
+- **Cause and complete:** nothing was changed. Section 2 above covers every windows-arm64 build failure in
+  the three newest train runs, each with the HEAD code that resolves it. The Qt 5 overload sweep is tree-wide
+  (`logs/01-scan-head.log`).
+- **No collateral damage:** no product, save-format, command or test file was touched, so projects and saved data
+  load exactly as before.
+- **ALREADY-FIXED evidence:** `src/gui/FollowActionEditor.cpp:210` (fix `ab20525e38`, ancestor of HEAD);
+  `tests/src/gui/MixerSendsOnFadersTest.cpp:277-281` (fix `421f6f13ae`, ancestor of HEAD);
+  `tests/src/plugins/SfzDistoBuffersTest.cpp:56-61`; `tests/CMakeLists.txt:2937-2941`.
+- **Sibling commands / "tests added" list:** the check computes these from the branch's diff against the
+  train base `fa4a5f2e7` (576 files from other lanes' merges, e.g. `tests/control-audio-test-tone.py`). They
+  are not from this session. This session's only commit adds this report and changes no command file, so no
+  `app.*` or other command is affected.
