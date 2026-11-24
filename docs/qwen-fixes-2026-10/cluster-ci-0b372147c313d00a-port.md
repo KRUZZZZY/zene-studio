@@ -167,8 +167,13 @@ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktr
   `git merge-base --is-ancestor 03e5a509b7 HEAD` exited 0. Reverse-applying the
   historical header faithfully reproduces the hosted error at the historical
   lines 78 and 110, and the registered check rejects that state (EXIT=8).
-- **Sibling commands.** This cluster changes no command file, registry or
-  reversibility table.
+- **Sibling commands.** This retry changes only
+  `tests/train-39-portability-check.py` and this report; it touches no command
+  file, registry or reversibility table. The `app.*` and `arrangement.*`
+  commands listed by the pre-submit check come from other train commits between
+  the old base and `HEAD`. None of them calls, includes or reads
+  `MountNamespaceTestSupport.h` (a test-only mount-namespace helper), so none is
+  affected by this fix or its regression check.
 
 ## Other findings
 
