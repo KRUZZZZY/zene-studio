@@ -1,29 +1,28 @@
 /* Copyright (c) 2026 Zene Studio contributors; GPL-2.0-or-later. */
 
-/*! WinMM MIDI output path: short-message packing and output routing.
+/*! WinMM MIDI output path: short-message packing and bounded delivery.
  *
  *  Packing: MidiWinMM::processOutEvent sends winmmShortMessage( event ); the WinMM callback
  *  cannot be driven on this platform, so these tests reach the exact expression that output
  *  path uses. A 14-bit pitch-bend value must reach the wire as an LSB then an MSB, 7 bits
  *  each - the split the WinMM input path reverses.
  *
- *  Routing (cluster new-p9-276): the output path must not build the destination list per
- *  event. It publishes a precomputed snapshot when the subscriptions or the device list
- *  change, and reads that on the playback path - one atomic load and a scan over a POD
- *  table, no QStringList, no allocation. The WinMM translation unit is empty on this
- *  platform (LMMS_HAVE_WINMM is off in lmmsconfig.h), so these tests exercise the
- *  platform-neutral routing header the output path calls, and assert on the product source
- *  that the output path still goes through it.
+ *  Delivery (cluster new-p9-276): MidiWinMM is a thin WinMM handle adapter around
+ *  MidiWinMMOutput, which owns the device list, the subscriptions, the published routing and
+ *  the bounded queue. These tests drive that same class with a controllable sink, so they
+ *  exercise production publication, subscription and playback rather than a copy of it. The
+ *  only difference from production is who pumps the queue (the test, or the output's worker).
  */
 
 #include <QtTest>
 
-#include <QFile>
 #include <QMap>
 #include <QStringList>
-#include <QVector>
 
+#include <atomic>
 #include <cstdint>
+#include <semaphore>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -32,12 +31,8 @@
 #include "MidiPort.h"
 #include "MidiWinMMShortMessage.h"
 
-#if __has_include("MidiWinMMOutRouting.h")
-#  define ZENE_HAVE_WINMM_OUT_ROUTING 1
-#endif
-
-#ifdef ZENE_HAVE_WINMM_OUT_ROUTING
-#include "MidiWinMMOutRouting.h"
+#if __has_include("MidiWinMMOutput.h")
+#include "MidiWinMMOutput.h"
 #endif
 
 using lmms::MidiEvent;
@@ -60,98 +55,87 @@ MidiEvent eventOf(lmms::MidiEventTypes type, int channel, int p0, int p1 = 0)
 		static_cast<std::int16_t>(p1));
 }
 
-//! Distinct, never-dereferenced port identities. The routing only compares a port pointer - it
-//! never calls through one - so a routing test needs no live MIDI client or GUI machinery to key
-//! its table.
-[[maybe_unused]] const lmms::MidiPort* portId(unsigned n)
+#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
+
+//! Distinct, never-dereferenced port identities: the output path only compares a port pointer.
+const lmms::MidiPort* portId(unsigned n)
 {
 	return reinterpret_cast<const lmms::MidiPort*>(static_cast<std::uintptr_t>(0x7E000000u)
 		+ static_cast<std::uintptr_t>(n) * 0x100u);
 }
 
-//! The client's own state in its own shapes: handle -> device name (QMap order is the order the
-//! output path sends in) and device name -> subscribed ports.
-struct RoutingScenario
+struct Sent
 {
-	QMap<std::uintptr_t, QString> devices;
-	QMap<QString, lmms::MidiPortList> subscriptions;
+	std::uintptr_t device = 0;
+	std::uint32_t message = 0;
 
-	void addDevice(std::uintptr_t handle, const QString& name) { devices.insert(handle, name); }
-	void unsubscribe(const QString& name, const lmms::MidiPort* port)
-	{
-		subscriptions[name].removeAll(const_cast<lmms::MidiPort*>(port));
-	}
-	void subscribe(const QString& name, const lmms::MidiPort* port)
-	{
-		// The client's subscribeWritablePort() removes an earlier entry first, so a port appears once
-		// per name; a scenario may still list a port twice to pin what the name search did with it.
-		subscriptions[name].push_back(const_cast<lmms::MidiPort*>(port));
-	}
+	bool operator==(const Sent&) const = default;
 };
 
-/*! The pre-fix algorithm of MidiWinMM::processOutEvent(), kept in shape as the reference the
- *  published snapshot has to reproduce: for every event, collect the destination NAMES
- *  subscribed to @a port (one entry per name, however often the port is listed), then send to
- *  every open device whose name is in that list, in device-map order. */
-[[maybe_unused]] std::vector<std::uintptr_t> nameSearchDevices(const RoutingScenario& scenario, const lmms::MidiPort* port)
+//! Records what reached the "driver", in delivery order.
+class RecordingSink final : public lmms::MidiWinMMSink
 {
-
-	QStringList outDevs;
-	for (auto it = scenario.subscriptions.begin(); it != scenario.subscriptions.end(); ++it)
+public:
+	void send(std::uintptr_t device, std::uint32_t message) override
 	{
-		for (const lmms::MidiPort* subscribed : it.value())
-		{
-			if (subscribed == port)
-			{
-				outDevs += it.key();
-				break;
-			}
-		}
+		sent.push_back(Sent{device, message});
 	}
 
-	std::vector<std::uintptr_t> sent;
-	for (auto it = scenario.devices.begin(); it != scenario.devices.end(); ++it)
+	std::vector<Sent> sent;
+};
+
+//! Records one send and releases a semaphore, so the test can wait without a sleep.
+class SignallingSink final : public lmms::MidiWinMMSink
+{
+public:
+	void send(std::uintptr_t device, std::uint32_t message) override
 	{
-		if (outDevs.contains(it.value())) { sent.push_back(it.key()); }
+		sent.push_back(Sent{device, message});
+		thread = std::this_thread::get_id();
+		arrived.release();
 	}
-	return sent;
+
+	std::vector<Sent> sent;
+	std::binary_semaphore arrived{0};
+	std::thread::id thread;
+};
+
+//! Holds the worker inside a driver call until the test releases it.
+class GatedSink final : public lmms::MidiWinMMSink
+{
+public:
+	void send(std::uintptr_t device, std::uint32_t message) override
+	{
+		sent.push_back(Sent{device, message});
+		entered.release();
+		release.acquire();
+		finished.store(true, std::memory_order_release);
+	}
+
+	std::vector<Sent> sent;
+	std::binary_semaphore entered{0};
+	std::binary_semaphore release{0};
+	std::atomic<bool> finished{false};
+};
+
+//! @return whether @a sink received exactly @a expected, in order.
+bool received(const RecordingSink& sink, const std::vector<Sent>& expected)
+{
+	return sink.sent == expected;
 }
 
-#ifdef ZENE_HAVE_WINMM_OUT_ROUTING
-
-//! The stop list MidiWinMM::refreshOutputRouting() publishes for @a scenario, through the
-//! same buildRoutes() call it makes out of m_outputDevices and m_outputSubs.
-std::vector<lmms::MidiWinMMOutRoute> routesFor(const RoutingScenario& scenario)
+QString describe(const std::vector<Sent>& sent)
 {
-	std::vector<std::pair<QString, std::uintptr_t>> devices;
-	devices.reserve(static_cast<std::size_t>(scenario.devices.size()));
-	for (auto it = scenario.devices.begin(); it != scenario.devices.end(); ++it)
+	QStringList parts;
+	for (const Sent& s : sent)
 	{
-		devices.emplace_back(it.value(), it.key());
+		parts << QStringLiteral("0x%1:0x%2")
+			.arg(s.device, 0, 16).arg(s.message, 0, 16);
 	}
-
-	QMap<QString, lmms::MidiPortList> subscriptions;
-	for (auto it = scenario.subscriptions.begin(); it != scenario.subscriptions.end(); ++it)
-	{
-		lmms::MidiPortList ports;
-		for (const lmms::MidiPort* port : it.value())
-		{
-			ports.push_back(const_cast<lmms::MidiPort*>(port));
-		}
-		subscriptions.insert(it.key(), ports);
-	}
-	return lmms::MidiWinMMOutRouting::buildRoutes(devices, subscriptions);
+	return parts.join(QStringLiteral(", "));
 }
 
-//! The devices the published snapshot sends @a port's events to, in the order it sends them.
-std::vector<std::uintptr_t> snapshotDevices(const lmms::MidiWinMMOutRouting& routing, const lmms::MidiPort* port)
-{
-	std::vector<std::uintptr_t> sent;
-	routing.forEachDevice(port, [&sent](const lmms::MidiWinMMOutRoute& route) { sent.push_back(route.device); });
-	return sent;
-}
-
-#endif // ZENE_HAVE_WINMM_OUT_ROUTING
+#endif // ZENE_HAVE_WINMM_BOUNDED_OUTPUT
 
 } // namespace
 
@@ -209,7 +193,6 @@ private slots:
 	//! The bend branch must not disturb the generic path: other messages keep their data bytes.
 	void otherChannelMessagesKeepTheirDataBytes()
 	{
-		// Status is type | channel; byte 1 and byte 2 are the two 7-bit data bytes (param(0), param(1) for non-bend messages).
 		QCOMPARE(winmmShortMessage(eventOf(lmms::MidiNoteOn, 3, 60, 100)), 0x00643C93u);
 		QCOMPARE(winmmShortMessage(eventOf(lmms::MidiControlChange, 5, 1, 127)), 0x7F01B5u);
 		QCOMPARE(winmmShortMessage(eventOf(lmms::MidiChannelPressure, 2, 64)), 0x000040D2u);
@@ -223,212 +206,276 @@ private slots:
 		QCOMPARE(byteAt(msg, 2), 0x40u);
 	}
 
-	//! The output path must keep calling the shared packer, so the helper is not dead code.
-	void winmmOutputPathUsesTheSharedPacker()
+	/*! Normal path: the production subscription and playback methods resolve an event to every
+	 *  subscribed device, in device-map order, with the name-search multiplicity. */
+	void publishedRoutingDrivesTheQueueToTheSubscribedDevices()
 	{
-		QFile source(QStringLiteral(ZENE_SOURCE_DIR "/src/core/midi/MidiWinMM.cpp"));
-		const bool opened = source.open(QIODevice::ReadOnly | QIODevice::Text);
-		QVERIFY(opened);
-		QVERIFY(source.readAll().contains("winmmShortMessage( event )"));
-	}
+#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
+		RecordingSink sink;
+		lmms::MidiWinMMOutput output(sink, false);
+		output.setDevices({
+			{QStringLiteral("Synth:out"), 0x11u},
+			{QStringLiteral("Other:out"), 0x22u},
+			{QStringLiteral("Drums:out"), 0x33u},
+			{QStringLiteral("Drums:out"), 0x44u},
+		});
+		output.subscribeWritablePort(portId(1), QStringLiteral("Synth:out"), true);
+		output.subscribeWritablePort(portId(2), QStringLiteral("Other:out"), true);
+		output.subscribeWritablePort(portId(3), QStringLiteral("Drums:out"), true);
+		output.subscribeWritablePort(portId(3), QStringLiteral("Drums:out"), true); // duplicate collapses
+		output.subscribeWritablePort(portId(4), QStringLiteral("Drums:out"), true);
+		output.subscribeWritablePort(portId(5), QStringLiteral("Gone:out"), true); // no open device
+		output.subscribeWritablePort(portId(6), QStringLiteral("Synth:out"), true);
+		output.subscribeWritablePort(portId(6), QStringLiteral("Other:out"), true);
 
-	/*! The output path publishes its routing instead of rebuilding it for every event (cluster
-	 *  new-p9-276). The WinMM translation unit is empty here, so the contract is read from the
-	 *  product source: no per-event QStringList, the published snapshot, and a republish at every
-	 *  place that edits the subscriptions or the device list. */
-	void outputPathRoutesThroughThePublishedSnapshot()
-	{
-		QFile source(QStringLiteral(ZENE_SOURCE_DIR "/src/core/midi/MidiWinMM.cpp"));
-		QVERIFY2(source.open(QIODevice::ReadOnly | QIODevice::Text), qPrintable(source.fileName()));
-		const QString product = QString::fromUtf8(source.readAll());
+		output.processOutEvent(portId(1), 0x1001u);
+		output.processOutEvent(portId(2), 0x1002u);
+		output.processOutEvent(portId(3), 0x1003u);
+		output.processOutEvent(portId(3), 0x1004u); // a duplicate subscription still sends once per device
+		output.processOutEvent(portId(4), 0x1005u);
+		output.processOutEvent(portId(5), 0x1006u); // name with no open device
+		output.processOutEvent(portId(9), 0x1007u); // no subscription at all
+		output.processOutEvent(portId(6), 0x1008u);
+		QCOMPARE(output.drainForTesting(), std::size_t{10});
 
-		QVERIFY2(!product.contains(QStringLiteral("QStringList outDevs")),
-			"MidiWinMM::processOutEvent() still builds a QStringList of destination devices per event");
-		QVERIFY2(!product.contains(QStringLiteral("outDevs.contains")),
-			"MidiWinMM::processOutEvent() still searches that per-event QStringList once per device");
-		QVERIFY2(product.contains(QStringLiteral("m_outputRouting.forEachDevice")),
-			"MidiWinMM::processOutEvent() does not send through the published routing snapshot");
-		// The definition plus one republish at every edit site: subscribeWritablePort, applyPortMode,
-		// removePort, closeDevices and openDevices.
-		const int republishes = product.count(QStringLiteral("refreshOutputRouting()"));
-		QVERIFY2(republishes >= 6,
-			qPrintable(QStringLiteral("only %1 refreshOutputRouting() mentions: a subscription or device "
-				"edit does not republish the routing").arg(republishes)));
-	}
-
-	//! The published snapshot must route exactly like the per-event name search it replaced.
-	void routingMatchesTheNameSearchItReplaced()
-	{
-#ifdef ZENE_HAVE_WINMM_OUT_ROUTING
-		RoutingScenario scenario;
-		scenario.addDevice(0x11u, QStringLiteral("Synth:out"));
-		scenario.addDevice(0x22u, QStringLiteral("Other:out"));
-		// Two open devices share a name: the name search sent to both, and so must the snapshot.
-		scenario.addDevice(0x33u, QStringLiteral("Drums:out"));
-		scenario.addDevice(0x44u, QStringLiteral("Drums:out"));
-		scenario.subscribe(QStringLiteral("Synth:out"), portId(1));
-		scenario.subscribe(QStringLiteral("Other:out"), portId(2));
-		scenario.subscribe(QStringLiteral("Drums:out"), portId(3));
-		scenario.subscribe(QStringLiteral("Drums:out"), portId(4));
-		// A port listed twice for one name still gets one send per device (the search stopped at the
-		// first match), and a name with no open device routes nowhere.
-		scenario.subscribe(QStringLiteral("Drums:out"), portId(3));
-		scenario.subscribe(QStringLiteral("Gone:out"), portId(5));
-
-		lmms::MidiWinMMOutRouting routing;
-		routing.publish(routesFor(scenario));
-
-		for (unsigned p = 0; p < 6; ++p)
-		{
-			QVERIFY2(snapshotDevices(routing, portId(p)) == nameSearchDevices(scenario, portId(p)),
-				qPrintable(QStringLiteral("port %1 is routed differently from the name search").arg(p)));
-		}
-		// Unsubscribed port: nothing at all.
-		QVERIFY(snapshotDevices(routing, portId(9)).empty());
+		const std::vector<Sent> expected{
+			{0x11u, 0x1001u},
+			{0x22u, 0x1002u},
+			{0x33u, 0x1003u},
+			{0x44u, 0x1003u},
+			{0x33u, 0x1004u},
+			{0x44u, 0x1004u},
+			{0x33u, 0x1005u},
+			{0x44u, 0x1005u},
+			{0x11u, 0x1008u},
+			{0x22u, 0x1008u},
+		};
+		QVERIFY2(received(sink, expected), qPrintable(describe(sink.sent)));
+		QCOMPARE(output.overflowCount(), std::uint64_t{0});
 #else
-		QFAIL("include/MidiWinMMOutRouting.h is missing: the WinMM output path has no precomputed "
-			"routing snapshot, so processOutEvent() still builds a QStringList per event");
+		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path has no bounded delivery");
 #endif
 	}
 
-	//! Reconfiguration: every publish replaces what the output path reads, and no publish means no sends.
-	void routingFollowsReconfiguration()
+	//! Reconfiguration: unsubscribe, remove, port-mode and re-subscribe all take effect at once.
+	void subscriptionChangesTakeEffectImmediately()
 	{
-#ifdef ZENE_HAVE_WINMM_OUT_ROUTING
-		RoutingScenario scenario;
-		scenario.addDevice(0x11u, QStringLiteral("Synth:out"));
-		scenario.subscribe(QStringLiteral("Synth:out"), portId(1));
+#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
+		RecordingSink sink;
+		lmms::MidiWinMMOutput output(sink, false);
+		output.setDevices({
+			{QStringLiteral("A:out"), 0x11u},
+			{QStringLiteral("B:out"), 0x22u},
+		});
+		const lmms::MidiPort* port = portId(1);
 
-		lmms::MidiWinMMOutRouting routing;
-		// Before the first publish the output path sends nothing and reads no table.
-		QVERIFY(routing.snapshot() == nullptr);
-		QVERIFY(snapshotDevices(routing, portId(1)).empty());
+		output.subscribeWritablePort(port, QStringLiteral("A:out"), true);
+		output.processOutEvent(port, 1u);
+		QCOMPARE(output.drainForTesting(), std::size_t{1});
+		QVERIFY(received(sink, {{0x11u, 1u}}));
 
-		routing.publish(routesFor(scenario));
-		QVERIFY2(routing.snapshot() != nullptr, "the first publish published no snapshot");
-		QCOMPARE(snapshotDevices(routing, portId(1)).size(), std::size_t{1});
+		output.subscribeWritablePort(port, QStringLiteral("A:out"), false);
+		sink.sent.clear();
+		output.processOutEvent(port, 2u);
+		QCOMPARE(output.drainForTesting(), std::size_t{0});
+		QVERIFY(received(sink, {}));
 
-		// Unsubscribing republishes: the port reaches no device.
-		scenario.unsubscribe(QStringLiteral("Synth:out"), portId(1));
-		routing.publish(routesFor(scenario));
-		QVERIFY(snapshotDevices(routing, portId(1)).empty());
+		output.subscribeWritablePort(port, QStringLiteral("B:out"), true);
+		output.processOutEvent(port, 3u);
+		QCOMPARE(output.drainForTesting(), std::size_t{1});
+		QVERIFY(received(sink, {{0x22u, 3u}}));
 
-		// Subscribing again plus a second device of the same name: both, in device-map order.
-		scenario.subscribe(QStringLiteral("Synth:out"), portId(1));
-		scenario.addDevice(0x55u, QStringLiteral("Synth:out"));
-		routing.publish(routesFor(scenario));
-		const std::vector<std::uintptr_t> expected{0x11u, 0x55u};
-		QVERIFY(snapshotDevices(routing, portId(1)) == expected);
+		sink.sent.clear();
+		output.subscribeWritablePort(port, QStringLiteral("A:out"), true);
+		output.processOutEvent(port, 4u);
+		QCOMPARE(output.drainForTesting(), std::size_t{2});
+		QVERIFY(received(sink, {{0x11u, 4u}, {0x22u, 4u}}));
 
-		// A closeDevices()/openDevices() refresh drops the devices: the routing empties again.
-		scenario.devices.clear();
-		routing.publish(routesFor(scenario));
-		QVERIFY(snapshotDevices(routing, portId(1)).empty());
+		sink.sent.clear();
+		output.removePort(port);
+		output.processOutEvent(port, 5u);
+		QCOMPARE(output.drainForTesting(), std::size_t{0});
+		QVERIFY(received(sink, {}));
 
-		// Republishing identical routing is a no-op: the audio thread's snapshot pointer is kept.
-		scenario.addDevice(0x11u, QStringLiteral("Synth:out"));
-		routing.publish(routesFor(scenario));
-		const void* published = routing.snapshot();
-		routing.publish(routesFor(scenario));
-		QCOMPARE(static_cast<const void*>(routing.snapshot()), published);
+		output.subscribeWritablePort(port, QStringLiteral("A:out"), true);
+		output.applyPortMode(port, false);
+		output.processOutEvent(port, 6u);
+		QCOMPARE(output.drainForTesting(), std::size_t{0});
+		QVERIFY(received(sink, {}));
+
+		output.applyPortMode(port, true);
+		output.processOutEvent(port, 7u);
+		QCOMPARE(output.drainForTesting(), std::size_t{0});
+		QVERIFY(received(sink, {}));
 #else
-		QFAIL("include/MidiWinMMOutRouting.h is missing: the WinMM output path has no precomputed "
-			"routing snapshot to reconfigure");
+		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path has no bounded delivery");
 #endif
 	}
 
-	/*! The playback path allocates nothing. The pre-fix per-event search is measured first as the
-	 *  control: the probe sees it allocate, so a zero count below means the snapshot really is
-	 *  allocation-free and not that the probe was blind. */
-	void outputPathDoesNotAllocate()
+	//! Exhaustion: a full queue drops the newest commands, counts them and never blocks.
+	void queueFullDropsNewestAndCounts()
 	{
-#ifdef ZENE_HAVE_WINMM_OUT_ROUTING
-		RoutingScenario scenario;
-		scenario.addDevice(0x11u, QStringLiteral("Synth:out"));
-		scenario.addDevice(0x22u, QStringLiteral("Other:out"));
-		scenario.subscribe(QStringLiteral("Synth:out"), portId(1));
-		scenario.subscribe(QStringLiteral("Other:out"), portId(1));
-		scenario.subscribe(QStringLiteral("Other:out"), portId(2));
+#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
+		RecordingSink sink;
+		lmms::MidiWinMMOutput output(sink, false);
+		output.setDevices({{QStringLiteral("A:out"), 0x11u}});
+		const lmms::MidiPort* port = portId(1);
+		output.subscribeWritablePort(port, QStringLiteral("A:out"), true);
 
-		lmms::MidiWinMMOutRouting routing;
-		routing.publish(routesFor(scenario));
-
-		lmms::test::resetAllocationCount();
-		lmms::test::tlCountAllocations = true;
-		for (int i = 0; i < 1000; ++i)
+		const std::size_t capacity = lmms::MidiWinMMOutput::QueueCapacity;
+		for (std::size_t i = 0; i < capacity + 3; ++i)
 		{
-			const std::vector<std::uintptr_t> devices = nameSearchDevices(scenario, portId(1));
-			if (devices.empty()) { QFAIL("the control routed to no device"); }
+			output.processOutEvent(port, static_cast<std::uint32_t>(i));
 		}
-		lmms::test::tlCountAllocations = false;
-		const quint64 controlAllocations = static_cast<quint64>(lmms::test::tlAllocationCount);
-		QVERIFY2(controlAllocations > 0,
-			"the probe did not see the pre-fix per-event search allocate: this criterion measures nothing");
-
-		unsigned sends = 0;
-		std::uintptr_t lastDevice = 0;
-		lmms::test::resetAllocationCount();
-		lmms::test::tlCountAllocations = true;
-		for (int i = 0; i < 1000; ++i)
+		QCOMPARE(output.overflowCount(), std::uint64_t{3});
+		QCOMPARE(output.drainForTesting(), capacity);
+		QCOMPARE(sink.sent.size(), capacity);
+		for (std::size_t i = 0; i < capacity; ++i)
 		{
-			routing.forEachDevice(portId(1), [&sends, &lastDevice](const lmms::MidiWinMMOutRoute& route)
-			{
-				lastDevice = route.device;
-				++sends;
-			});
+			QCOMPARE(sink.sent[i].device, std::uintptr_t{0x11u});
+			QCOMPARE(sink.sent[i].message, static_cast<std::uint32_t>(i));
 		}
-		lmms::test::tlCountAllocations = false;
-		const quint64 allocations = static_cast<quint64>(lmms::test::tlAllocationCount);
-		const quint64 frees = static_cast<quint64>(lmms::test::tlFreeCount);
-		QVERIFY2(allocations == 0 && frees == 0,
-			qPrintable(QStringLiteral("the output path allocated %1 and freed %2 times over 1000 events")
-				.arg(allocations).arg(frees)));
-		// Two devices carry port 1, so a thousand events reach two stops each.
-		QCOMPARE(sends, 2000u);
-		QCOMPARE(lastDevice, std::uintptr_t{0x22u});
+
+		output.processOutEvent(port, 0xABCDu);
+		QCOMPARE(output.overflowCount(), std::uint64_t{3});
+		QCOMPARE(output.drainForTesting(), std::size_t{1});
+		QCOMPARE(sink.sent.back().message, 0xABCDu);
 #else
-		QFAIL("include/MidiWinMMOutRouting.h is missing: the WinMM output path has no precomputed "
-			"routing snapshot, so its playback path allocates per event");
+		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path has no bounded queue");
 #endif
 	}
 
-	//! Bounds: a full device list and many ports still route without a single allocation.
-	void routingStaysAllocationFreeAtScale()
+	/*! The audio-thread contract: submission performs no allocation or free. The probe is first
+	 *  shown to see an ordinary allocation, so a zero count below is not a blind probe. */
+	void submissionIsAllocationFree()
 	{
-#ifdef ZENE_HAVE_WINMM_OUT_ROUTING
-		RoutingScenario scenario;
-		for (unsigned d = 0; d < 32; ++d)
-		{
-			scenario.addDevice(0x100u + d, QStringLiteral("Synth:out"));
-		}
-		for (unsigned p = 0; p < 16; ++p)
-		{
-			scenario.subscribe(QStringLiteral("Synth:out"), portId(p));
-		}
-		scenario.subscribe(QStringLiteral("Synth:out"), portId(0));
+#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
+		RecordingSink sink;
+		lmms::MidiWinMMOutput output(sink, false);
+		output.setDevices({{QStringLiteral("A:out"), 0x11u}});
+		const lmms::MidiPort* port = portId(1);
+		output.subscribeWritablePort(port, QStringLiteral("A:out"), true);
 
-		lmms::MidiWinMMOutRouting routing;
-		routing.publish(routesFor(scenario));
-
-		unsigned sends = 0;
-		for (unsigned p = 0; p < 16; ++p)
-		{
-			QCOMPARE(snapshotDevices(routing, portId(p)).size(), std::size_t{32});
-		}
-		// 16 ports x 32 devices, minus the duplicate the name search collapsed: 512 stops.
 		lmms::test::resetAllocationCount();
 		lmms::test::tlCountAllocations = true;
-		for (unsigned p = 0; p < 16; ++p)
+		std::vector<unsigned char> control;
+		for (unsigned i = 0; i < 64; ++i)
 		{
-			routing.forEachDevice(portId(p), [&sends](const lmms::MidiWinMMOutRoute&) { ++sends; });
+			control.push_back(static_cast<unsigned char>(i));
 		}
 		lmms::test::tlCountAllocations = false;
-		QCOMPARE(sends, 512u);
+		QCOMPARE(control.size(), std::size_t{64});
+		QVERIFY2(static_cast<quint64>(lmms::test::tlAllocationCount) > 0,
+			"the allocation probe saw nothing: the criterion below would measure nothing");
+
+		lmms::test::resetAllocationCount();
+		lmms::test::tlCountAllocations = true;
+		for (std::uint32_t i = 0; i < 1000; ++i)
+		{
+			output.processOutEvent(port, i);
+		}
+		lmms::test::tlCountAllocations = false;
 		QCOMPARE(static_cast<quint64>(lmms::test::tlAllocationCount), quint64{0});
 		QCOMPARE(static_cast<quint64>(lmms::test::tlFreeCount), quint64{0});
+
+		QCOMPARE(output.drainForTesting(), std::size_t{1000});
+		QCOMPARE(sink.sent.size(), std::size_t{1000});
 #else
-		QFAIL("include/MidiWinMMOutRouting.h is missing: the WinMM output path has no precomputed "
-			"routing snapshot to route a full device list");
+		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path has no bounded queue");
+#endif
+	}
+
+	//! The driver call runs on the output worker, not on the thread that submitted the event.
+	void workerSendsOffTheSubmittingThread()
+	{
+#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
+		SignallingSink sink;
+		lmms::MidiWinMMOutput output(sink, true);
+		output.setDevices({{QStringLiteral("A:out"), 0x11u}});
+		const lmms::MidiPort* port = portId(1);
+		output.subscribeWritablePort(port, QStringLiteral("A:out"), true);
+
+		const std::thread::id submitting = std::this_thread::get_id();
+		output.processOutEvent(port, 0x903C64u);
+		sink.arrived.acquire();
+
+		QCOMPARE(sink.sent.size(), std::size_t{1});
+		QCOMPARE(sink.sent[0].device, std::uintptr_t{0x11u});
+		QCOMPARE(sink.sent[0].message, 0x903C64u);
+		QVERIFY2(sink.thread != submitting,
+			"the WinMM sink ran on the submitting (audio) thread");
+#else
+		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path delivers synchronously");
+#endif
+	}
+
+	//! Teardown: queued commands are discarded, new submissions are refused, and reopening works.
+	void clearDevicesDiscardsQueuedCommandsAndStopsSends()
+	{
+#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
+		RecordingSink sink;
+		lmms::MidiWinMMOutput output(sink, false);
+		output.setDevices({{QStringLiteral("A:out"), 0x11u}});
+		const lmms::MidiPort* port = portId(1);
+		output.subscribeWritablePort(port, QStringLiteral("A:out"), true);
+
+		for (std::uint32_t i = 0; i < 3; ++i)
+		{
+			output.processOutEvent(port, i);
+		}
+		output.clearDevices();
+		QCOMPARE(output.drainForTesting(), std::size_t{3});
+		QVERIFY2(sink.sent.empty(), "a command queued before teardown reached a closed device");
+
+		output.processOutEvent(port, 9u);
+		QCOMPARE(output.drainForTesting(), std::size_t{0});
+		QVERIFY(sink.sent.empty());
+
+		output.setDevices({{QStringLiteral("A:out"), 0x11u}});
+		output.subscribeWritablePort(port, QStringLiteral("A:out"), true);
+		output.processOutEvent(port, 10u);
+		QCOMPARE(output.drainForTesting(), std::size_t{1});
+		QVERIFY(received(sink, {{0x11u, 10u}}));
+#else
+		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path delivers synchronously");
+#endif
+	}
+
+	//! Teardown must wait for a sink call already inside the driver before closing handles.
+	void clearDevicesWaitsForInFlightSink()
+	{
+#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
+		GatedSink sink;
+		lmms::MidiWinMMOutput output(sink, true);
+		output.setDevices({{QStringLiteral("A:out"), 0x11u}});
+		const lmms::MidiPort* port = portId(1);
+		output.subscribeWritablePort(port, QStringLiteral("A:out"), true);
+
+		output.processOutEvent(port, 0x1234u);
+		sink.entered.acquire(); // the worker is now inside the gated driver call
+
+		std::atomic<bool> clearReturned{false};
+		std::thread teardown([&output, &clearReturned]
+		{
+			output.clearDevices();
+			clearReturned.store(true, std::memory_order_release);
+		});
+
+		while (!output.teardownWaitedForInFlightForTesting())
+		{
+			std::this_thread::yield();
+		}
+		QVERIFY2(!clearReturned.load(std::memory_order_acquire),
+			"clearDevices() returned while a sink call was still inside the driver");
+
+		sink.release.release();
+		teardown.join();
+		QVERIFY(clearReturned.load(std::memory_order_acquire));
+		QVERIFY(sink.finished.load(std::memory_order_acquire));
+		QCOMPARE(sink.sent.size(), std::size_t{1});
+		QCOMPARE(sink.sent[0].message, 0x1234u);
+#else
+		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path delivers synchronously");
 #endif
 	}
 };

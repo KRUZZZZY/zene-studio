@@ -30,7 +30,7 @@
 #include <utility>
 #include <vector>
 
-#include "MidiWinMMOutRouting.h"
+#include "MidiWinMMOutput.h"
 #include "MidiWinMMShortMessage.h"
 
 
@@ -40,10 +40,11 @@ namespace lmms
 
 MidiWinMM::MidiWinMM() :
 	MidiClient(),
+	m_outputSink(),
+	m_output( m_outputSink, true ),
 	m_inputDevices(),
 	m_outputDevices(),
-	m_inputSubs(),
-	m_outputSubs()
+	m_inputSubs()
 {
 	openDevices();
 }
@@ -63,30 +64,11 @@ void MidiWinMM::processOutEvent( const MidiEvent& event, const TimePos& time, co
 {
 	const DWORD shortMsg = static_cast<DWORD>( winmmShortMessage( event ) );
 
-	// Cluster new-p9-276: nothing is built here any more. The routing was precomputed when the
-	// subscriptions or the device list last changed (refreshOutputRouting), so this is one atomic
-	// load and a scan over a POD table: no container, no allocation, no lock - the audio thread
-	// may run this path.
-	m_outputRouting.forEachDevice( port, [shortMsg]( const MidiWinMMOutRoute& route )
-	{
-		midiOutShortMsg( static_cast<HMIDIOUT>( reinterpret_cast<void*>( route.device ) ), shortMsg );
-	} );
-}
-
-
-
-
-void MidiWinMM::refreshOutputRouting()
-{
-	// The subscriptions and the open-device map are edited on this (the GUI) thread; the audio
-	// thread only reads the snapshot published here.
-	std::vector<std::pair<QString, std::uintptr_t>> devices;
-	devices.reserve( static_cast<std::size_t>( m_outputDevices.size() ) );
-	for( QMap<HMIDIOUT, QString>::ConstIterator it = m_outputDevices.begin(); it != m_outputDevices.end(); ++it )
-	{
-		devices.emplace_back( it.value(), reinterpret_cast<std::uintptr_t>( it.key() ) );
-	}
-	m_outputRouting.publish( MidiWinMMOutRouting::buildRoutes( devices, m_outputSubs ) );
+	// Cluster new-p9-276: one atomic load, a scan of the published POD routing and a bounded
+	// push. The driver call - which Microsoft documents can wait for the device - happens on
+	// MidiWinMMOutput's worker, never here on the audio thread.
+	m_output.processOutEvent( port, static_cast<std::uint32_t>( shortMsg ) );
+	(void) time;
 }
 
 
@@ -106,13 +88,8 @@ void MidiWinMM::applyPortMode( MidiPort* port )
 
 	if( !port->isOutputEnabled() )
 	{
-		for( SubMap::Iterator it = m_outputSubs.begin(); it != m_outputSubs.end(); ++it )
-		{
-			it.value().removeAll( port );
-		}
+		m_output.applyPortMode( port, false );
 	}
-
-	refreshOutputRouting();
 }
 
 
@@ -125,12 +102,7 @@ void MidiWinMM::removePort( MidiPort* port )
 		it.value().removeAll( port );
 	}
 
-	for( SubMap::Iterator it = m_outputSubs.begin(); it != m_outputSubs.end(); ++it )
-	{
-		it.value().removeAll( port );
-	}
-
-	refreshOutputRouting();
+	m_output.removePort( port );
 
 	MidiClient::removePort( port );
 }
@@ -177,13 +149,7 @@ void MidiWinMM::subscribeWritablePort( MidiPort* port, const QString& dest, bool
 		return;
 	}
 
-	m_outputSubs[dest].removeAll( port );
-	if( subscribe )
-	{
-		m_outputSubs[dest].push_back( port );
-	}
-
-	refreshOutputRouting();
+	m_output.subscribeWritablePort( port, dest, subscribe );
 }
 
 
@@ -262,7 +228,6 @@ void MidiWinMM::updateDeviceList()
 void MidiWinMM::closeDevices()
 {
 	m_inputSubs.clear();
-	m_outputSubs.clear();
 
 	QMapIterator<HMIDIIN, QString> i( m_inputDevices );
 
@@ -274,6 +239,10 @@ void MidiWinMM::closeDevices()
 		midiInClose( hInDev );
 	}
 
+	// Refuse new output, discard queued commands and wait out an in-flight driver call before
+	// any handle is closed (cluster new-p9-276).
+	m_output.clearDevices();
+
 	QMapIterator<HMIDIOUT, QString> o( m_outputDevices );
 	while( o.hasNext() )
 	{
@@ -282,8 +251,6 @@ void MidiWinMM::closeDevices()
 
 	m_inputDevices.clear();
 	m_outputDevices.clear();
-
-	refreshOutputRouting();
 }
 
 
@@ -320,7 +287,14 @@ void MidiWinMM::openDevices()
 		}
 	}
 
-	refreshOutputRouting();
+	// QMap order is the order the old name search sent in, so keep it.
+	std::vector<std::pair<QString, std::uintptr_t>> outputs;
+	outputs.reserve( static_cast<std::size_t>( m_outputDevices.size() ) );
+	for( QMap<HMIDIOUT, QString>::ConstIterator it = m_outputDevices.begin(); it != m_outputDevices.end(); ++it )
+	{
+		outputs.emplace_back( it.value(), reinterpret_cast<std::uintptr_t>( it.key() ) );
+	}
+	m_output.setDevices( std::move( outputs ) );
 }
 
 

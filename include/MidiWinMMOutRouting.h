@@ -101,7 +101,7 @@ public:
 	 *  the client's name -> ports map. Allocates: publisher thread only. */
 	static std::vector<MidiWinMMOutRoute> buildRoutes(
 		const std::vector<std::pair<QString, std::uintptr_t>>& devices,
-		const QMap<QString, QList<MidiPort*>>& subscriptions );
+		const QMap<QString, QList<const MidiPort*>>& subscriptions );
 
 	//! Makes @a routes the routing the playback path reads. Allocates only when it changed.
 	void publish( std::vector<MidiWinMMOutRoute> routes );
@@ -149,7 +149,7 @@ private:
 
 inline std::vector<MidiWinMMOutRoute> MidiWinMMOutRouting::buildRoutes(
 	const std::vector<std::pair<QString, std::uintptr_t>>& devices,
-	const QMap<QString, QList<MidiPort*>>& subscriptions )
+	const QMap<QString, QList<const MidiPort*>>& subscriptions )
 {
 	std::vector<MidiWinMMOutRoute> routes;
 	std::size_t firstOfDevice = 0;

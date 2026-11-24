@@ -34,7 +34,7 @@
 #include "MidiClient.h"
 #include "MidiInputGate.h"
 #include "MidiPort.h"
-#include "MidiWinMMOutRouting.h"
+#include "MidiWinMMOutput.h"
 
 
 class QLineEdit;
@@ -123,6 +123,12 @@ public:
 		return false;
 	}
 
+	//! Cluster new-p9-276: realtime output is handed to a bounded queue; the worker drains it.
+	std::uint64_t outputQueueOverflowCount() const noexcept override
+	{
+		return m_output.overflowCount();
+	}
+
 
 private:// slots:
 	void updateDeviceList();
@@ -132,15 +138,27 @@ private:
 	void openDevices();
 	void closeDevices();
 
-	//! Cluster new-p9-276: republishes the output routing after a subscription or device-list
-	//! edit, so the playback path only ever reads a precomputed snapshot (MidiWinMMOutRouting).
-	void refreshOutputRouting();
-
 	static void WINAPI CALLBACK inputCallback( HMIDIIN _hm, UINT _msg,
 						DWORD_PTR _inst,
 						DWORD_PTR _param1,
 							DWORD_PTR _param2 );
 	void handleInputEvent( HMIDIIN _hm, DWORD _ev );
+
+	//! Cluster new-p9-276: the WinMM device side of the bounded output. It is only called by
+	//! the MidiWinMMOutput worker, so a blocking midiOutShortMsg() is off the audio thread.
+	class WinMMSink final : public MidiWinMMSink
+	{
+	public:
+		void send( std::uintptr_t device, std::uint32_t message ) override
+		{
+			midiOutShortMsg( static_cast<HMIDIOUT>( reinterpret_cast<void*>( device ) ),
+				static_cast<DWORD>( message ) );
+		}
+	};
+
+	//! Declared before m_output so it outlives the output worker. Cluster new-p9-276.
+	WinMMSink m_outputSink;
+	MidiWinMMOutput m_output;
 
 	MidiInputGate m_inputGate;
 	QMap<HMIDIIN, QString> m_inputDevices;
@@ -149,10 +167,6 @@ private:
 	// subscriptions
 	using SubMap = QMap<QString, MidiPortList>;
 	SubMap m_inputSubs;
-	SubMap m_outputSubs;
-
-	//! The precomputed output routing the playback path sends through (cluster new-p9-276).
-	MidiWinMMOutRouting m_outputRouting;
 
 
 signals:
