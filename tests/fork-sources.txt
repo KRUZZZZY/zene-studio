@@ -4086,3 +4086,7 @@ tests/nam-eigen-options-coverage-check.py
 tests/src/tracks/SampleClipSourceSwapTest.cpp
 # cluster ci-8fceff87a3151aad-port (2026-11): static guard that the windows-arm64 build fixes stay in place.
 tests/windows-arm64-port-check.py
+# cluster ci-9b3cdba8549c073f-port (2026-11-24): the linux-arm64 Qt 5 build regression for
+# ScriptClockTest's QJsonValue::toInteger is already fixed by the retained jsonInteger adapter and
+# Qt5JsonIntegerCheck; this port report records that verdict.
+docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f-port.md
