@@ -102,6 +102,12 @@ attributes, and a rejected take still resets exactly as before.
   and missing-file warning are unchanged; the full C++ freeze family (6 tests) passes.
 - **Verdict evidence:** REAL, with the reader/writer lines in "Verdict and cause"; this is
   not an intended `AGENTS.md` "Verified facts" behaviour.
+- **Sibling commands:** this fix adds or edits no control command, command id or result
+  schema. The command files reported by the completion check come from the train's
+  existing changes since the gate base, not from this commit; no `ControlCommands*`,
+  `ControlReversibilityTable*` or `ControlRegistry*` path differs between `HEAD~1` and
+  `HEAD`, so no command sibling is affected. The only product path changed by this fix is
+  `src/core/Track.cpp`.
 
 ## Other findings
 
