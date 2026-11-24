@@ -173,6 +173,21 @@ Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p16-295.r1/logs` (the fil
   format, no project data or capacity limit changed, and no model value, clip span or automation-order
   decision moved (the 22 automation tests and the 3 render tests pass unchanged).
 - **ALREADY-FIXED / FALSE-POSITIVE:** not claimed — the finding is real, see the RED counts above.
+- **Realtime, undo and commands.** Nothing added here allocates, frees, locks, waits, logs or emits on the
+  audio thread: the sort buffers, the index and the entry lists are reserved by `reserve()` on the control
+  thread, the sort is an in-place merge through those buffers, and the index is cleared by an epoch bump.
+  `theBoundedReadAllocatesNothingOnTheAudioThread` measures 0 allocations and 0 frees inside a
+  `RealtimeScope` over the sorting path. No undo step and no command is involved: this cluster changes no
+  control command, no `ControlCommands*` file and no reversibility entry — undo stays one step for the
+  features it belongs to.
+- **Sibling commands in the command files you changed:** none. This cluster changed no command file at
+  all (the two new-p16-295 commits touch `include/AutomationRenderScratch.h`, the new test file, its
+  three registrations and this report). The command ids the pre-submit check lists (`app.*`,
+  `arrangement.*`, …) come from the train that the branch is based on, not from this work, so there is
+  nothing to keep consistent with the fix.
+- **Scope of the check's file list.** `base..HEAD` on this branch also contains the train merge and the
+  other lanes' commits; the files this cluster added or changed are exactly the five named in
+  `## Commands and EXIT codes` plus this report (commits `4267702a3b` and `9411fa0ec4`).
 
 ## Other findings
 
