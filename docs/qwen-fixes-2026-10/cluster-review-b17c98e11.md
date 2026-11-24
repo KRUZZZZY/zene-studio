@@ -60,3 +60,21 @@ The r1 log folder no longer exists, so the red/green proof was re-run into the r
 - `git apply $L/fix.patch` EXIT=0; GREEN build `... --target zene ProjectMarkersTest PartialLoadTest ProjectSectionTest` > build-3-green.log EXIT=0; GREEN test `ctest -R '^(ProjectMarkersTest|PartialLoadTest|ProjectSectionTest)$' --output-on-failure` > test-3-green.log EXIT=0 (3/3 passed). A separate run without any revert (build-1.log / test-1.log) was also EXIT=0, 3/3.
 - Gates: `feature_check.py` > gates.log EXIT=0, RESULT: PASS. After the re-apply `git status --short` and `git diff HEAD --stat` were empty.
 Delegation (round 2): Haiku ran the build+ctest and the reverse-patch red/green steps; I read test-2-red.log, test-3-green.log and git status myself.
+
+## QA follow-up (review round 2)
+
+The refusal was not answered before `project.save` rotates the keep-3 revision set:
+`ControlCommandsProjectFiles.cpp` gated only `isPartialLoad()` before `rotateProjectRevision()` (:256, :276)
+and called `Song::saveProjectFile()` afterwards (:285). An over-cap session refuses INSIDE
+`saveProjectFile()`, so the refused save had already shifted rev0 -> rev1 -> rev2 and dropped the oldest
+retained revision - the loss `PartialLoadTest::aRefusedProjectSaveDoesNotRotateTheRevisionSet` exists to
+prevent, and it is the only writer the round-2 claim above ("every other writer ... already surfaces
+saveRefusal()") did not cover: it surfaces the refusal, but only after the rotation.
+
+Fixed in the same design: `project.save` now asks `ProjectSection::firstSaveRefusal()` beside the
+`isPartialLoad()` gate and answers the refusal before the rotation (src/core/ControlCommandsProjectFiles.cpp).
+Regression: `ProjectMarkersTest::aRefusedOverCapSaveDoesNotRotateTheRevisionSet` - an over-cap session and a
+target with a full revision set; `project.save` is refused, names the markers, and the live file and rev0..rev2
+hold the bytes they held before. Without the gate the slot fails at the revision compare
+(`ProjectMarkersTest.cpp:456`, actual `live\n`, expected `rev0\n`); with the whole product change reversed it
+fails at `!saved.ok` (`:447`).

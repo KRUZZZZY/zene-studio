@@ -396,6 +396,70 @@ private slots:
 		QVERIFY(QFile::exists(target));
 	}
 
+	//! The refusal is answered BEFORE project.save rotates the keep-3 revision
+	//! set: a save that writes nothing must not shift rev0 -> rev1 -> rev2 and
+	//! drop the oldest retained revision, which is the same rule
+	//! PartialLoadTest::aRefusedProjectSaveDoesNotRotateTheRevisionSet states
+	//! for the partial-load refusal.
+	void aRefusedOverCapSaveDoesNotRotateTheRevisionSet()
+	{
+		DataFile version(DataFile::Type::SongProject);
+		QString text = QStringLiteral("<?xml version=\"1.0\"?>\n<lmms-project version=\"%1\" type=\"song\" creator=\"Zene Studio\">\n"
+			"<head/><song><trackcontainer type=\"song\"><track type=\"0\" name=\"t\" muted=\"0\"><instrumenttrack/></track></trackcontainer>\n<markers>\n")
+			.arg(version.documentElement().attribute(QStringLiteral("version")));
+		for (int i = 0; i < ProjectMarkers::MaxMarkers + 1; ++i)
+		{
+			text += QStringLiteral("<marker id=\"%1\" tick=\"%2\" name=\"M%1\"/>\n").arg(i + 1).arg(i * 192);
+		}
+		text += QStringLiteral("</markers></song></lmms-project>\n");
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("over-cap.mmp"));
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(text.toUtf8()) == text.toUtf8().size());
+		}
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->setLoadOnLaunch(false);
+		song->loadProject(path);
+		QCOMPARE(ProjectMarkers::instance().markers().size(), ProjectMarkers::MaxMarkers);
+
+		// A target with a FULL revision set, so a rotation is observable: keep-3
+		// means the oldest of the three is shifted out by one.
+		const QString target = dir.filePath(QStringLiteral("existing.mmp"));
+		{
+			QFile file(target);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write("live\n") >= 0);
+		}
+		for (int revision = 0; revision < 3; ++revision)
+		{
+			QFile file(dir.filePath(QStringLiteral("existing.mmp.rev%1").arg(revision)));
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(QStringLiteral("rev%1\n").arg(revision).toUtf8()) >= 0);
+		}
+
+		const ControlResult saved = run(QStringLiteral("project.save"), {{QStringLiteral("path"), target}});
+		QVERIFY2(!saved.ok, "a session that dropped markers on load was saved by project.save");
+		QVERIFY2(saved.errorMessage.contains(QStringLiteral("marker"), Qt::CaseInsensitive),
+			qPrintable(QStringLiteral("the refusal does not name the markers: %1").arg(saved.errorMessage)));
+
+		// The refusal changed NOTHING on disk: the live file and every retained
+		// revision still hold the bytes they held before the refused save.
+		QCOMPARE(fileText(target), QStringLiteral("live\n"));
+		for (int revision = 0; revision < 3; ++revision)
+		{
+			QCOMPARE(fileText(dir.filePath(QStringLiteral("existing.mmp.rev%1").arg(revision))),
+				QStringLiteral("rev%1\n").arg(revision));
+		}
+
+		song->clearProject();
+	}
+
 	//! A marker action is stored so that the CROSSING can run it, so its
 	//! arguments have to satisfy the command it names - refused here, where the
 	//! mistake is, rather than on every crossing of the marker in playback.
