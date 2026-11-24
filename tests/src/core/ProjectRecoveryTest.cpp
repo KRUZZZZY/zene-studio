@@ -148,15 +148,41 @@ private slots:
 		QVERIFY(!d.offered());
 	}
 
-	void aRecoveryAsNewAsTheProjectIsNotOffered()
+	void aRecoveryAsNewAsTheProjectIsOfferedBecauseEqualStampsCannotOrderTheWrites()
 	{
-		// Equal stamps are treated as stale for the same reason: there is nothing
-		// in the recovery the project file does not already have.
+		// Equal stamps are NOT proof that the project is at least as new. A file
+		// system with a coarse timestamp resolution (whole seconds, or two) stamps a
+		// save and the autosave that followed it with the same instant, so reading
+		// equality as "stale" throws the user's newer unsaved work away. Equality
+		// cannot say which write came later, so the recovery is offered.
 		const RecoveryDecision d = decideRecovery(
 			recoveryOf("/tmp/rec.mmp", "/home/u/songs/Track.mmp", at(11, 11), at(11, 11)),
 			"/home/u/songs/Track.mmp");
-		QCOMPARE(QString::fromLatin1(recoveryVerdictName(d.verdict)), QString("Stale"));
-		QVERIFY(!d.offered());
+		QVERIFY2(d.offered(), qPrintable(why(d)));
+		QCOMPARE(QString::fromLatin1(recoveryVerdictName(d.verdict)), QString("Offer"));
+		// The reason says so too, so a log or a bug report can tell "newer" from
+		// "cannot tell which is newer".
+		QVERIFY2(d.detail.contains(QStringLiteral("equal")), qPrintable(why(d)));
+	}
+
+	void readingRealFilesOffersARecoveryWithTheSameTimeAsTheProject()
+	{
+		// The same case through the real file system: both files are written and
+		// stamped with the SAME instant, which is what a save and the autosave after
+		// it look like on a file system whose timestamps are coarser than the two
+		// writes. The recovery must still be offered - the bytes on disk are the
+		// newer unsaved work.
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString recoveryFile = dir.filePath("recover.mmp");
+		const QString project = dir.filePath("Track.mmp");
+
+		QVERIFY(writeWithTime(project, "<lmms/>", at(11, 12)));
+		QVERIFY(writeWithTime(recoveryFile, "<lmms/>", at(11, 12)));
+		QVERIFY(writeRecoveryIdentity(recoveryFile, project, at(11, 12)));
+
+		const RecoveryDecision d = decideRecovery(readRecoveryInfo(recoveryFile), project);
+		QVERIFY2(d.offered(), qPrintable(why(d)));
 	}
 
 	void aRecoveryOfAnotherProjectIsNotOfferedAsRecoveryOfThisOne()
