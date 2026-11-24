@@ -133,6 +133,12 @@ RESULT: PASS
   `ClapHostLifecycle.cpp:74` and the SDK contract at `build/clap/include/clap/ext/audio-ports.h:27`.
 - **Undo and control commands.** Untouched: no command, no undo record, no `ControlCommandsSnapshot`
   change.
+- **Sibling commands in the command files "I changed".** I changed no command file. The check's
+  `control.*`/`app.*`/`arrangement.*` list comes from the diff against the train base `fa4a5f2e7`,
+  which already contains other lanes' merged commits (653 changed files there); this cluster's own
+  diff is one test assertion plus this report:
+  `git diff --name-only 8a9d2b65ba~1 8a9d2b65ba` lists exactly those two paths. No command id,
+  reversibility class or `tools/mcp-zene-control/zene_control/commands_snapshot.json` entry moves.
 
 ## Other findings
 
