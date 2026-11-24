@@ -171,6 +171,37 @@ UI-thread command handlers - and no allocation, lock, wait or log call was added
 for the two groups new-p23-12 closed; the two FALSE-POSITIVE rows cite `ControlCommandsNoteSelect.cpp:97`
 (`cmd.mutating = false`) and `ControlCommandsNoteShape.cpp:470`, which state that selection is view state.
 
+**Sibling commands.** The pre-submit script names `app.*` and `arrangement.*` ids, but those come from
+earlier commits on this branch: its sibling search walks every command file changed between the merge
+base and HEAD, and this lane has 516 changed files, while my commit `b663f21b0c` touches only
+`include/ControlNoteShared.h`, `src/core/ControlNoteShared.cpp`, `src/core/ControlCommandsNoteShared.h`
+and five `src/core/ControlCommandsNote*.cpp` files. It registers, renames or removes no command, so the
+snapshot canary is untouched (935 ids before and after).
+
+The `note.*` group is the sibling set that matters here, and each id was checked against the file that
+registers it (`tools/mcp-zene-control/zene_control/commands_snapshot.json`):
+
+- fixed here: `note.add`, `note.remove`, `note.edit`, `note.slide_set`, `note.slide_clear`,
+  `note.transpose`, `note.velocity_offset`, `note.velocity_scale`;
+- already marking, now through the same finalizer: `note.move`, `note.resize`, `note.velocity_set`,
+  `note.probability_set`;
+- already marking in its own handler: `note.randomize`, `note.random_seed_set`,
+  `note.pitch_curve_set`, `note.expression_set`, `note.expression_clear`, `note.expression_stream_set`;
+- marking through `notes::finish()`: `note.invert`, `note.add_many`, `note.arpeggiate`, `note.cut`,
+  `note.paste`, `note.duplicate`, `note.remove_many`, `note.slice`, `note.scale`, `note.ratchet`,
+  `note.restore_timing`, `note.transform_where`, `note.flam`, `note.transpose_in_key`, `note.repeat`,
+  `note.group`, `note.ungroup`;
+- inherits a fixed handler: `note.across` delegates to the requested `note.*` handler
+  (`src/core/ControlCommandsNoteAcross.cpp:129` `command->handler(call)`), so it marks through it;
+- not a project-state mutation: `note.list`, `note.select`, `note.select_where` (view state),
+  `note.copy` (clipboard only), `note.expression_get`, `note.expression_stream_get`,
+  `note.pitch_curve_get`, `note.random_seed_get`, `note.step_get_state`.
+
+The check behind that: every `dataChanged()` call site in the note command translation units, and every
+`setModified` / `finish()` site, was walked (`build-5-family.log` and `test-3-family.log` are the build
+and run of the 16 tests that cover them; `successfulNoteMutationsMarkProjectDirty` covers the group that
+was already correct).
+
 ## Other findings
 
 - `note.articulations_set` (`src/core/ControlCommandsNotePlayback.cpp:193-236`) swaps the track's
