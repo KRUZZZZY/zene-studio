@@ -138,11 +138,19 @@ feature-check kads-2073 (base fa4a5f2e7, 655 changed files)
 RESULT: PASS
 ```
 
-`logs/gates-3.log`, EXIT=0. The earlier run (`logs/gates-1.log`, EXIT=1) failed
-`fork-sources` and `all-sources-reproduce` only because both recipes derive their entry lists from
-`git diff … 4e677cb6c6ab HEAD`, and the test file was still untracked at that point (the diff it
-printed was `-tests/src/core/JournalBeginGuardTest.cpp`, i.e. "in the manifest, not derivable").
-After the code commit (`e90a0ec9b2`) both gates pass with the same entries, unchanged.
+`logs/gates-3.log`, EXIT=0. Repeated after this report was committed, unchanged:
+`logs/gates-5.log`, EXIT=0 (`656 changed files`, same eight PASS rows). The earlier run
+(`logs/gates-1.log`, EXIT=1) failed `fork-sources` and `all-sources-reproduce` only because both
+recipes derive their entry lists from `git diff … 4e677cb6c6ab HEAD`, and the test file was still
+untracked at that point (the diff it printed was `-tests/src/core/JournalBeginGuardTest.cpp`, i.e.
+"in the manifest, not derivable"). After the code commit (`e90a0ec9b2`) both gates pass with the
+same entries, unchanged.
+
+The report itself is not added to `tests/fork-sources.txt`: that manifest's entries must be
+derivable by its own recipe, which derives *source* files, and the gate is green with the report
+unlisted (`logs/gates-4-fork-sources.log`, `GATE_EXIT=0`: `2782 fork-sources entry(ies)`,
+`0 stale entry(ies)`). An underived entry there is a gate failure, which is what `gates-1.log`
+shows.
 
 ## Commit
 
