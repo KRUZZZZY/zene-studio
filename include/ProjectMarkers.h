@@ -83,6 +83,12 @@ public:
 	void load(const QDomElement& element) override;
 	void clear() override;
 
+	//! How many markers the last load() left out because the file held more than MaxMarkers (0 when none).
+	//! Reset by clear() and by every load().
+	int droppedOnLoad() const { return m_droppedOnLoad; }
+	//! A session that dropped markers on load must not write that loss back over the file that still has them.
+	QString saveRefusal() const override;
+
 signals:
 	void changed();
 
@@ -92,6 +98,7 @@ private:
 
 	QVector<Marker> m_markers;
 	int m_nextId = 1;
+	int m_droppedOnLoad = 0;
 };
 
 } // namespace lmms

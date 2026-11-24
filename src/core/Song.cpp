@@ -2504,6 +2504,9 @@ bool Song::saveProjectFile(const QString & filename, bool withResources, SaveFor
 			.arg(m_notLoadedSections.join(QStringLiteral(", ")));
 		return false;
 	}
+	// A section that dropped part of its file on load (markers past the cap) refuses the same way.
+	m_saveRefusal = ProjectSection::firstSaveRefusal();
+	if (!m_saveRefusal.isEmpty()) { return false; }
 
 	// Include every queued write in an immediate save made during playback.
 	if (!RealtimeScope::isActive()) { applyPendingAutomationWrites(); }

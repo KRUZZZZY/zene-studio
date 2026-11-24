@@ -38,6 +38,7 @@
 #include <QTemporaryDir>
 
 #include "ControlRegistry.h"
+#include "DataFile.h"
 #include "Engine.h"
 #include "ProjectMarkers.h"
 #include "Song.h"
@@ -336,6 +337,63 @@ private slots:
 			"a marker past the cap was dropped with nothing said about it");
 		QVERIFY2(said.first().contains(QString::number(ProjectMarkers::MaxMarkers)),
 			qPrintable(QStringLiteral("the warning does not name the cap: %1").arg(said.first())));
+	}
+
+	//! The warning alone left the loss open: the session came back with 512 of 513
+	//! markers and the next save wrote the smaller list over the only file that had
+	//! the rest. A session that holds less than its file refuses to save (the
+	//! partial-load contract, Song::saveRefusal), says so in the load's errors, and
+	//! leaves the original file as it was.
+	void aProjectOverTheCapLoadedThenSavedDoesNotLoseMarkersInSilence()
+	{
+		DataFile version(DataFile::Type::SongProject);
+		QString text = QStringLiteral("<?xml version=\"1.0\"?>\n<lmms-project version=\"%1\" type=\"song\" creator=\"Zene Studio\">\n"
+			"<head/><song><trackcontainer type=\"song\"><track type=\"0\" name=\"t\" muted=\"0\"><instrumenttrack/></track></trackcontainer>\n<markers>\n")
+			.arg(version.documentElement().attribute(QStringLiteral("version")));
+		for (int i = 0; i < ProjectMarkers::MaxMarkers + 3; ++i)
+		{
+			text += QStringLiteral("<marker id=\"%1\" tick=\"%2\" name=\"M%1\"/>\n").arg(i + 1).arg(i * 192);
+		}
+		text += QStringLiteral("</markers></song></lmms-project>\n");
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("over-cap.mmp"));
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(text.toUtf8()) == text.toUtf8().size());
+		}
+		const QString before = fileText(path);
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->setLoadOnLaunch(false);
+		song->loadProject(path);
+		QCOMPARE(ProjectMarkers::instance().markers().size(), ProjectMarkers::MaxMarkers);
+
+		// The loss is reported where a load reports what it could not carry out.
+		bool reported = false;
+		for (auto it = song->errors().constBegin(); it != song->errors().constEnd(); ++it)
+		{
+			reported = reported || it.key().contains(QStringLiteral("marker"), Qt::CaseInsensitive);
+		}
+		QVERIFY2(reported, "the load's error report says nothing about the markers it dropped");
+
+		// Saving would write the smaller list: it is refused, with a reason, and writes nothing.
+		const QString target = dir.filePath(QStringLiteral("out.mmp"));
+		QVERIFY2(!song->saveProjectFile(target), "a session that dropped markers on load was saved");
+		QVERIFY2(song->saveRefusal().contains(QStringLiteral("marker"), Qt::CaseInsensitive),
+			qPrintable(QStringLiteral("the refusal does not name the markers: %1").arg(song->saveRefusal())));
+		QVERIFY2(!QFile::exists(target), "the refused save left a file behind");
+		QCOMPARE(fileText(path), before);
+
+		// A project that fits saves again: the refusal is about this session's loss, not markers in general.
+		song->clearProject();
+		QVERIFY(ProjectMarkers::instance().add(96, QStringLiteral("Fits"), QString()) > 0);
+		QVERIFY2(song->saveProjectFile(target), qPrintable(song->saveRefusal()));
+		QVERIFY(song->saveRefusal().isEmpty());
+		QVERIFY(QFile::exists(target));
 	}
 
 	//! A marker action is stored so that the CROSSING can run it, so its

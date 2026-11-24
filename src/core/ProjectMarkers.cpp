@@ -31,6 +31,9 @@
 #include <QDomElement>
 #include <QSet>
 
+#include "Engine.h"
+#include "Song.h"
+
 namespace lmms
 {
 
@@ -182,6 +185,14 @@ void ProjectMarkers::save(QDomDocument& doc, QDomElement& parent) const
 	parent.appendChild(list);
 }
 
+QString ProjectMarkers::saveRefusal() const
+{
+	if (m_droppedOnLoad <= 0) { return {}; }
+	return tr("the project file held %1 more markers than the %2 this build can carry, so saving would "
+		"discard them; the original file was left untouched. Remove markers from the file to open it whole.")
+		.arg(m_droppedOnLoad).arg(MaxMarkers);
+}
+
 void ProjectMarkers::load(const QDomElement& element)
 {
 	QVector<Marker> loaded;
@@ -203,24 +214,35 @@ void ProjectMarkers::load(const QDomElement& element)
 			child.attribute(QStringLiteral("name")), child.attribute(QStringLiteral("color")), child.attribute(QStringLiteral("action")),
 			child.attribute(QStringLiteral("args"))});
 	}
-	if (offered < element.elementsByTagName(QStringLiteral("marker")).count())
+	const int total = element.elementsByTagName(QStringLiteral("marker")).count();
+	const int dropped = std::max(0, total - offered);
+	if (dropped > 0)
 	{
 		// The ones that did not fit are gone from the next save, so the loss is
-		// said out loud here instead of showing up as a smaller saved project.
+		// said out loud here - and Song::saveProjectFile refuses to write it back.
 		qWarning("ProjectMarkers: the project holds more than the %d markers this "
 			"project can carry; %d of them were left out of this load and will not "
-			"be saved again.",
-			MaxMarkers, element.elementsByTagName(QStringLiteral("marker")).count() - offered);
+			"be saved again.", MaxMarkers, dropped);
+		// The same report a load makes for a sample or plugin it could not load,
+		// which project.open hands back as its typed `errors`.
+		if (Song* song = Engine::getSong())
+		{
+			song->collectError(QObject::tr("the project holds %1 more markers than the %2 this build can "
+				"carry; they were not loaded, and saving is refused so the original file keeps them")
+				.arg(dropped).arg(MaxMarkers));
+		}
 	}
 	makeIdsUnique(loaded, MaxMarkers);
 	m_nextId = 1;
 	restore(loaded);
+	m_droppedOnLoad = dropped;
 }
 
 void ProjectMarkers::clear()
 {
 	m_markers.clear();
 	m_nextId = 1;
+	m_droppedOnLoad = 0;
 	emit changed();
 }
 

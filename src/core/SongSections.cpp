@@ -61,6 +61,16 @@ void ProjectSection::clearAll()
 	for (ProjectSection* section : sections()) { section->clear(); }
 }
 
+QString ProjectSection::firstSaveRefusal()
+{
+	for (const ProjectSection* section : sections())
+	{
+		const QString refusal = section->saveRefusal();
+		if (!refusal.isEmpty()) { return refusal; }
+	}
+	return {};
+}
+
 
 void Song::saveProjectSections( DataFile & dataFile )
 {

@@ -53,12 +53,17 @@ public:
 	virtual void save(QDomDocument& doc, QDomElement& parent) const = 0;
 	virtual void load(const QDomElement& element) = 0;
 	virtual void clear() = 0;
+	//! Why the session must not be saved as it stands (it holds less than the file it was loaded from), or
+	//! empty. Song::saveProjectFile refuses, with this as saveRefusal(), the way it does for a partial load.
+	virtual QString saveRefusal() const { return {}; }
 
 	//! Add @a section (owned by its caller, alive for the process) to the registry; idempotent.
 	static void registerSection(ProjectSection* section);
 	static const std::vector<ProjectSection*>& sections();
 	//! Song::clearProject's hook: every registered section back to empty.
 	static void clearAll();
+	//! The first non-empty saveRefusal() of the registered sections, or empty.
+	static QString firstSaveRefusal();
 };
 
 } // namespace lmms
