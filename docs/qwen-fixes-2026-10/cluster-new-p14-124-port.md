@@ -137,8 +137,14 @@ them, step 12 passed 7/7; the two runs are `test-5-family.log` and
 - **Realtime / undo / commands.** No product code changed, so nothing new runs
   on the audio thread, no lock or allocation moved, no command was added and no
   undo step changed.
-- **Sibling commands.** No control-command file is changed by this cluster, so
-  there are no sibling commands to reconcile.
+- **Sibling commands.** No control-command file is changed by this cluster.
+  `git show --stat HEAD` reports exactly two files, the test and this report;
+  `git diff --name-only HEAD~1..HEAD` lists only
+  `docs/qwen-fixes-2026-10/cluster-new-p14-124-port.md` and
+  `tests/src/core/InstrumentLayerZonePublishTest.cpp`. The ids the completion
+  check lists (`app.about`, `app.ask`, `app.help`, ... `arrangement.get_state`)
+  come from the train-wide diff between `FIX-BASE` and this branch, not from
+  this cluster's commit, so none of them is affected by the ported test.
 - **Qt portability.** The test uses Qt 5/6-compatible QtTest and `QDomDocument`
   APIs; no new Qt-6-only call, no platform API.
 
