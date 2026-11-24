@@ -118,8 +118,15 @@ Proof artifact: `regression-test tests/VideoClipsNoFfmpegCheck.py` red_exit `1`
 - **ALREADY-FIXED evidence:** `VideoTestClip.h:238-247` (fallback declaration), its
   introduction in ancestor commit `9feb23eb1b`, and the guarded callers at
   `VideoClipsTest.cpp:529-538` and `VideoClipsGuiTest.cpp:336-345`.
-- **Sibling commands:** this job changes no command file. `tests/VideoClipsNoFfmpegCheck.py`
-  is a test harness and does not register or alter a control command.
+- **Sibling commands (branch-wide diff):** `submit_check` lists `app.*` (`about`, `ask`,
+  `help`, `online_help`, `task_cancel`, `tasks`, `tour`, `tours`, `update_check_get`,
+  `update_check_run`, `update_check_set`, `version`, `whats_new`) and `arrangement.*`
+  (`fit_tracks`, `get_state`) because the branch-wide diff against `FIX-BASE` includes those
+  command files from the train. This job's commits change only
+  `tests/VideoClipsNoFfmpegCheck.py` and this report; the product fix is the pre-existing
+  `ZENE_HAVE_FFMPEG` macro branch in the test fixture. None of those commands reads
+  `VideoTestClip.h` or the video test harness, so each keeps its existing behaviour and the
+  `ControlCommandsSnapshot` canary is untouched.
 - **Registration:** `tests/CMakeLists.txt:9800-9804` still registers the check and
   `tests/fork-sources.txt:877` still lists the test file.
 
