@@ -4082,3 +4082,5 @@ tests/nam-eigen-options-coverage-check.py
 # cluster new-p9-402-port (2026-11): replacing a playing clip's source retires its stale play
 # handles, so the next pass renders the new source through its own window (fork-NEW test).
 tests/src/tracks/SampleClipSourceSwapTest.cpp
+# cluster ci-8fceff87a3151aad-port (2026-11): static guard that the windows-arm64 build fixes stay in place.
+tests/windows-arm64-port-check.py
