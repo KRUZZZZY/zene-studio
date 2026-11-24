@@ -1744,6 +1744,8 @@ set(LMMS_TESTS
 	src/tracks/SampleClipTransientRepeatSafetyTest.cpp
 	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
+	# cluster new-p9-402: replacing a playing clip's source retires its stale play handles.
+	src/tracks/SampleClipSourceSwapTest.cpp
 	# cluster new-p12-223: muting a track keeps the sample cursor in step - the resample
 	# path, the pitch-preserving path, and the muted pass's allocation budget. Its own
 	# target because Gate 7 measures SampleClipWindowTest.cpp at 494 of its 500 lines.

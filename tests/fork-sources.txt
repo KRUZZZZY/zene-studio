@@ -4059,3 +4059,6 @@ tests/src/core/StemPythonDiscoveryServiceTest.cpp
 # pass advances the source with the same reads the audible pass makes (fork-NEW test).
 tests/src/tracks/SampleClipMuteCursorTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-223.md
+# cluster new-p9-402-port (2026-11): replacing a playing clip's source retires its stale play
+# handles, so the next pass renders the new source through its own window (fork-NEW test).
+tests/src/tracks/SampleClipSourceSwapTest.cpp
