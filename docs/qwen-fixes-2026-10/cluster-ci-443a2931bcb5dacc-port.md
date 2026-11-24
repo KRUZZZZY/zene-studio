@@ -67,6 +67,32 @@ final judge.
 - Collateral / realtime / undo / commands: nothing changed. This commit adds this report only.
 - Gates: `feature_check.py` EXIT=0, `RESULT: PASS`.
 
+Answers to `submit_check.py` (`logs/submit-1.log`, EXIT=0, `RESULT: PASS - submit`):
+
+- *Regression test fails with the fix reverted and passes with it:* this job made no product
+  change, so there is nothing to revert. The existing test has RED/GREEN proof in
+  `cluster-ci-443a2931bcb5dacc.md`, from that run's `test-10-red-final.log` and
+  `test-11-green-restored.log`. On this branch it passes: `NamHarnessWindowsClockCheck`
+  Passed 1.81 sec, EXIT=0 (`test-1.log`).
+- *Deterministic:* the test inspects `nm -u` symbols of the recompiled TU. It checks that the
+  POSIX clock is non-decreasing across two immediate calls, with no threshold and no sleep.
+  It also links the Win32 clock against a stub `GetThreadTimes` with injected values:
+  1000 + 500 ticks must give 150 us, and a failed call must give 0. There is no wall-clock
+  timing and no race.
+- *Fix at the cause and complete, siblings checked:* the harness TU names no platform clock
+  (`nam_harness.cpp:635,637,753,755`). The other TU that includes it, `NeuralAmpWavInputTest`,
+  gets the same source (`tests/CMakeLists.txt:3446`). The remaining `clock_gettime` user,
+  `nam_profile`, is `IF(NOT WIN32)` (`plugins/NeuralAmp/tests/CMakeLists.txt:98`).
+- *No collateral damage:* this commit changes only this report. No project-load, saved-data
+  or limit code changed.
+- *ALREADY-FIXED evidence:* see "Evidence" above (`nam_harness.cpp:635`,
+  `plugins/NeuralAmp/tests/CMakeLists.txt:30-41`, `HarnessClockWindows.cpp:57-60`, ancestry
+  check EXIT=0).
+- *Sibling commands (app.\*, arrangement.\*) and the listed test files (control-\*.py):*
+  they show up because the check diffs the whole branch against its base (575 changed files,
+  `gates-1.log`). This job did not touch them, and they have nothing to do with the NAM
+  harness link. They are unaffected.
+
 Delegation: Haiku ran the build and the three ctest invocations and reported the exit codes.
 I checked the log tails myself. I did the diagnosis, the code reading, the gates and the
 report myself, because each was smaller than writing a request. Sonnet and DeepSeek were
