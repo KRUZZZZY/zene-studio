@@ -90,10 +90,10 @@ Totals: 6 passed, 1 failed, 0 skipped, 0 blacklisted, 502ms
 ## Gates
 
 ```text
-PATH=.../logs/venv/bin:$PATH python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p16-122 > .../feature-check-2.log 2>&1; echo EXIT=$?
+PATH=.../logs/venv/bin:$PATH python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p16-122 > .../feature-check-3.log 2>&1; echo EXIT=$?
 EXIT=0
 
-feature-check kads-new-p16-122 (base fa4a5f2e7, 653 changed files; logs in .../build/feature-check)
+feature-check kads-new-p16-122 (base fa4a5f2e7, 654 changed files; logs in .../build/feature-check)
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
@@ -128,6 +128,10 @@ complexity and file-length.
 5. **ALREADY-FIXED/FALSE-POSITIVE is not the verdict.** The pre-fix header had no lock-free requirement; the fix and
    the RED proof above are against the real missing guard. No control command, undo step or realtime operation was
    added.
+6. **Sibling commands.** This commit touches only `include/MidiHandoffQueue.h`, `tests/CMakeLists.txt`,
+   `tests/src/plugins/VestigeMidiHandoffTest.cpp` and this report. No `ControlCommands`, `ControlReversibilityTable`
+   or `ControlRegistry` file is changed, so there is no sibling command behaviour to adjust; the app/arrangement
+   commands listed by the completion check come from the branch's pre-existing history, not this commit.
 
 ## Other findings
 
