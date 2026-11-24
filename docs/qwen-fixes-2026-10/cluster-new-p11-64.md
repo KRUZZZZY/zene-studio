@@ -134,6 +134,13 @@ RESULT: PASS
 - **Undo and commands:** no control command was added, and the ControlCommandsSnapshot canary
   passes. The `patcher.set_wiring` row stays `snapshot`, with its inverse-command undo, and only
   its reason text changed. The Reversibility tests pass.
+- **Sibling commands** (the completion check lists app.about ... arrangement.get_state): the only change in
+  `src/core/ControlReversibilityTableRouting.cpp` is the reason text of the `patcher.set_wiring` row,
+  at about line 219. Its class (`RC::Snapshot`), its flag and its undo text are unchanged. No other
+  row and no command handler changed, so the listed `app.*` and `arrangement.*` commands are not
+  affected. The ReversibilityContractTest and ControlReversibilityTranscript tests that read this
+  table pass (`29-test-family.log`).
+- **ALREADY-FIXED / FALSE-POSITIVE item:** not applicable; the verdict is FIXED.
 - **Header changed:** `include/EffectChain.h` (a private non-virtual declaration) and
   `include/PatchWiring.h`. `zene` and every test target built this session were rebuilt
   (logs 20, 25, 28, 32).
