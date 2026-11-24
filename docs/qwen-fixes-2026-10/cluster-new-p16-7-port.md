@@ -69,3 +69,26 @@ Delegation: Haiku ran the RED build and test, the GREEN build and test, and the 
 - **No collateral damage.** The only new refusal is a clip whose position plus length exceeds `MaxSongLength`, the very limit `validateImport` already applied after the decode; the message is the same. A file that fits imports as before (the test imports the same FLAC at a position where it fits and checks the track, position and a single full decode). Saved projects are not read by this path. `analyseAudioFile` with the default argument returns the same values as before; with `PrefixOnly` the reported frame count and duration come from the file's total length, so `loopwarp::analyse` results are unchanged (`LoopImportWarpTest`, `ImportDetectionTest`, `ControlLoopImportWarp`, `ControlDetectCommands` all pass in `test-green-1.log`).
 - **ALREADY-FIXED / FALSE-POSITIVE.** Not applicable: the verdict is FIXED.
 - **Sibling commands in the command file I changed.** `ControlCommandsClipImportFile.cpp` registers two commands: `clip.import_file` (fixed) and `clip.source_get_state` (`:441`, read-only, calls no decode path I changed, unaffected). The `app.*` and `arrangement.*` commands in the checker's list are in other files that I did not change, so they are not affected.
+
+## Round 5: complexity gate re-run with lizard (no source edits this round)
+
+Round 4 was sent back because `feature_check.py`, run with lizard, listed `prepareAudio` (CCN 11) and `analyseAudioFile` (CCN 13) as new. My round-4 gate run had no lizard on this host, so its "complexity PASS" was not evidence. The QA commit `62f5b6c166` ("keep import helpers within the complexity gate") already extracts the helpers. This round changed no product or test file. Evidence is below (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p16-7-port.r5/logs).
+
+| Step | Command | EXIT / result |
+| --- | --- | --- |
+| install lizard | `pip install --target <log>/lizard-site lizard==1.26.1 > pip-1.log 2>&1` | 0, `import lizard` reports 1.26.1 |
+| gates, with lizard (`PYTHONPATH=<log>/lizard-site`) | `python3 .../feature_check.py <worktree> > feature-check-1.log 2>&1` | 0, RESULT: PASS, complexity "no new item in your files" |
+| measured CCN | `python3 -m lizard -l cpp src/core/ControlCommandsClipImportFile.cpp src/core/ImportDetection.cpp src/core/LoopImportWarp.cpp > lizard-1.log 2>&1` | 0; `prepareAudio` CCN 10 (ControlCommandsClipImportFile.cpp:207-252), `analyseAudioFile` CCN 10 (ImportDetection.cpp:127-188), `loopwarp::analyse` CCN 10 |
+| complexity ratchet | `python3 tests/complexity-regression-check.py > complexity-regression-1.log 2>&1` | 0, "PASS (check mode: no regressions)" |
+| green build | `cmake --build build -j4 --target zene ClipImportFileTest ImportDetectionTest LoopImportWarpTest SampleDecoderShortReadTest > build-green-1.log 2>&1` | 0 |
+| green run | `ctest -R '^(ClipImportFileTest\|ImportDetectionTest\|LoopImportWarpTest\|SampleDecoderShortReadTest\|ControlDetectCommands\|ControlLoopImportWarp)$' --output-on-failure > test-green-1.log 2>&1` | 0, 6/6 passed |
+| revert product files | `git apply -R fix.patch` (`git diff 4536579224~1 HEAD` over the 4 product files, the whole fix including the QA commit) | 0 |
+| revert build | `cmake --build build -j4 --target zene ClipImportFileTest > build-revert-1.log 2>&1` | 0 |
+| revert run | `ctest -R '^ClipImportFileTest$' --output-on-failure > test-revert-1.log 2>&1` | 8, both new tests FAIL (ClipImportFileTest.cpp:456 and :481, `full` = 2, expected 0) |
+| reapply | `git apply fix.patch` | 0 (tree clean) |
+| reapply build | `cmake --build build -j4 --target zene ClipImportFileTest > build-reapply-1.log 2>&1` | 0 |
+| reapply run | `ctest -R '^ClipImportFileTest$' --output-on-failure > test-reapply-1.log 2>&1` | 0, passed |
+
+The branch HEAD is a merge (`edc0da565c`); the four product files are identical to their state at `62f5b6c166` (`git diff` over them is empty), so these runs test the QA'd code. The "Not Run" siblings from round 4 (Ogg/limit decoder tests) were again not built or run; `SampleDecoder.cpp` is untouched.
+
+Delegation (round 5): Haiku ran the green, revert and reapply builds and tests; I checked the exit codes and FAIL lines in the logs. I installed lizard and ran the gate, lizard and ratchet myself.
