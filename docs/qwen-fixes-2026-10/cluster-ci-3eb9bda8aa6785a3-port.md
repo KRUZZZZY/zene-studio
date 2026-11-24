@@ -97,13 +97,37 @@ no `Q_OS_UNIX`, no ALSA) found one more. The audit's detector reproduced the
 
 ## Self-check
 
-- Verdict evidence: the CI log lines and `file:line` references above. The red/green
-  build exits come from logs written this session.
-- The regression fails without the fix (RED_EXIT=2) and passes with it (GREEN_EXIT=0).
-  It is deterministic: a compile, with no timing.
-- Registration:
+- **Fails with the fix reverted, passes with it.**
+  - `git apply -R fix.patch` followed by building `PluginPortsMigrationNoPosixHookCompileCheck` gives RED_EXIT=2 (`build-8-4b-red.log`).
+  - `git apply fix.patch` followed by the same build gives GREEN_EXIT=0 (`build-9-4b-green.log`).
+- **Deterministic.** The regression is a compile of the real TU. The seam is the
+  preprocessor macro `PLUGIN_PORTS_TEST_NO_POSIX_ALLOCATOR_HOOK`. There is no runtime,
+  no timing, no sleep and no thread.
+- **At the cause and complete.**
+  - The helper now carries exactly the condition of its only caller
+    (`PART_C_MIGRATED_gigplayer` and the hook macro).
+  - Its only dependency, `HeapWatch`, stays used by the `Q_OS_UNIX` block at `:295-382`.
+  - The sibling occurrences of this defect class are covered:
+    - `MidiOutTimingTest` and `RemotePluginAudioPortsTest` are already fixed (see the table).
+    - All other compiled test TUs were audited under the MinGW macro set.
+    - The `AudioDeviceDiagnosticsTest` helpers are fine with JACK on (see Other findings).
+- **No collateral damage.**
+  - Only test sources and CMake changed. No product code, saved data or project loading is touched.
+  - On Linux and macOS the hook macro equals `Q_OS_UNIX`, so `gigplayerAudioPathDoesNotAllocate` still runs and PASSes (`test-3.log`).
+  - The new target is an OBJECT library with no link step and no CTest entry.
+- **ALREADY-FIXED parts.**
+  - PPA key: `.github/workflows/setup-mingw-packages.sh:24-29`.
+  - MidiOutTiming: `tests/src/core/MidiOutTimingTest.cpp:55,69,259`.
+  - countCriticals: `tests/src/core/RemotePluginAudioPortsTest.cpp:75-84`.
+  - Their checks pass: `test-1.log`, 4/4; `RemotePluginAudioPortsShmCompileCheck` red 2 / green 0.
+- **Sibling commands.** No control-command file was changed. This diff touches only
+  `tests/CMakeLists.txt`, `tests/src/plugins/PluginPortsMigrationTest.cpp`, the two
+  registration lists and this report. The listed `app.*` / `arrangement.*` commands are
+  not affected, and the ControlCommandsSnapshot does not move.
+- **Registration.**
   - `tests/upstream-modifications.txt` has entries for `tests/CMakeLists.txt` and `PluginPortsMigrationTest.cpp`.
   - This report is listed in `tests/fork-sources.txt`.
+  - `feature_check.py` EXIT=0 (`gates-3.log`).
 - No gate, limit or assertion was changed.
 
 Delegation: Haiku found the mingw64 job logs and their first errors, then built and ran the
