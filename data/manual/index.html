@@ -600,6 +600,16 @@ editor for a unit that has none. Each Audio Unit is listed under Project tools &
 the reason the system gave (for example <em>AudioUnitInitialize failed (status -10875, kAudioUnitErr_FailedInitialization)</em>).
 Windows and Linux builds have no Audio Unit format. Audio Unit v3 extensions are not hosted.</p>
 
+<p><strong>Carla Rack and Carla Patchbay instruments.</strong> The device picker lists two built-in instruments that host other
+plug-ins inside Carla's own window - <em>Carla Rack</em> and <em>Carla Patchbay</em> - and that is where a VST3, a VST2, an LV2 or a
+native plug-in opens when you load it in Carla. They need a <a href="https://kx.studio/Applications:Carla">Carla</a> runtime on the
+machine: a build made without one links a stand-in that hosts nothing. In such a build choosing Carla Rack (Replace Instrument...
+in the device card's Actions menu, the instrument browser, or <code>plugin.load</code>) is refused with the reason and the track keeps
+its instrument as a placeholder, which writes back exactly what the project held, so nothing of the old device is lost; a project that
+names Carla Rack opens the same way. Nothing crashes either way. A VST3 is not what Carla Rack is for in this build: Zene hosts VST3
+plug-ins itself, so load the <code>.vst3</code> from the device picker's VST3 format (or <code>plugin.list</code> format
+<code>vst3</code>, then <code>plugin.load</code> the <code>dev-&lt;n&gt;</code> it names) and it runs in Zene with no Carla involved.</p>
+
 <p><strong>VST2 instruments through Carla.</strong> When a <a href="https://kx.studio/Applications:Carla">Carla</a> runtime is
 installed, Zene hosts VST2 instruments through it: native Linux plug-ins (<code>.so</code>) in Carla itself, and 64-bit Windows plug-ins
 (<code>.dll</code>) through Carla's Wine bridge (32-bit ones too where Carla's 32-bit bridge is installed). Zene looks for them in the folders named by
