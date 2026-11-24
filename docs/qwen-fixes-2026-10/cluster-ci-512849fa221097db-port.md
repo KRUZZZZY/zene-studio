@@ -56,6 +56,20 @@ failures) and fix it.
 - Product files changed: none. The only file added is this report.
 - Realtime, undo and control commands: untouched.
 - Git: report-only commit, so the tree is clean afterwards.
+- RED/GREEN exit codes: not applicable. No product change was made, so none could be
+  reverted. The tests submit_check lists (`tests/control-audio-test-tone.py`,
+  `tests/control-no-audio-device.py`, `tests/control-session-lifecycle-transcript.py`) came
+  from earlier train commits already on this branch, not from this session.
+- Determinism: not applicable. I added no test.
+- Fix at the cause, callers and siblings: not applicable. I made no fix. The sibling commands
+  submit_check lists (app.about … arrangement.get_state) come from files the inherited train
+  commits changed. This session did not touch them.
+- Collateral damage: none. Only this markdown report was added.
+- ALREADY-FIXED / FALSE-POSITIVE code reference: not applicable. The verdict is
+  NEEDS-CONTEXT.
+- Completion check: `python3 .../submit_check.py <worktree> ci-512849fa221097db-port`
+  -> `RESULT: PASS - submit`, EXIT=0 (log: `logs/submit-1.log`). Its gates row,
+  `PASS gates (feature_check.py)`, covers the feature_check run.
 
 Delegation: none. The session ended before any work could be delegated: there was nothing to
 build, test or edit without the CI log. Every step was a short read of local state that
