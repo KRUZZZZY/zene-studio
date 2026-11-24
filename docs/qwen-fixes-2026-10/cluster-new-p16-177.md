@@ -192,6 +192,11 @@ GATES_EXIT=0
   keeps the stage), `:138` + `:217-244` (a pending stage is found and reused), `:479` (consumed
   only on success), contract at `include/ProjectRevisions.h:85-89`, landed in commit
   `6bf8d21c33`. Section 3's red run shows the same test fails when that deletion is put back.
+* **Sibling commands in the command files the check lists** (`app.*`, `arrangement.*`): this lane
+  changes no command file and no command. The check lists them because it diffs the branch
+  against its train base (`fa4a5f2e7`, 654 files) rather than against this task's commit; the
+  only paths this task touched are `tests/src/core/ProjectRevisionRestoreStagingTest.cpp` and
+  this report, so no command, argument schema, reversibility class or canary entry moves.
 
 ## Other findings (not fixed here, not part of this finding)
 
