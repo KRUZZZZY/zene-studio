@@ -9736,6 +9736,25 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(Qt5QListApiCheck PROPERTIES TIMEOUT 300)
 endif()
 
+# Qt 5 QStringList count+value portability (cluster ci-b71ed146fd535ea5, 2026-11-16).
+# The hosted linux-x86_64 job builds with Qt 5.15, where QStringList's only two-argument
+# constructor is the inherited iterator pair, so
+# `QStringList(channels, QStringLiteral("volume"))` in MixerSendsOnFadersTest.cpp would
+# stop the build with "deduced conflicting types for parameter 'InputIterator'"
+# ('int' and 'QString'). Qt 6 aliases QStringList to QList<QString>, whose size+value
+# constructor exists, so every Qt 6 host compiles the same line. The check scans
+# first-party sources (red on the Qt 6 hosts too) and, where pkg-config finds a Qt 5
+# tree, recompiles the watched translation unit from this build's compile_commands.json
+# against those headers - the hosted job's own input.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5QStringListSizeCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QStringListSizeCheck.py
+			--root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR})
+	set_tests_properties(Qt5QStringListSizeCheck PROPERTIES TIMEOUT 300)
+endif()
+
 
 
 # Linux namespace tests must retry interrupted writes and reject failed/short handshakes.

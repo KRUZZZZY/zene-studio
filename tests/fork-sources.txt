@@ -4073,6 +4073,16 @@ tests/src/core/AutomationRenderLockTest.cpp
 tests/Qt5QStringListSizeConstructorCheck.py
 # cluster ci-8764ffa3b495466c-port: repair report and verification evidence.
 docs/qwen-fixes-2026-10/cluster-ci-8764ffa3b495466c-port.md
+# Cluster ci-b71ed146fd535ea5-port: port of the accepted Qt 5 QStringList count+value
+# check. Hosted linux-x86_64 builds against Qt 5.15, where QStringList has no size+value
+# constructor (its only two-argument form is the iterator pair); Qt 6's QStringList is
+# QList<QString>, which has it. The check scans first-party sources and, where a Qt 5 tree
+# is present, recompiles MixerSendsOnFadersTest.cpp against it (-fsyntax-only). Named after
+# its ctest (tests/CMakeLists.txt -> Qt5QStringListSizeCheck).
+tests/Qt5QStringListSizeCheck.py
+# Cluster ci-b71ed146fd535ea5-port: the port report for the hosted linux-x86_64
+# QStringList count+value build regression check.
+docs/qwen-fixes-2026-10/cluster-ci-b71ed146fd535ea5-port.md
 
 # Cluster ci-3eb9bda8aa6785a3-port: mingw64 unused gig allocation helper; report records the guard and the no-POSIX-hook compile check.
 docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3-port.md
