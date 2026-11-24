@@ -218,6 +218,14 @@ shows.
     Qt 5.15-safe; no `QString::midRef`, no `std::filesystem`, no POSIX header, no bare-`'/'` path
     assumption (paths come from `QDir`).
 
+11. **The pre-submit check's sibling list (`app.*`, `arrangement.*`, …) is not this patch's
+    neighbours.** `submit_check.py` computes "changed" as its `FIX-BASE` merge-base
+    (`fa4a5f2e7`)..`HEAD`, which is 656 files of train merges; this patch is seven files
+    (`git diff --name-only 9913d36d53..HEAD`: the two product files, the new test, the three
+    registration lists and this report). The commands that *are* siblings of the change are the
+    `record.*` ones listed in item 6. Pre-submit check run:
+    `logs/submit-1.log`, `EXIT=0`, `RESULT: PASS - submit`.
+
 ## State sequence (for the proof manifest)
 
 `src/core/ControlCommandsRecording.cpp` matches `src/core/*Record*`, so the manifest carries a
