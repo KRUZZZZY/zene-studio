@@ -109,12 +109,25 @@ bool namesAnotherProject(const RecoveryInfo& recovery, const QString& projectBei
 	return !wanted.isEmpty() && wanted != comparablePath(recovery.sourceProject);
 }
 
-//! True when the project file already holds at least as much as the recovery.
-bool recoveryIsStale(const RecoveryInfo& recovery)
+//! True when both files carry a comparable modification time and the recovery
+//! is STRICTLY older: the project on disk already holds more, so recovering
+//! would go backwards.
+bool recoveryIsOlderThanTheProject(const RecoveryInfo& recovery)
 {
 	return recovery.sourceProjectExists && recovery.fileModified.isValid()
 			&& recovery.sourceProjectModified.isValid()
-			&& recovery.fileModified <= recovery.sourceProjectModified;
+			&& recovery.fileModified < recovery.sourceProjectModified;
+}
+
+//! True when the two comparable modification times are EQUAL. Equality cannot
+//! order the two writes: a file system whose timestamps are coarser than the
+//! writes (whole seconds, or two) stamps a save and the autosave that followed
+//! it with the same instant, so equality is uncertainty, not proof of staleness.
+bool stampsCannotOrderTheWrites(const RecoveryInfo& recovery)
+{
+	return recovery.sourceProjectExists && recovery.fileModified.isValid()
+			&& recovery.sourceProjectModified.isValid()
+			&& recovery.fileModified == recovery.sourceProjectModified;
 }
 
 } // namespace
@@ -278,24 +291,36 @@ RecoveryDecision decideRecovery(const RecoveryInfo& recovery, const QString& pro
 			return decision;
 		}
 
-		// 2. A recovery file no newer than the project file it came from is
-		//    stale: the project on disk already holds at least as much, so
-		//    recovering would go backwards. (Equal mtimes are treated as stale
-		//    for the same reason.)
-		if (recoveryIsStale(recovery))
+		// 2. A recovery file OLDER than the project file it came from is stale:
+		//    the project on disk already holds more, so recovering would go
+		//    backwards.
+		if (recoveryIsOlderThanTheProject(recovery))
 		{
 			decision.verdict = RecoveryVerdict::Stale;
-			decision.detail = QStringLiteral("recovery of '%1' is not newer than the saved project "
-										"(%2 <= %3)")
-								.arg(decision.projectLabel,
-									recovery.fileModified.toString(Qt::ISODate),
-									recovery.sourceProjectModified.toString(Qt::ISODate));
+			decision.detail = QStringLiteral("recovery of '%1' is older than the saved project "
+										"(%2 < %3)")
+										.arg(decision.projectLabel,
+											recovery.fileModified.toString(Qt::ISODate),
+											recovery.sourceProjectModified.toString(Qt::ISODate));
 			return decision;
 		}
 
+		// 3. EQUAL stamps do not establish which write came later, so equality is
+		//    uncertainty, not staleness: a save and the autosave that followed it
+		//    land in the same timestamp interval whenever the clock the file system
+		//    stamps with is coarser than the two writes. Discarding on equality
+		//    would throw that newer unsaved work away, so the recovery is offered.
+		//    The offer is non-destructive: it opens the recovery file, never the
+		//    project file, and the user can still discard it.
 		decision.verdict = RecoveryVerdict::Offer;
-		decision.detail = QStringLiteral("recovering '%1', autosaved %2")
-							.arg(decision.projectLabel,
+		decision.detail = stampsCannotOrderTheWrites(recovery)
+				? QStringLiteral("recovering '%1', autosaved %2: equal to the saved project's "
+								"time (%3), which cannot order the two writes")
+						.arg(decision.projectLabel,
+								recovery.fileModified.toString(Qt::ISODate),
+								recovery.sourceProjectModified.toString(Qt::ISODate))
+				: QStringLiteral("recovering '%1', autosaved %2")
+						.arg(decision.projectLabel,
 								recovery.fileModified.toString(Qt::ISODate));
 		return decision;
 	}

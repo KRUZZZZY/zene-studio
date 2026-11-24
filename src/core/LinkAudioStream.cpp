@@ -263,6 +263,11 @@ void LinkAudioStream::receivePeriod(SampleFrame* frames, std::size_t period, sam
 	if (m_primed && fill < period)
 	{
 		m_underruns.fetch_add(1, std::memory_order_relaxed);
+		// The frames still in the ring belong to the audio before this gap: played after the
+		// silence they would add a discontinuity and a delay the report does not show. They
+		// go with the underrun, so the re-prime starts on fresh audio; the latency report
+		// below then shows the emptied ring.
+		m_rx.skip(fill);
 		m_primed = false;
 	}
 	if (m_primed) { addFromRing(frames, period); }

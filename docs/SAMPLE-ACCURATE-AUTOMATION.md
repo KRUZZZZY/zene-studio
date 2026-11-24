@@ -29,7 +29,9 @@ smaller periods to timely handle per-buffer updates like **non-sample-accurate a
   frame make a step (the later one wins). No allocation, no lock and no growth by construction, and a
   knot that does not fit is **refused and counted** (`refusals()`).
 * **`AutomationClip::writeBlockRamp()`** — builds the ramp for one block, under the clip's own lock
-  (once per block rather than once per knot). The knots are the curve's value at the block's first
+  (once per block rather than once per knot). The audio thread takes that lock with `tryLock` through
+  `AutomationClip::RenderLock` and never waits for it: a clip a control thread is editing is left out
+  of that block (no ramp, so the per-tick value stands), and the per-tick read skips it the same way. The knots are the curve's value at the block's first
   sample, at every tick boundary inside the block, and at the block's end.
 * **`AutomatableModel::publishAutomationRamp()` / `valueBuffer()`** — the ramp is stamped with the
   period it was built for and copied into the model; `valueBuffer()` then fills the per-sample buffer

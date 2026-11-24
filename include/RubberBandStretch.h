@@ -93,7 +93,10 @@ public:
 	 *  \a src (frames [0, srcFrames)) at \a speed source frames per output
 	 *  frame - the same quantity AudioStretcher::process takes. Reads outside
 	 *  the span are silence. Returns the frames written (always \a dstFrames
-	 *  unless the stretcher stalls, which the caller zero-fills). */
+	 *  unless the stretcher stalls, which the caller zero-fills). \a speed is
+	 *  clamped into the band this voice's source rate can render (see render()
+	 *  in the .cpp), and sourcePosition() advances at the clamped rate, so the
+	 *  cursor never disagrees with the audio. */
 	f_cnt_t render(const SampleFrame* src, f_cnt_t srcFrames, SampleFrame* dst,
 		f_cnt_t dstFrames, double speed) noexcept;
 
@@ -116,6 +119,9 @@ private:
 
 	std::unique_ptr<RubberBand::RubberBandStretcher> m_stretcher;
 	std::atomic<int> m_state{Ready};
+	//! The rate this voice's stretcher was built at: render() takes the rate
+	//! band it can render from it.
+	int m_sourceRate = 1;
 	std::array<float, MaxBlock> m_inLeft{};
 	std::array<float, MaxBlock> m_inRight{};
 	std::array<float, MaxBlock> m_outLeft{};
