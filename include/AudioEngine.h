@@ -719,6 +719,10 @@ private:
 	void serviceSampleVoicePoolOnControlThread() noexcept;
 	void disposePlayHandle(PlayHandle* handle, bool realtime) noexcept;
 	struct AutomatableModelRegistry;
+	//! Cluster 4599: the JACK backend re-reads the device's figures through
+	//! refreshRecordingLatency() when its server renegotiates the period under a running engine. The
+	//! backend posts that refresh to the control thread; no JACK callback touches the engine itself.
+	friend class AudioJack;
 #ifdef LMMS_TESTING
 	friend class ::AudioBusPlayHandleQueueTest;
 	// The track-version regression reads the change mutex directly: it is the

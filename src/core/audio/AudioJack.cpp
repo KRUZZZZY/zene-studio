@@ -205,7 +205,9 @@ bool AudioJack::initJackClient()
 	// set buffer-size callback
 	jack_set_buffer_size_callback(m_client,
 		[](jack_nframes_t nframes, void* udata) -> int {
-			static_cast<AudioJack*>(udata)->resizeInputBuffer(nframes);
+			auto* self = static_cast<AudioJack*>(udata);
+			self->resizeInputBuffer(nframes);
+			self->queueRecordingLatencyRefresh();
 			return 0;
 		},
 		this);
@@ -266,6 +268,20 @@ void AudioJack::resizeInputBuffer(jack_nframes_t nframes)
 {
 	prepareCapture(static_cast<f_cnt_t>(nframes));
 	m_captureWide.assign(static_cast<std::size_t>(nframes) * static_cast<std::size_t>(m_inputChannels), 0.f);
+}
+
+
+void AudioJack::queueRecordingLatencyRefresh()
+{
+	// Cluster 4599 (round 2): the server renegotiated the period under a running engine, so the capture
+	// block the round trip adds (captureBlockFrames()) just changed. JACK calls this from its buffer-size
+	// callback, where the engine must not be touched, so the re-read is posted to this object's thread -
+	// the control thread - and is dropped with the device if that thread never gets to it. Nothing is
+	// added to the process callback, which never calls this.
+	if (audioEngine() == nullptr) { return; }
+	QMetaObject::invokeMethod(this, [this] {
+		if (AudioEngine* engine = audioEngine()) { engine->refreshRecordingLatency(); }
+	}, Qt::QueuedConnection);
 }
 
 void AudioJack::attemptToConnect(size_t index, const char *lmms_port_type, const char *source_port, const char *destination_port)
@@ -731,6 +747,17 @@ f_cnt_t AudioJack::outputLatencyFrames() const
 	jack_latency_range_t range{};
 	jack_port_get_latency_range(m_outputPorts[0], JackPlaybackLatency, &range);
 	return static_cast<f_cnt_t>(range.max);
+}
+
+
+f_cnt_t AudioJack::captureBlockFrames() const
+{
+	// Cluster 4599: JACK's process callback is handed one SERVER period per call (processCallback's
+	// nframes), so that - not the engine's configured buffer - is the block a pushed capture block
+	// carries. Reading it live reports the size the server runs at NOW, after a restart or a
+	// buffer-size change alike. Realtime-safe, like the latency ranges above; no client, no capture.
+	if (m_client == nullptr) { return 0; }
+	return static_cast<f_cnt_t>(jack_get_buffer_size(m_client));
 }
 
 
