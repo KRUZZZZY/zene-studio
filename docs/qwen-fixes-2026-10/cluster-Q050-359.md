@@ -14,7 +14,8 @@ to `CarlaInstrument`, which calls `fDescriptor->instantiate(&fHost)` (`plugins/C
 (`plugins/CarlaRack/CarlaRack.cpp:52-71`, `plugins/CarlaPatchbay/CarlaPatchbay.cpp:52-69`), exactly as
 `plugins/CarlaVst2::lmms_plugin_main` already did (`CarlaVst2.cpp:81`).
 
-Commits: `c0ab4e002d` (product + test + registration), `0e6dc10682` (manual + feature record), then this report.
+Commits: `c0ab4e002d` (product + test + registration), `0e6dc10682` (manual + feature record), `f0150ea0cb` (the two
+inherited modules declared in `tests/upstream-modifications.txt`), then this report.
 
 ## Acceptance
 
@@ -33,6 +34,7 @@ Commits: `c0ab4e002d` (product + test + registration), `0e6dc10682` (manual + fe
 - `data/manual/index.html` - a Carla Rack / Carla Patchbay paragraph: what it is for, that a build without a runtime refuses it
   and keeps the project's XML, and that a VST3 goes to Zene's own VST3 host.
 - `docs/050-features/Q050-359.md` - the feature record.
+- `tests/upstream-modifications.txt` - the two host modules are inherited files, declared with their reason (Gate 6).
 
 No command was added or changed; no project format changed.
 
@@ -101,7 +103,11 @@ nothing was regenerated; instead the committed snapshot was checked against a li
 
 **Gates.** `python3 .../feature_check.py <worktree>` → **RESULT: PASS**, exit 0 - fork-sources, all-sources-reproduce
 (`REPRODUCES`, exit 0), no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity and file-length (no new
-item in my files). `submit_check.py` was run before this report and after it (see the last run below).
+item in my files). Gate 6 first failed on the two inherited host modules (`plugins/CarlaRack/CarlaRack.cpp` VIOLATION,
+`plugins/CarlaPatchbay/CarlaPatchbay.cpp` VIOLATION); both are now declared with a reason in
+`tests/upstream-modifications.txt` and `bash tests/no-upstream-regression-gate.sh` → **exit 0**
+(`logs/gate-6-upstream.log`). `submit_check.py` was run before this report (four items, all "not committed yet") and again
+after the commits and this self-check (see the last run recorded in the log folder).
 
 **Proof manifest.** `/home/kruzzzzy/.config/kads/zene/state/runs/Q050-359.r1/logs/proof.json`: unit `Q050-359`, this worktree,
 commit `c0ab4e002d712213ce105f40bdcce9ca7b3ecfa2`, a one-sentence claim, and a `regression-test` artifact for
