@@ -30,3 +30,14 @@ FIXED
 Not verified: TSan (does not run locally); the handlers run on the control/GUI thread, not the audio thread.
 
 Delegation: Haiku ran the RED build/test, the green + revert/reapply + family builds and tests, and reported exit codes; I checked the logs and diff.
+
+## Self-check
+- **Red/green:** with `ControlCommandsVcaEditSet.cpp` reverted the test fails (ctest EXIT=8, `test-3.log`, FAIL at ControlVcaEditGroupsTest.cpp:327); with the fix it passes (EXIT=0, `test-2.log`). The RED run before any fix was EXIT=8 too (`test-1.log`).
+- **Deterministic:** no timers, sleeps or threads. The clean state is made by the public `Song::noteProjectSaved(QString())`; commands run synchronously through `revtest::run`; undo/redo are direct `ProjectJournal::undo()/redo()` calls.
+- **Complete at the cause:** the three handlers in this file are the only edit-set writers (`setPhaseLocked`, `addEditTrack`, `removeEditTrack`); each now calls `setModified()` once after the write (`ControlCommandsVcaEditSet.cpp:93,151,213`), same pattern as `ControlCommandsVcaNest.cpp:108`. The refusal paths return earlier and stay clean (asserted). Undo/redo closures call the group setters directly, but `ProjectJournal::undo/redo` set modified themselves (`ProjectJournal.cpp:173,225`), asserted in the test. Other vca handlers (create, remove, rename, assign, unassign, edit_move, set_gain/mute/solo) were not changed - see Other findings.
+- **No collateral damage:** only an extra `Song::setModified()` (no-op while a project is loading, `Song.cpp:1019`) after a successful write; save/load format, group state, command registration and the ControlCommands snapshot are untouched (no command added). Family tests ControlVca*, VcaGroup*, VcaRefresh* pass (7/7, `test-4.log`).
+- **ALREADY-FIXED/FALSE-POSITIVE:** not applicable; verdict is FIXED.
+- **Sibling commands:** the list in the check (app.*, arrangement.*) is the registry, not this file's commands; this file registers only vca.set_phase_lock, vca.track_add, vca.track_remove, all fixed. Other vca.* commands are not affected by this change.
+
+## Other findings
+- Not verified, not fixed here: the other `vca.*` handlers (`ControlCommandsVcaEntity.cpp`, `...Mix.cpp`, `...Edit.cpp`) contain no `setModified()` call (fff search of `src/core/ControlCommandsVca*` finds it only in EditSet and Nest). Whether they dirty the song another way (model dataChanged, journal checkpoint) was not checked; vca.create/remove/rename/assign/edit_move are worth auditing.
