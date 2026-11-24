@@ -88,6 +88,8 @@ All logs are in
 | 8 | `git apply -R fix.patch` (restore) | `0` |
 | 9 | `cd build/tests && ctest -R "WindowsArm64AlignedNewCheck" --output-on-failure > test-06-ctest-green-restored.log 2>&1` | `0` |
 | 10 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > gates-01.log 2>&1` | `0` |
+| 11 | `git apply $LOG/fix.patch` (exit `0`), then `python3 tests/windows-arm64-aligned-new-check.py --source-root . > test-07-red-patch-command.log 2>&1` | `1` |
+| 12 | `git apply -R $LOG/fix.patch` (exit `0`), then the same probe `> test-08-green-patch-command.log 2>&1` | `0` |
 
 RED diagnostic from `test-02-red.log` / `test-05-ctest-red.log`:
 
