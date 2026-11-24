@@ -108,6 +108,9 @@ all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology,
 doc-figures, complexity (no new item in these files) and file-length (no new
 item in these files).
 
+`submit_check.py` exit `0`, `RESULT: PASS - submit` (`submit-01.log`); each ASK
+is answered below.
+
 ## Self-check
 
 - **Regression test fails with the product change reverted, passes with it.**
@@ -133,7 +136,14 @@ item in these files).
   (`evidence-01-ancestry.log`); the product diff is in
   `evidence-02-product-fix-diff.log`.
 - **Sibling commands.** No command files were changed, so no sibling command
-  family is affected.
+  family is affected. The `app.*`/`arrangement.*` commands in the completion
+  check's sibling list come from the branch's wider base..HEAD diff inherited
+  from the train, not from this job: this job's files are
+  `tests/CMakeLists.txt`, `tests/fork-sources.txt`,
+  `tests/src/plugins/SfzDistoBuffersTest.cpp`,
+  `tests/upstream-modifications.txt`, the new
+  `tests/windows-arm64-aligned-new-check.py` and this report. No handler,
+  schema, command id or reversibility class changed.
 
 ## Other findings
 
