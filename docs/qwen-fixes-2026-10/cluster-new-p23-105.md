@@ -196,6 +196,16 @@ could be added here without first building that target.
   tracked fixture and 1536 bytes for the worst legal format, and the built object shows the compiler
   passing the constant `$0x100` for `samples`. The finding's "very large ... stack overflow" premise
   and its "allocate on the heap" remedy are both refuted by that same evidence.
+- **Sibling commands in the command files you changed.** Not affected, because I changed no command
+  file. `submit_check.py` computes its changed set as `git diff <merge-base HEAD FIX-BASE>..HEAD`,
+  which on this branch spans 507 files inherited from the train (`base=fa4a5f2e785c`), including
+  `src/core/ControlCommands*.cpp`. My own commit is exactly one file -
+  `git show --stat 34255b99e4` reports `docs/qwen-fixes-2026-10/cluster-new-p23-105.md | 217 +++++`,
+  1 file changed. So `app.about`, `app.ask`, `arrangement.fit_tracks` and the rest of that list are
+  train-owned code I did not touch, and no command id, command handler, reversibility class or
+  `commands_snapshot.json` entry changed in this job. The same applies to the checker's "tests added
+  or changed" line: the files it names (`tests/control-audio-test-tone.py` and friends) come from
+  that inherited range, not from me - my commit adds no test, for the reason given above.
 
 ## Other findings
 
