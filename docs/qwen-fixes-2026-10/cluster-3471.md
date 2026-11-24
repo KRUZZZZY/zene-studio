@@ -35,3 +35,11 @@ Only the `ArrangeToolsTest` family was run, not the full suite. No TSan (not ava
 - `Note::endPos()` (`include/Note.h:344`) wraps for positions near `INT_MAX`; other callers of it were not audited.
 
 Delegation: Haiku ran the red build and test, then the green, revert-proof and re-apply runs, and reported exit codes and failing slots. I read the logs' summary lines via its report and wrote the code, the test and this report myself.
+
+## Self-check
+- Red/green with the fix reverted: with `fix.patch` reverse-applied the slot failed (`ctest` EXIT=8, `test-red-2.log`); with it applied it passed (EXIT=0, `test-green-2.log`).
+- Deterministic: the test uses fixed tick values (`INT_MAX - 1`, `INT_MAX - 10`, `INT_MAX`) with an in-memory clip and a `QTemporaryDir`. No clocks, sleeps, threads or randomness.
+- Complete: the only callers of `musicXmlOf` are `src/core/ControlCommandsScoreExport.cpp` (now handles the refusal) and two existing tests in `ArrangeToolsTestParts1.h` (unchanged, still pass). Every int tick computation in the file is now bounded: `snapped`, the note end, the bar length, and the `end + barTicks - 1` / `bars * barTicks` maths in `writeMeasures`, because `lastScoreTick` caps the end at `INT_MAX - 2 * barTicks`.
+- No collateral damage: this is an export that writes a file. It never reads or changes saved data or the project. Every score whose snapped ends are within the limit is byte-identical to before. The limit only affects values that overflowed `int`.
+- Not ALREADY-FIXED / FALSE-POSITIVE: the verdict is FIXED (see the red test output above).
+- Sibling commands: `src/core/ControlCommandsScoreExport.cpp` registers only `clip.export_musicxml` (its definition is at the end of the file). The `app.*` and `arrangement.*` commands listed by the check are in other files and are not touched or affected. I added no command, so the ControlCommandsSnapshot canary does not move.
