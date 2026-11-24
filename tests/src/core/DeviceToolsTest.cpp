@@ -268,6 +268,10 @@ private slots:
 	//! new-p12-194: crossovers above the output Nyquist frequency still sum flat at a 32 kHz output rate.
 	void crossoversAboveNyquistStillSumFlatAtLowOutputRate();
 
+	//! cluster 5258: three, four and six bands sum flat in level across every crossover region, which
+	//! is what exactly one all-pass section per higher crossover gives.
+	void bandsSumFlatThroughEveryCrossover();
+
 	//! A 64-character alias keeps a supplementary Unicode character intact at the length limit.
 	void aliasTruncationPreservesUnicodeCodePoints();
 

@@ -46,6 +46,9 @@
 # to a saved workflow run it through workflow.run, read back, survive a config reload and follow the library in
 # use, and the Launcher > Controller > Bind a Workflow entries drive the same path over the real application.
 # No other entry changed.
+# 2026-11-23 (Q050-367): tests/src/gui/EffectEditorTeardownTest.cpp is fork-NEW - the regression for a device's own
+# editor being closed and detached before the device is removed (the rack's Remove this plugin entry and
+# plugin.unload) or its chain is cleared. Emitted in the sorted source list below; no other entry changed.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -3250,6 +3253,7 @@ tests/src/gui/PluginControlDialogsTest.cpp
 tests/src/gui/MixerWindowsTest.cpp
 tests/src/gui/SurroundPannerTest.cpp
 tests/src/gui/EffectDeviceMenuTest.cpp
+tests/src/gui/EffectEditorTeardownTest.cpp
 tests/src/gui/EffectPickerOrganiserTest.cpp
 tests/src/gui/PluginNativeEditorTest.cpp
 tests/src/gui/ReferenceProjectPanelTest.cpp
@@ -4065,3 +4069,19 @@ tests/src/core/StemPythonDiscoveryServiceTest.cpp
 # pass advances the source with the same reads the audible pass makes (fork-NEW test).
 tests/src/tracks/SampleClipMuteCursorTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-223.md
+# cluster new-p12-248 (2026-11): the audio thread never waits on an automation clip's lock (fork-NEW regression).
+tests/src/core/AutomationRenderLockTest.cpp
+
+# cluster ci-8764ffa3b495466c-port (2026-11-24): the sends-on-faders regression used Qt 6's
+# inherited QStringList(size, value) constructor, which Qt 5.15 lacks. The check derives the
+# faders/volume comparison from the test source and compiles it against Qt 5, with the Qt 6-only
+# spelling as its failing control, and against Qt 6 when installed (ctest Qt5QStringListSizeConstructorCheck).
+tests/Qt5QStringListSizeConstructorCheck.py
+# cluster ci-8764ffa3b495466c-port: repair report and verification evidence.
+docs/qwen-fixes-2026-10/cluster-ci-8764ffa3b495466c-port.md
+
+# Cluster ci-3eb9bda8aa6785a3-port: mingw64 unused gig allocation helper; report records the guard and the no-POSIX-hook compile check.
+docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3-port.md
+# cluster ci-c487f7d0c9f0a1ac (2026-11): every target compiling the NAM engine must carry the Eigen
+# -Wno-error=deprecated-enum-enum-conversion suppression (linux-arm64 -DUSE_WERROR; fork-NEW test).
+tests/nam-eigen-options-coverage-check.py

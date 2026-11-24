@@ -227,6 +227,39 @@ def mode_wav_write_error(root, build, moc):
         run(args, cwd=entry["directory"])
 
 
+def mode_midi_out_timing_no_alsa(root, build, moc):
+    # A non-ALSA translation unit: the hosted mingw64 build has LMMS_HAVE_ALSA
+    # undefined, so every ALSA-only case and helper disappears and the compiler's
+    # -Wunused-function can see a helper left outside the guard. The generated
+    # lmmsconfig.h defines ALSA and has no include guard, so a shadow header placed
+    # first on the include path includes it and then undefines ALSA on every use.
+    source = root / "tests/src/core/MidiOutTimingTest.cpp"
+    config = build / "lmmsconfig.h"
+    require_file(source)
+    require_file(config)
+    entries = compile_database(build)
+    entry, command = entry_for(entries, root, "tests/src/core/MidiOutTimingTest.cpp")
+    with tempfile.TemporaryDirectory(prefix="train41-midi-out-timing-no-alsa-") as temporary:
+        shadow = Path(temporary) / "lmmsconfig.h"
+        shadow.write_text(f'#include "{config.as_posix()}"\n#undef LMMS_HAVE_ALSA\n',
+                          encoding="utf-8")
+        preinclude = Path(temporary) / "headers_then_no_alsa.h"
+        lines = []
+        for header in source_headers(source):
+            lines.append(f'#include "{header}"' if isinstance(header, Path) else f"#include {header}")
+        lines.append("#undef LMMS_HAVE_ALSA")
+        preinclude.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        # moc preprocesses the same way, so the generated meta-object matches the TU.
+        run([moc, "-ULMMS_HAVE_ALSA", str(source), "-o",
+             str(Path(temporary) / "MidiOutTimingTest.moc")], cwd=root)
+        args = syntax_command(entry, command,
+                              ["-include", str(preinclude), "-Werror=unused-function"])
+        args.insert(1, "-I" + temporary)
+        args.remove("-fsyntax-only")
+        args.extend(["-c", "-o", str(Path(temporary) / "midi-out-timing-no-alsa.o")])
+        run(args, cwd=entry["directory"])
+
+
 MODES = {
     "linux": mode_linux,
     "eq": mode_eq,
@@ -235,6 +268,7 @@ MODES = {
     "nam": mode_nam,
     "render": mode_render,
     "wav-write-error": mode_wav_write_error,
+    "midi-out-timing-no-alsa": mode_midi_out_timing_no_alsa,
 }
 
 
@@ -254,7 +288,7 @@ def main():
         print(f"[{name}]", flush=True)
         if name == "linux":
             check(root, args.qt_major)
-        elif name in {"render", "wav-write-error"}:
+        elif name in {"render", "wav-write-error", "midi-out-timing-no-alsa"}:
             check(root, build, args.moc)
         elif name in {"eq", "darwin-tu", "nam"}:
             check(root, build)

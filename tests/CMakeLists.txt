@@ -121,6 +121,9 @@ set(LMMS_TESTS
 	# on the ramp Song::buildAutomationRamps publishes, deterministically across
 	# a start/stop/return and through a whole-project save/reload.
 	src/core/AutomationPreFirstValueTest.cpp
+	# cluster new-p12-248: the per-block ramp publish, the per-tick read and a whole render period
+	# take an automation clip's lock without waiting, so a control-thread edit never stalls playback.
+	src/core/AutomationRenderLockTest.cpp
 	# Sample-accurate automation (feature-list row 9, board task #646): renders
 	# real blocks through Song::processNextBuffer() and measures the per-sample
 	# buffer the audio path reads against the clip's own curve, frame by frame -
@@ -1389,6 +1392,8 @@ set(LMMS_TESTS
 	src/gui/TrackViewDeferredLifetimeTest.cpp
 	# m0 blocker (trackview-uaf follow-up): a rack's queued removal of a view that is already gone does nothing.
 	src/gui/RackDeferredLifetimeTest.cpp
+	# Q050-367: a device's own editor is closed and detached before the device is removed or its chain cleared.
+	src/gui/EffectEditorTeardownTest.cpp
 	# BUGS_FOUND 10: removing a linked control frees its detached layout item.
 	src/gui/LinkedModelGroupViewLifetimeTest.cpp
 	# 0.5.0 theme 6: sends on faders - the banner names the return, every fader labelled, "No send" faders dimmed in place.
@@ -3415,6 +3420,9 @@ else()
 	target_compile_options(RemotePluginShmFifoNoSysIpcAppleMacroProbe PRIVATE -U__unix__)
 endif()
 add_dependencies(RemotePluginShmFifoTest RemotePluginShmFifoNoSysIpcAppleMacroProbe)
+add_test(NAME RemotePluginShmFifoAppleMacroProbeCompile
+	COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+		--target RemotePluginShmFifoNoSysIpcAppleMacroProbe --config $<CONFIG>)
 
 # Tell the test whether each target compiles RemotePluginBase.cpp through the
 # static branch of lmms_export.h (cluster ci-v041-5).
@@ -3935,6 +3943,9 @@ set_tests_properties(SampleAccurateAutomationTest PROPERTIES
 # Qt platform for the same reason.
 set_tests_properties(AutomationPreFirstValueTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# AutomationRenderLockTest (cluster new-p12-248) builds a full Engine and drives render periods itself.
+set_tests_properties(AutomationRenderLockTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # UndoBoundsTest constructs a full Engine, drives the control surface and starts
 # a QThread-paced window test, so it needs the same headless Qt platform.
@@ -4166,6 +4177,7 @@ set_tests_properties(AutomationClipDisconnectTest PROPERTIES ENVIRONMENT "QT_QPA
 set_tests_properties(VcaStripLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackViewDeferredLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackDeferredLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(EffectEditorTeardownTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LinkedModelGroupViewLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorFlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSendsOnFadersTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -6557,6 +6569,18 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(NamPortabilityRegistrationCheck PROPERTIES TIMEOUT 120)
 endif()
 
+# Vendored Eigen emits -Wdeprecated-enum-enum-conversion on aarch64 and -DUSE_WERROR makes it an
+# error (linux-arm64 CI, NamModelLoaderTest). Fail when any target that compiles NamModel.cpp
+# lacks -Wno-error=deprecated-enum-enum-conversion, in the CMake sources and in this build.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME NamEigenOptionsCoverageCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/nam-eigen-options-coverage-check.py
+			--source-root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR})
+	set_tests_properties(NamEigenOptionsCoverageCheck PROPERTIES TIMEOUT 120)
+endif()
+
 # Train 51: reproduce the four hosted test-source compiler failures on Linux.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
 	add_test(NAME Train51Portability COMMAND ${PYTHON3_EXECUTABLE}
@@ -6600,6 +6624,19 @@ if(PYTHON3_EXECUTABLE)
 			--build-dir ${CMAKE_BINARY_DIR}
 			--cxx ${CMAKE_CXX_COMPILER})
 	set_tests_properties(Qt5QStringListAssignmentCheck PROPERTIES TIMEOUT 600)
+endif()
+
+# Cluster ci-8764ffa3b495466c: the sends-on-faders regression used Qt 6's inherited
+# QStringList(size, value) constructor, which Qt 5.15 does not have. The check derives the
+# faders/volume comparison from the test source and compiles it against Qt 5 (and Qt 6 when
+# that tree is installed), with the Qt 6-only spelling as its failing control.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5QStringListSizeConstructorCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QStringListSizeConstructorCheck.py
+			--root ${CMAKE_SOURCE_DIR}
+			--cxx ${CMAKE_CXX_COMPILER})
+	set_tests_properties(Qt5QStringListSizeConstructorCheck PROPERTIES TIMEOUT 120)
 endif()
 
 if(PYTHON3_EXECUTABLE)
@@ -7127,13 +7164,20 @@ endif()
 # `Base::template do_pop_any(...)` failed FilePool.cpp and Synth.cpp). GCC accepts
 # it, so the check scans every tracked C/C++ source and, on a compiler that
 # enforces the rule, also compiles the real atomic_queue header with both affected
-# queue templates instantiated. Its fixtures prove the scanner can fail.
+# queue templates instantiated. clang++ is passed as an additional compiler when
+# found, so the real-header Clang compile runs on GCC hosts too. Its fixtures
+# prove the scanner can fail.
 if(PYTHON3_EXECUTABLE)
+	find_program(ZENE_TEMPLATE_KW_CLANGXX NAMES clang++)
+	set(ZENE_TEMPLATE_KW_COMPILER_ARGS --compiler ${CMAKE_CXX_COMPILER})
+	if(ZENE_TEMPLATE_KW_CLANGXX AND NOT ZENE_TEMPLATE_KW_CLANGXX STREQUAL CMAKE_CXX_COMPILER)
+		list(APPEND ZENE_TEMPLATE_KW_COMPILER_ARGS --compiler ${ZENE_TEMPLATE_KW_CLANGXX})
+	endif()
 	add_test(NAME ClangTemplateKeywordCheck
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/clang-template-keyword-check.py
 			--root ${CMAKE_SOURCE_DIR}
-			--compiler ${CMAKE_CXX_COMPILER})
+			${ZENE_TEMPLATE_KW_COMPILER_ARGS})
 	set_tests_properties(ClangTemplateKeywordCheck PROPERTIES TIMEOUT 120)
 endif()
 
@@ -9539,6 +9583,21 @@ target_compile_definitions(PluginPortsMigrationTest PRIVATE
 )
 add_dependencies(PluginPortsMigrationTest ladspa_channel_count_fixture)
 
+# PluginPortsMigrationTest's gig allocation probe needs the POSIX allocator hook,
+# so mingw64 (no Q_OS_UNIX) compiles its caller out; an unguarded helper is then
+# -Werror=unused-function and stops the hosted build (cluster ci-3eb9bda8aa6785a3-port).
+# Compile the real translation unit without the hook on every host. Built with the
+# tests: no link, no test registration.
+add_library(PluginPortsMigrationNoPosixHookCompileCheck OBJECT src/plugins/PluginPortsMigrationTest.cpp)
+target_include_directories(PluginPortsMigrationNoPosixHookCompileCheck PRIVATE
+	$<TARGET_PROPERTY:PluginPortsMigrationTest,INCLUDE_DIRECTORIES>)
+target_link_libraries(PluginPortsMigrationNoPosixHookCompileCheck PRIVATE
+	${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+target_compile_features(PluginPortsMigrationNoPosixHookCompileCheck PRIVATE cxx_std_20)
+target_compile_definitions(PluginPortsMigrationNoPosixHookCompileCheck PRIVATE
+	$<TARGET_PROPERTY:PluginPortsMigrationTest,COMPILE_DEFINITIONS>
+	PLUGIN_PORTS_TEST_NO_POSIX_ALLOCATOR_HOOK)
+
 # The NAM engine's local CTest registrations live with its headless harness.
 # Mirror those cases here so ctest launched from build/tests discovers them.
 get_property(NAM_LOADER_TEST_CASES GLOBAL PROPERTY ZENE_NAM_LOADER_TEST_CASES)
@@ -9773,7 +9832,7 @@ endif()
 
 # Reproduce strict hosted compiler contracts against this build's actual sources.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
-	foreach(mode linux nam darwin-signature darwin-tu render wav-write-error)
+	foreach(mode linux nam darwin-signature darwin-tu render wav-write-error midi-out-timing-no-alsa)
 		add_test(NAME Train41-${mode} COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/train-41-portability-check.py
 			--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR}

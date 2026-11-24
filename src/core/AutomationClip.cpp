@@ -142,13 +142,13 @@ AutomationClip::AutomationClip( const AutomationClip & _clip_to_copy ) :
 	Clip(_clip_to_copy),
 	m_autoTrack( _clip_to_copy.m_autoTrack ),
 	m_objects( _clip_to_copy.m_objects ),
-	m_hasLiveTarget( !_clip_to_copy.m_objects.empty() ),
+	m_liveTarget( _clip_to_copy.liveTarget() ),
 	m_tension( _clip_to_copy.m_tension ),
 	m_progressionType(_clip_to_copy.m_progressionType.load(std::memory_order_relaxed)),
 	m_relative(_clip_to_copy.isRelative()),
 	m_rampSetting(_clip_to_copy.m_rampSetting.load(std::memory_order_relaxed)),
 	m_dragging(false),
-	m_isRecording(_clip_to_copy.m_isRecording),
+	m_isRecording(_clip_to_copy.isRecording()),
 	m_lastRecordedValue(0)
 {
 	// Locks the mutex of the copied AutomationClip to make sure it
