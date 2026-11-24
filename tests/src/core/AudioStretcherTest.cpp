@@ -519,6 +519,47 @@ private slots:
 					.arg(i).arg(out[static_cast<std::size_t>(i)][0])));
 		}
 	}
+
+	/*! Luna cluster 5520: when the carry region is silent every candidate
+	 *  correlates to exactly zero, and the strict `>` search used to keep the
+	 *  first candidate, `-searchRadius`. The grain after a silent overlap then
+	 *  started 128 source frames early. With no carry there is nothing to align
+	 *  to, so the grain must start at the cursor (offset zero).
+	 *
+	 *  Speed 2 puts the cursor of grain 2 at source frame 1024. Grain 1 reads
+	 *  source 0..1023 only, so a source that is silent up to 1100 leaves a
+	 *  silent carry. Grain 2 at the cursor gives output frame 512 + i =
+	 *  w[i] * source[1024 + i], which turns on at i = 76; biased by -128 it
+	 *  would turn on at i = 204. */
+	void aGrainAfterASilentOverlapStartsAtTheCursor()
+	{
+		const int signalStart = 1100;
+		const std::size_t sourceFrames = 4096;
+		std::vector<SampleFrame> source(sourceFrames, SampleFrame(0.0f, 0.0f));
+		for (std::size_t i = static_cast<std::size_t>(signalStart); i < sourceFrames; ++i)
+		{
+			source[i] = SampleFrame(1.0f, 1.0f);
+		}
+
+		std::vector<SampleFrame> out(1024);
+		AudioStretcher stretcher;
+		stretcher.prepare({1024, 128});
+		QCOMPARE(stretcher.process(source.data(), static_cast<f_cnt_t>(sourceFrames),
+			out.data(), static_cast<f_cnt_t>(out.size()), 2.0), static_cast<f_cnt_t>(out.size()));
+
+		const int hop = 512;
+		const int grain = 1024;
+		const int cursor = 1024;
+		for (int i = 0; i < hop; ++i)
+		{
+			const double window = 0.5 - 0.5 * std::cos(kTwoPi * i / grain);
+			const double expected = (cursor + i >= signalStart) ? window : 0.0;
+			const float actual = out[static_cast<std::size_t>(hop + i)][0];
+			QVERIFY2(std::abs(actual - expected) < 1e-4,
+				qPrintable(QStringLiteral("output frame %1 is %2, expected %3 (grain not at the cursor)")
+					.arg(hop + i).arg(actual).arg(expected)));
+		}
+	}
 };
 
 QTEST_GUILESS_MAIN(AudioStretcherTest)

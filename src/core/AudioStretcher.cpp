@@ -67,6 +67,19 @@ SampleFrame readAt(const SampleFrame* src, f_cnt_t srcFrames, double position)
 		first[1] + (second[1] - first[1]) * fraction);
 }
 
+/*! True when the first \a frames of \a carry hold any signal worth aligning to.
+ *  The floor matches the `1e-12` guard the candidate energy uses below. */
+bool carryHasEnergy(const SampleFrame* carry, int frames)
+{
+	double energy = 0.0;
+	for (int i = 0; i < frames; ++i)
+	{
+		energy += static_cast<double>(carry[i][0]) * carry[i][0]
+			+ static_cast<double>(carry[i][1]) * carry[i][1];
+	}
+	return energy > 1e-12;
+}
+
 } // namespace
 
 AudioStretcher::AudioStretcher()
@@ -140,7 +153,10 @@ void AudioStretcher::produceHop(const SampleFrame* src, f_cnt_t srcFrames, doubl
 	 *  and the grain starts exactly at the cursor.
 	 */
 	int bestOffset = 0;
-	if (m_started && m_params.searchRadius > 0)
+	// A silent carry has nothing to align to: every candidate would correlate
+	// to exactly zero, and the strict `>` below would keep the first one,
+	// `-searchRadius`. The grain starts at the cursor instead.
+	if (m_started && m_params.searchRadius > 0 && carryHasEnergy(m_accum.data(), carry))
 	{
 		double bestScore = -std::numeric_limits<double>::infinity();
 		for (int offset = -m_params.searchRadius; offset <= m_params.searchRadius; ++offset)
