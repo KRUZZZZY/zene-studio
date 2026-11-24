@@ -85,6 +85,10 @@ No product or test file is changed by this job. The only file committed is this 
   compile the NAM engine carry the suppression.
 - **No collateral damage:** this job changes no product code, save format, command,
   or audio-thread path.
+- **Sibling commands (`app.*`, `arrangement.*` listed by the pre-submit check):**
+  this job does not affect them. They come from the branch-wide base..HEAD diff of
+  the train. This job's commits touch only this report, and no command file,
+  schema or handler changed.
 - **Not verified here:** an actual aarch64 build, because this host is x86_64. The
   GCC probe reproduces the same diagnostic class on x86_64, so the guard is
   exercised locally.
