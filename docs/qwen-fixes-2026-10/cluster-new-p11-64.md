@@ -1,12 +1,16 @@
-BLOCKED
+FIXED
 
 # cluster new-p11-64: authored patcher wiring is not saved with the chain
 
-The finding is **REAL**. I wrote the fix and the regression test, and the test was seen RED before the
-fix. I could not run the GREEN build, the red/green proof (step 4b) or the gates: the host filesystem
-that holds the worktree, the build tree, `$TMPDIR` and the log folder is out of space (btrfs on
-`/dev/nvme0n1p2`, fully allocated). **The product change committed here has not been compiled.** A
-later session must build it, run steps 4, 4b and 5, write the proof manifest and change this verdict.
+The finding is **REAL** and is now **FIXED**. `EffectChain::saveSettings` writes an authored wiring as a
+`<patchwiring>` child of `<fxchain>`, and `loadSettings` restores it (or the derived wiring when the
+element is absent) before the graph rebuild that applies it.
+
+History: an earlier session wrote the fix and the test and saw the test RED, but the host disk was
+full and it could not build (commit 7c85ff576f, verdict BLOCKED). This session the disk had 145G
+free (`df -h .`), and the build, the GREEN run, the step-4b red/green proof and the gates all ran.
+I re-reviewed the committed diff before building it; the only change this session is the
+`tests/all-sources.txt` registration line and this report.
 
 ## Evidence that the bug is real (read this session)
 
@@ -26,7 +30,7 @@ later session must build it, run steps 4, 4b and 5, write the proof manifest and
   - It is not on the brief's by-design list. An fff search of AGENTS.md for `wiring` and `patcher`
     found 0 matches.
 
-## The fix (committed, NOT compiled)
+## The fix
 
 - **`include/PatchWiring.h`, `src/core/PatchWiring.cpp`:**
   - `PatchWiring::saveXml()` writes
@@ -52,6 +56,8 @@ later session must build it, run steps 4, 4b and 5, write the proof manifest and
   - `tests/upstream-modifications.txt` has reasons for `include/EffectChain.h` and
     `src/core/EffectChain.cpp`.
   - `tests/CMakeLists.txt` registers `PatcherWiringPersistenceTest`.
+  - `tests/all-sources.txt` lists the new test file (added this session; the `fork-sources` and
+    `all-sources-reproduce` gates failed without it, log `30-feature-check.log`).
 
 ## Regression test
 
@@ -64,70 +70,86 @@ later session must build it, run steps 4, 4b and 5, write the proof manifest and
 
 ### Commands and EXIT codes
 
-All logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p11-64.r1/logs`.
+All logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p11-64.r1/logs`. The test runs were
+made from `build/tests`.
+
+Earlier session (logs 00-19): the RED run before the fix was `ctest -R PatcherWiringPersistenceTest`
+(`02-test-red.log`), EXIT 8. Every GREEN build attempt failed with ENOSPC/SIGBUS (logs 03-17).
+
+This session:
 
 | Step | Command (log) | EXIT | Result |
 |---|---|---|---|
-| RED regen | `cmake --build build --target rebuild_cache` (`00-configure.log`) | 0 | |
-| RED build | `cmake --build build --target PatcherWiringPersistenceTest -j4` (`01-build-red.log`) | 0 | |
-| RED test | `ctest -R PatcherWiringPersistenceTest --output-on-failure` from build/tests (`02-test-red.log`) | 8 | Case 1 FAIL at line 177: `'loaded.patchActive()' returned FALSE`. Case 2 FAIL at line 198: `'!chain.patchActive()' returned FALSE`. Cases 3 and 4 pass. |
-| GREEN build | `cmake --build build --target zene PatcherWiringPersistenceTest PatcherCommandsTest -j4` (`03-build-green.log`) | 2 | `ccache: error: failed to create temporary file ... No space left on device` |
-| GREEN retry | same command (`12-build-green.log`) | 2 | `cmake_depends` stuck about 20 min in D state (wchan `wait_reserve_ticket`), then `Bus error (core dumped)` on `mocs_compilation.cpp.o`, `AudioEngine.cpp.o` and `AudioBusHandle.cpp.o` |
-| GREEN retry | same command (`14-build-green-retry.log`) | 2 | Same Bus errors |
-| GREEN retry | `CCACHE_INODECACHE=false` + same command (`15-build-green-noinodecache.log`) | 2 | `lmmsobjs.dir/depend] Error 2`; the shell reported `no space left on device: .../new-p11-64.r1/tmp/claude-1f99-cwd` |
-| GREEN retry | `CCACHE_INODECACHE=false` + same command (`16-build-green.log`) | 2 | My env var was wrong: ccache rejected `"false"` |
-| GREEN retry | `CCACHE_NOINODECACHE=true` + same command (`17-build-green.log`) | 2 | `moc_XyPad.cpp:175:1: fatal error: error writing to /home/kruzzzzy/.config/kads/zene/state/runs/new-p11-64.r1/tmp/cc0YYEYR.s: No space left on device` |
+| GREEN build | `cmake --build build --target zene PatcherWiringPersistenceTest -j4` (`20-build-green.log`) | 0 | |
+| GREEN test | `ctest -R PatcherWiringPersistenceTest --output-on-failure` (`21-test-green.log`) | 0 | 100% passed out of 1 |
+| 4b patch | `git diff HEAD~1 HEAD -- include/EffectChain.h include/PatchWiring.h src/core/EffectChain.cpp src/core/EffectChainPatcher.cpp src/core/PatchWiring.cpp src/core/ControlReversibilityTableRouting.cpp > logs/fix.patch` | 0 | The fix was already committed, so the patch was taken from HEAD~1..HEAD (product files only, no tests). |
+| 4b revert | `git apply -R logs/fix.patch` | 0 | |
+| 4b RED build | `cmake --build build --target zene PatcherWiringPersistenceTest -j4` (`23-build-red.log`) | 0 | |
+| 4b RED test | `ctest -R PatcherWiringPersistenceTest --output-on-failure` (`24-test-red.log`) | 8 | `FAIL! authoredWiringSurvivesSaveAndLoad() 'loaded.patchActive()' returned FALSE`; `FAIL! loadingXmlWithoutWiringRestoresDerivation() '!chain.patchActive()' returned FALSE`; 4 passed, 2 failed |
+| 4b reapply | `git apply logs/fix.patch` | 0 | `git status --short` was empty afterwards |
+| 4b GREEN build | same build (`25-build-green2.log`) | 0 | |
+| 4b GREEN test | `ctest -R PatcherWiringPersistenceTest --output-on-failure` (`26-test-green2.log`) | 0 | 100% passed out of 1 |
+| Family build | `cmake --build build --target zene ControlArmReversibilityTest ReversibilityContractTest ReversibilityUndoTest ReversibilityUndoDeviceTest PatcherCommandsTest PatcherWiringPersistenceTest PatcherCanvasTest -j4` (`28-build-family.log`) | 0 | |
+| Family test | `ctest -R 'ControlArmReversibilityTest\|ReversibilityContractTest\|ReversibilityUndoTest\|ReversibilityUndoDeviceTest\|PatcherCommandsTest\|PatcherWiringPersistenceTest\|PatcherCanvasTest\|ControlReversibilityTranscript\|ControlCommandsSnapshot' --output-on-failure` (`29-test-family.log`) | 0 | 100% passed out of 9; this includes the ControlCommandsSnapshot canary |
+| Wider build | `cmake --build build --target <23 matching targets> -j4` (`32-build-wide.log`) | 0 | |
+| Wider test | `ctest -R 'RoutingGraph\|MissingDevices\|Rack\|MixerRoutingBackwardCompat\|StableTrackIds\|ClipEffects\|MixerStrip\|EffectChain\|ProjectRoundTrip\|SaveLoad' --output-on-failure` (`33-test-wide.log`) | 0 | 100% passed out of 25 |
+| Gates (1st) | `python3 .../qwen/feature_check.py <worktree>` (`30-feature-check.log`) | 1 | fork-sources and all-sources-reproduce FAIL: `tests/all-sources.txt` was missing the new test |
+| Gates (final) | same command, after adding the line (`31-feature-check.log`) | 0 | every row PASS, `RESULT: PASS` |
 
-Every failure was on a file this change does not touch.
-
-### Why BLOCKED (missing host capability)
-
-- `btrfs filesystem usage -T` on the worktree reports `Device allocated: 949.87GiB` and
-  `Device unallocated: 1.05MiB`. `df` shows 66G free, but the volume is fully allocated, so writes
-  fail with ENOSPC on and off.
-- Other writes failed the same way:
-  - `git add -N` → `fatal: unable to write new index file`
-  - `tail` → `write error: No space left on device`
-  - writing this report failed once with `ENOSPC ... rename`
-- `stat -f` / `df` show that the worktree, `build/`, `$TMPDIR` and the log folder are all on this
-  volume.
-- Fixing this needs root on the host (a btrfs balance, or freeing other lanes' data). That is
-  outside this worktree, so I did not attempt it.
-
-**Not run:** the GREEN ctest, the `ctest -R` family, step 4b (`fix.patch` revert/reapply), the
-`feature_check.py` gates and `proof.json` (a BLOCKED report needs no proof manifest).
-
-## To finish (next session, once the disk has space)
-
-1. Run `cmake --build build --target zene PatcherWiringPersistenceTest PatcherCommandsTest -j4`,
-   then `ctest -R PatcherWiringPersistenceTest` from build/tests. All four cases must pass.
-2. `include/EffectChain.h` changed, so rebuild every target that includes it. Then run the family:
-   `ctest -R 'Patcher|EffectChain|Reversibility|RoutingGraph|MissingDevices|RackTest|MixerRoutingBackwardCompat|StableTrackIds|ClipEffects|MixerStrip'`.
-3. Run step 4b with the product files `include/PatchWiring.h src/core/PatchWiring.cpp include/EffectChain.h src/core/EffectChain.cpp src/core/EffectChainPatcher.cpp src/core/ControlReversibilityTableRouting.cpp`.
-4. Run the gates, write `proof.json` and change the verdict.
+Final gate table (`31-feature-check.log`):
+```
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
+```
 
 ## Self-check
 
-- **Verdict evidence:** the REAL decision rests on the code citations above. BLOCKED rests on the
-  logged build failures and the btrfs allocation output.
-- **Regression test first, seen failing:** yes. `02-test-red.log`, EXIT 8, with the two failing
-  cases named above.
-- **Passes with the fix:** NOT verified, because the build is blocked.
-- **Audio thread:** nothing new runs there. The new code is in `saveSettings` and `loadSettings`
-  only, on the control thread, and `loadSettings` already holds the model-change guard. Local TSan
-  does not run here; this is reasoned from the design.
-- **Old projects:** they should load exactly as before. A missing element gives the derived wiring,
-  and a derived chain writes no new element. Case 3 checks the save side. Not verified by a run.
-- **Control commands added:** none.
+- **Verdict evidence:** REAL rests on the code citations above. Before the fix, `saveSettings`
+  never wrote `m_patch` and `loadSettings` never restored or reset it. FIXED rests on logs 24
+  (EXIT 8 without the fix) and 26 (EXIT 0 with it).
+- **Regression test fails without the fix, passes with it:** yes. The two cases named in the 4b RED
+  row fail, and all four cases pass with the fix. The test is deterministic: no timing, sleeps or
+  threads. The dummy audio device is stopped in `initTestCase`.
+- **Cause and completeness:** the fix is at the chain's own serializer. That serializer is the only
+  `<fxchain>` writer and reader, and every chain owner (mixer channels, instrument tracks, clip
+  effects) goes through it. No other writer saves the wiring. `setPatchWiring` and the
+  `patcher.set_wiring` command (`src/core/ControlCommandsPatcherEdit.cpp:330-354`) always give a
+  non-empty wiring an output, so `loadXml`'s required `output` attribute cannot reject a wiring
+  the app saved.
+- **Old projects:** an `<fxchain>` without `<patchwiring>` loads as the derived wiring, as before.
+  A derived chain writes no new element (case 3, `derivedChainSavesNoWiringElement`). The
+  `<effect>` loop in `loadSettings` only reads `effect` elements, so the new child does not disturb
+  it. Older readers ignore the unknown element. The wider round-trip, missing-devices and
+  backward-compat tests pass (25/25).
+- **Audio thread:** nothing new runs there. The save and load code runs on the control thread, and
+  `loadSettings` already holds the model-change guard (`src/core/EffectChain.cpp:199`) across the
+  new call and the rebuild. Local TSan does not run here; this is reasoned from the design.
+- **Undo and commands:** no control command was added, and the ControlCommandsSnapshot canary
+  passes. The `patcher.set_wiring` row stays `snapshot`, with its inverse-command undo, and only
+  its reason text changed. The Reversibility tests pass.
+- **Header changed:** `include/EffectChain.h` (a private non-virtual declaration) and
+  `include/PatchWiring.h`. `zene` and every test target built this session were rebuilt
+  (logs 20, 25, 28, 32).
+- **Proof manifest:** `logs/proof.json`, with a `regression-test` artifact. No `src/gui` file
+  and no Song/Record/Undo/Transport/Take/AudioEngine file changed, so it needs no screenshot or
+  state-sequence.
 
 Delegation:
-- Sonnet wrote `PatcherWiringPersistenceTest` and its registration, and ran the RED build and test
-  (logs 00-02).
-- Haiku ran the first GREEN build (log 03). It hit ENOSPC and a stalled `cmake_depends` and could
-  not continue.
-- I ran the later build retries myself as background commands, reading only exit codes and log
-  tails.
-- DeepSeek was unavailable this session.
+- Earlier session: Sonnet wrote `PatcherWiringPersistenceTest` and its registration. Haiku made
+  the first (failed) GREEN build attempt.
+- This session: Haiku #1 ran the GREEN build and test and the whole step-4b red/green proof
+  (logs 20-26). Haiku #2 ran the Patcher/Reversibility/canary family and the first gate run
+  (logs 27-30). Haiku #3 ran the wider save/load/routing family (logs 31-33).
+- I reviewed the diff, made the one-line `tests/all-sources.txt` fix, reran the gates and wrote
+  the report and manifest. Sonnet and DeepSeek were not needed this session, because the
+  engineering was already written and only verification remained.
 
 ## Other findings
 
