@@ -165,3 +165,9 @@ headers.
   (qualified references) and `tests/src/core/ControlShutdownHookTest.cpp:483`
   (the passing regression). The fix commit `5854c983c8` is an ancestor of
   `HEAD` (`merge-base --is-ancestor` EXIT=0).
+- **Sibling-command ASK.** The `app.*` and `arrangement.*` ids listed by
+  `submit_check.py` come from other lanes' commits in the train range
+  `050/m0-train-35..HEAD`, not from this run: `git show --stat HEAD` shows this
+  commit touches only the two report files, and the net diff against the train
+  base adds only this report. No command file, registry or reversibility table
+  is changed here, so no sibling command is affected.
