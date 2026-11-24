@@ -8232,6 +8232,25 @@ if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
 		TIMEOUT 1200
 	)
+	# cluster 5735 (BUG 18): a render that does NOT finish normally must not cost the
+	# caller the file at its own `out` path. render.render lets the child write a staged
+	# name beside the destination and publishes it only after a successful exit, so a
+	# child killed mid-write (the same failure class as the render timeout) leaves the
+	# caller's previous file byte-identical instead of a truncated WAV, and writes
+	# nothing at all when there was no file before. The failure is INJECTED, never timed:
+	# the test lowers RLIMIT_FSIZE around the instance's spawn, so the child hits a fixed
+	# file size rather than a wall-clock delay (a host without POSIX resource limits
+	# reports "skipped" with the reason, exit 77 - never "passed"). It drives the REAL
+	# binary over --control-socket and checks the published file's own sha256/bytes.
+	add_test(NAME ControlRenderOutputPublish
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/control-render-output-publish.py
+			$<TARGET_FILE:zene>)
+	set_tests_properties(ControlRenderOutputPublish PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+		TIMEOUT 900
+		SKIP_RETURN_CODE 77
+	)
 	# Session sync, two real instances (D11 "Ableton Link sync", the
 	# two-instance proof the brief names): both join one session and one drives
 	# the other's tempo and beat phase with no relay between them, through
