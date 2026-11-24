@@ -87,7 +87,7 @@ void HardwareOutputBus::addPlane(int channel, const float* src, f_cnt_t frames, 
 	float* mono = side.mono.data();
 	for (f_cnt_t f = 0; f < count; ++f)
 	{
-		const float sample = src[f] * (gains != nullptr ? gains[f] : gain);
+		const float sample = src[f] * gain * (gains != nullptr ? gains[f] : 1.f);
 		plane[f] += sample;
 		mono[f] += sample;
 	}
