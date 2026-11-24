@@ -38,6 +38,11 @@ highlighted have int and QString, qcombobox.h:232,234,245,247), `QProcess::finis
 (qbuttongroup.h:80-83,90-96). `QSocketNotifier::activated` is NOT listed: its
 one-argument Qt 5 overload is compiled only under `Q_MOC_RUN`/`BUILDING_QSOCKETNOTIFIER`
 (qsocketnotifier.h:77-84), so a member pointer names a single signal.
+The same applies to `QSslSocket::sslErrors` (signal beside the deprecated getter,
+qsslsocket.h:216,196), `QSignalMapper::mapped` (int, QString, QWidget* and QObject*,
+qsignalmapper.h:71,73,75,77), `QNetworkReply::error` (signal and getter,
+qnetworkreply.h:161,127) and `QAbstractSocket::error` (signal and getter,
+qabstractsocket.h:211,183).
 
 Usage:
   qt5-signal-overload-check.py [--root DIR]
@@ -77,13 +82,28 @@ QT5_OVERLOADED = {
 		"buttonReleased": "QAbstractButton* and int (qbuttongroup.h:82,94)",
 		"buttonToggled": "QAbstractButton*,bool and int,bool (qbuttongroup.h:83,96)",
 	},
+	"QSslSocket": {
+		"sslErrors": "signal and deprecated const getter (qsslsocket.h:216,196)",
+	},
+	"QSignalMapper": {
+		"mapped": "int, QString, QWidget* and QObject* (qsignalmapper.h:71,73,75,77)",
+	},
+	"QNetworkReply": {
+		"error": "signal and const getter (qnetworkreply.h:161,127)",
+	},
+	"QAbstractSocket": {
+		"error": "signal and const getter (qabstractsocket.h:211,183)",
+	},
 }
+
+#! Template arguments with one level of nesting: QOverload<const QList<QSslError>&>.
+TEMPLATE_ARGS = r"<(?:[^<>;{}]|<[^<>;{}]*>)*>"
 
 #! The call that immediately encloses the member pointer, if it disambiguates it.
 DISAMBIGUATED = re.compile(
-	r"(?:QOverload\s*<[^<>;{}]*>\s*::of"
-	r"|qOverload\s*<[^<>;{}]*>\s*::of"
-	r"|qOverload\s*<[^<>;{}]*>"
+	r"(?:QOverload\s*" + TEMPLATE_ARGS + r"\s*::of"
+	r"|qOverload\s*" + TEMPLATE_ARGS + r"\s*::of"
+	r"|qOverload\s*" + TEMPLATE_ARGS +
 	r"|static_cast\s*<[^;{}]*>)\s*\(\s*$")
 
 MEMBER_POINTER = re.compile(r"&(Q[A-Za-z0-9_]+)::([A-Za-z0-9_]+)")
@@ -145,34 +165,62 @@ def scan_tree(root):
 
 
 FIXTURE_RED = """
+#include <QAbstractSocket>
 #include <QComboBox>
+#include <QNetworkReply>
 #include <QObject>
+#include <QSignalMapper>
 #include <QSpinBox>
-void wire(QSpinBox* box, QComboBox* combo)
+#include <QSslSocket>
+void wire(QSpinBox* box, QComboBox* combo, QSslSocket* socket, QSignalMapper* mapper, QNetworkReply* reply,
+	QAbstractSocket* plain)
 {
 	QObject::connect(box, &QSpinBox::valueChanged, box, [box] { box->setValue(1); });
 	QObject::connect(combo, &QComboBox::currentIndexChanged, combo, [](int) {});
+	QObject::connect(socket, &QSslSocket::sslErrors, socket, [](const QList<QSslError>&) {});
+	QObject::connect(mapper, &QSignalMapper::mapped, mapper, [](int) {});
+	QObject::connect(reply, &QNetworkReply::error, reply, [](QNetworkReply::NetworkError) {});
+	QObject::connect(plain, &QAbstractSocket::error, plain, [](QAbstractSocket::SocketError) {});
 }
 """
 
 FIXTURE_GREEN = """
+#include <QAbstractSocket>
 #include <QComboBox>
+#include <QNetworkReply>
 #include <QObject>
+#include <QSignalMapper>
 #include <QSpinBox>
+#include <QSslSocket>
 //! A comment naming &QSpinBox::valueChanged is not a use.
 static const char* kMention = "&QSpinBox::valueChanged";
-void wire(QSpinBox* box, QComboBox* combo)
+void wire(QSpinBox* box, QComboBox* combo, QSslSocket* socket, QSignalMapper* mapper, QNetworkReply* reply,
+	QAbstractSocket* plain)
 {
 	QObject::connect(box, QOverload<int>::of(&QSpinBox::valueChanged), box, [box] { box->setValue(1); });
 	QObject::connect(combo, qOverload<int>(&QComboBox::currentIndexChanged), combo, [](int) {});
 	QObject::connect(combo, static_cast<void (QComboBox::*)(int)>(&QComboBox::currentIndexChanged), combo,
 		[](int) {});
 	QObject::connect(combo, &QComboBox::currentTextChanged, combo, [](const QString&) {});
+	QObject::connect(socket, QOverload<const QList<QSslError>&>::of(&QSslSocket::sslErrors), socket,
+		[](const QList<QSslError>&) {});
+	QObject::connect(mapper, qOverload<int>(&QSignalMapper::mapped), mapper, [](int) {});
+	QObject::connect(reply, static_cast<void (QNetworkReply::*)(QNetworkReply::NetworkError)>(&QNetworkReply::error),
+		reply, [](QNetworkReply::NetworkError) {});
+	QObject::connect(plain, QOverload<QAbstractSocket::SocketError>::of(&QAbstractSocket::error), plain,
+		[](QAbstractSocket::SocketError) {});
 }
 """
 
 #! Red fixture findings, in file order: (line, class, signal).
-FIXTURE_EXPECTED = [(7, "QSpinBox", "valueChanged"), (8, "QComboBox", "currentIndexChanged")]
+FIXTURE_EXPECTED = [
+	(12, "QSpinBox", "valueChanged"),
+	(13, "QComboBox", "currentIndexChanged"),
+	(14, "QSslSocket", "sslErrors"),
+	(15, "QSignalMapper", "mapped"),
+	(16, "QNetworkReply", "error"),
+	(17, "QAbstractSocket", "error"),
+]
 
 
 def self_test():
