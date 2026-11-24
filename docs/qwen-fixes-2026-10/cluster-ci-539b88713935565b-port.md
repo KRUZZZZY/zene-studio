@@ -42,7 +42,14 @@ different `-Werror=unused-function` helper, and HEAD fixes each of them:
 All three fix commits are ancestors of HEAD (`git merge-base --is-ancestor <c> HEAD` gave exit 0 for
 `79691f5414`, `f3b5426267` and `9feb23eb1b`).
 
-## Commands run, round 3 (logs and manifest in `~/.config/kads/zene/state/runs/ci-539b88713935565b-port.r3/logs`, manifest `proof.json`)
+## Commands run, round 4 (current: logs and manifest in `~/.config/kads/zene/state/runs/ci-539b88713935565b-port.r4/logs`, manifest `proof.json`)
+
+1. The same build command as round 3, into `r4/logs/build-green.log`: **EXIT=0** (`build-green.exit`). sha256 `5df4b9db8f951426dc00e50d4da8a132220c0947f180eea801f067ce47c7eeec`.
+2. The same ctest command as round 3, from `build/tests`, into `r4/logs/test-green.log`: **EXIT=0** (`test-green.exit`), `100% tests passed out of 6`. sha256 `0e3ac382f07eb9b87ca3c586324cf9ec59ddeabb0a648240851c17166dcffdc2`.
+3. `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > r4/logs/gates-1.log 2>&1`: **EXIT=0**, `RESULT: PASS`.
+4. The manifest's `test` artifacts carry `test_file`, `test`, `green_command`, `green_exit` and `sha256`. Round 3's extra `log` key was refused by the schema, so it is gone.
+
+## Commands run, round 3 (earlier run, kept for history, in `.r3/logs`)
 
 1. `cmake --build build --target zene RemotePluginAudioPortsShmCompileCheck RemotePluginAudioPortsTest SampleClipWarpEditTest WarpMarkersTest MidiOutTimingTest ExportWavWriteErrorTest -j4 > logs/build-green.log 2>&1` gave **EXIT=0** (`build-green.exit`). The log ends `[100%] Built target ExportWavWriteErrorTest`. sha256 `7679ae9751aa55bb30fe650ec7f5f2a638069473fdf71a3685e1621305d0c763`.
 2. From `build/tests`: `ctest -R '^(Qt5WorkerThreadCheck|RemotePluginAudioPortsTest|SampleClipWarpEditTest|WarpMarkersTest|MidiOutTimingTest|ExportWavWriteErrorTest)$' --output-on-failure > logs/test-green.log 2>&1` gave **EXIT=0** (`test-green.exit`), `100% tests passed out of 6`. sha256 `0ac246f5f004ae3ad8c00475c0ba23d2848d4532d6adab71aa87f9e3b5d4b9cb`.
@@ -66,7 +73,7 @@ All three fix commits are ancestors of HEAD (`git merge-base --is-ancestor <c> H
 
 * Regression tests: this job adds none, because it makes no fix. The branch-added guards `Qt5WorkerThreadCheck`
   (`tests/qt5-worker-thread-check.py`), `SampleClipWarpEditTest`, `RemotePluginAudioPortsTest` and the
-  `RemotePluginAudioPortsShmCompileCheck` object target were built and run green in round 3 (commands 1–2).
+  `RemotePluginAudioPortsShmCompileCheck` object target were built and run green in round 3, and again in round 4 (round-4 commands 1–2).
   The manifest records them as `test` artifacts with green_exit 0 and the sha256 of each log.
 * Registration: this job's commits add or modify only this report, which is under `docs/`.
 * Realtime, undo and commands: untouched.
@@ -85,7 +92,7 @@ All three fix commits are ancestors of HEAD (`git merge-base --is-ancestor <c> H
   files that submit_check lists as "tests added or changed" (`tests/control-*.py`) come from the
   branch's earlier merge commits against the base, not from this job.
 * submit_check: `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-539b88713935565b-port` gave EXIT=0, `RESULT: PASS - submit` (round-2 logs/submit-1.log).
-* Round 3 gates: `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > r3/logs/gates-1.log 2>&1` gave EXIT=0, `RESULT: PASS`. The round-3 submit_check result is in `r3/logs/submit-1.log`.
+* Round 3 gates: `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > r3/logs/gates-1.log 2>&1` gave EXIT=0, `RESULT: PASS`. The round-3 submit_check result is in `r3/logs/submit-1.log`. The round-4 result is in `r4/logs/submit-1.log`.
 
 Delegation: Haiku (1) found the mingw64 job in the three newest ancestor CI log sets and extracted
 the failing `error:` lines. Haiku (2) ran the build (command 1) and the ctest run (command 2) and
