@@ -38,6 +38,10 @@ Qt 5 does the equivalent checked whole-number conversion of the value's double.
   `Qt5QJsonValueIntegerCheck` (the real translation unit recompiled against
   Qt 5). `tests/Qt5QJsonToIntegerCheck.py:1-27` names this exact cluster and
   records the historical `build / linux-x86_64` error.
+- The registration this round adds is `tests/CMakeLists.txt:9785-9788`
+  (`add_test(NAME ScriptClockQt5JsonIntegerPortCheck ...)`,
+  `set_tests_properties(... TIMEOUT 300 SKIP_RETURN_CODE 77)`); the two earlier
+  registrations are still at `:9770-9773` and `:9778-9781`.
 
 No product or test source changed in this port: the fix is inherited, and this
 job only adds its own regression check (round 3, below), the registrations for
@@ -85,6 +89,10 @@ deterministic process:
 | restore | `git apply -R $LOGS/bug-reintroduced.patch` | 0 | `bug-reintroduced.patch` |
 | GREEN direct, restored | `python3 tests/ScriptClockQt5JsonIntegerPortCheck.py --root . --build-dir build` | 0 | `test-8-direct-green-restored.log` |
 | GREEN ctest family | `cd build/tests && ctest -R '^(ScriptClockQt5JsonIntegerPortCheck\|ScriptClockTest\|Qt5QJsonToIntegerCheck\|Qt5QJsonValueIntegerCheck\|Qt5JsonIntegerCheck\|Qt5JsonValueIntegerCheck)$' --output-on-failure` | 0 (6/6) | `test-9-ctest-family-green.log` |
+| GREEN direct, post-commit | `python3 tests/ScriptClockQt5JsonIntegerPortCheck.py --root . --build-dir build` at `422d024f0d` | 0 | `test-10-direct-green-post-commit.log` |
+| GREEN ctest, post-commit | `cd build/tests && ctest -R '^ScriptClockQt5JsonIntegerPortCheck$' --output-on-failure` | 0 | `test-11-ctest-green-post-commit.log` |
+| GREEN source scan | `python3 tests/Qt5QJsonToIntegerCheck.py --root .` (4308 files) | 0 | `test-12-scan-green.log` |
+| ALREADY-FIXED re-check | `git merge-base --is-ancestor d9a26d06ad HEAD` and `git diff d9a26d06ad HEAD -- tests/src/core/ScriptClockTest.cpp include/DeprecationHelper.h` (0 lines) | 0 | `evidence-2-already-fixed.log` |
 
 `bug-reintroduced.patch` is the RED state: both `jsonInteger(...)` reads put back
 to the historical `.toInteger(-1)` (2 lines changed). `git diff --stat --
@@ -190,10 +198,16 @@ integers through jsonInteger` (EXIT 0).
   limit changed in this port. On Qt 6 `jsonInteger` calls `toInteger(default)`,
   so the value and the `-1` sentinel are exactly as before; on Qt 5 it is the
   existing checked-double adapter already used by other tests and product code.
-- **ALREADY-FIXED evidence.** `d9a26d06ad` is an ancestor of HEAD and its
-  `ScriptClockTest.cpp` / `Qt5QJsonToIntegerCheck.py` content is unchanged at
-  HEAD; current lines 409 and 416 use `jsonInteger`. See
-  `logs/evidence-1-already-fixed.log`.
+- **ALREADY-FIXED evidence (re-verified in round 3).**
+  `git merge-base --is-ancestor d9a26d06ad HEAD` exits **0**, and
+  `git diff d9a26d06ad HEAD -- tests/src/core/ScriptClockTest.cpp
+  include/DeprecationHelper.h` is **0 lines** (`evidence-2-already-fixed.log`),
+  so the merged repair is byte-identical to what this branch carries. Current
+  lines 409 and 416 use `jsonInteger(value, -1)`;
+  `python3 tests/Qt5QJsonToIntegerCheck.py --root .` scans **4308** first-party
+  sources and prints `PASS: no first-party QJsonValue::toInteger call`, EXIT
+  **0** (`test-12-scan-green.log`). Round 2's `logs/evidence-1-already-fixed.log`
+  records the same finding.
 - **Sibling commands.** This port changes no command file (`git diff` for this
   job touches only this report, the new check, `tests/fork-sources.txt`,
   `tests/upstream-modifications.txt` and `tests/CMakeLists.txt`), so `app.about`,
