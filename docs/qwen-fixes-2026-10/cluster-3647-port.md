@@ -165,6 +165,13 @@ round-3 commits, whose `zene` build passed.
    command is `wasm.render_offline`, whose schema cap remains the unchanged
    4194304 at `src/core/ControlCommandsWasmRender.cpp:336`, equal to the cap
    added here; its handler and the other command paths are unaffected.
+9. **ALREADY-FIXED / FALSE-POSITIVE:** not applicable; the verdict is FIXED.
+   The pre-fix code at `e4194e0bf5:src/wasm/WasmOfflineRender.cpp:263` had no
+   upper frame bound, and the round-4 RED run (`test-red-001.log`, EXIT=8)
+   shows the huge requests reaching the sandbox without the fix.
+10. **Round-4 review finding (MSVC C2491):** resolved by `6ee78fcac2`;
+   `tests/CMakeLists.txt:5628` sets `LMMS_STATIC_DEFINE`, which empties
+   `LMMS_EXPORT` in the generated `lmms_export.h`. No blocking entries remain.
 
 ## Delegation
 
