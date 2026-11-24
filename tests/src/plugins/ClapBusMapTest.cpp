@@ -105,6 +105,10 @@ void ClapBusMapTest::testSideChain()
 	QCOMPARE(layout.hasSideChain, true);
 	QCOMPARE(layout.sideChainChannel, 2);  // E9: the second port starts after the main pair
 	QCOMPARE(layout.inputPortChannels, (std::vector<int>{2, 1}));
+	// A conforming plug-in (clap audio-ports: "Main port must be at index 0") keeps its own order, so the
+	// plug-in index of each mapped port is the identity and its audio is placed exactly as before.
+	QCOMPARE(layout.pluginInputPorts, 2);
+	QCOMPARE(layout.inputPortIndices, (std::vector<int>{0, 1}));
 }
 
 //! A plug-in that lists its side-chain input BEFORE its main one still gets the main input on the
