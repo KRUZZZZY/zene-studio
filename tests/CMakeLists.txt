@@ -1404,6 +1404,8 @@ set(LMMS_TESTS
 	src/gui/TrackViewDeferredLifetimeTest.cpp
 	# m0 blocker (trackview-uaf follow-up): a rack's queued removal of a view that is already gone does nothing.
 	src/gui/RackDeferredLifetimeTest.cpp
+	# Q050-367: a device's own editor is closed and detached before the device is removed or its chain cleared.
+	src/gui/EffectEditorTeardownTest.cpp
 	# BUGS_FOUND 10: removing a linked control frees its detached layout item.
 	src/gui/LinkedModelGroupViewLifetimeTest.cpp
 	# 0.5.0 theme 6: sends on faders - the banner names the return, every fader labelled, "No send" faders dimmed in place.
@@ -4158,6 +4160,7 @@ set_tests_properties(AutomationClipDisconnectTest PROPERTIES ENVIRONMENT "QT_QPA
 set_tests_properties(VcaStripLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackViewDeferredLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackDeferredLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(EffectEditorTeardownTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LinkedModelGroupViewLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorFlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSendsOnFadersTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
