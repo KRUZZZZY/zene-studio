@@ -31,3 +31,11 @@ Haiku ran the red build/test, the green/revert/re-apply builds and tests, and th
 
 ## Other findings
 - ControlNoteEditor (ctest 883) fails here on `devices=[]` (no instrument device); NoteEditorFlTest executable was not built.
+
+## Self-check
+- Red/green: with the product change reverted the test fails (test-3.log, ctest EXIT=8, `zeroPixelsPerBarDoesNotHangPainting ... did not finish`); with it applied it passes (test-4.log, ctest EXIT=0).
+- Determinism: no sleeps or races. The test paints in a child process (same pattern as the existing `zeroStepLengthDoesNotHangPainting`); the outcome is binary (the paint returns, or loops forever). The 5 s `waitForFinished` is only a watchdog that turns a hang into a failure; the fixed code finishes in milliseconds. Inputs are fixed values (parent 320x200, ppb 0, step 48 ticks); no clock is read.
+- Cause and completeness: the cause is a non-positive `m_ppb` reaching `xCoordOfTick`. Entry points to `m_ppb` are the constructor and `setPixelsPerBar` (only caller outside: PianoRoll.cpp:5082); both go through the guarded setter, and the member now defaults to 1. The paint loop is also guarded on `m_ppb > 0`. Sub-pixel steps with a positive ppb still terminate (x advances every 192 ticks), so they are not part of this bug.
+- Collateral: StepRecorderWidget is transient GUI state, nothing is saved or loaded. Positive ppb values behave exactly as before; only values <= 0, which previously hung painting, are ignored. No control command added, no audio-thread code touched.
+- Verdict is FIXED, so the ALREADY-FIXED/FALSE-POSITIVE item does not apply.
+- Sibling commands (app.about ... app.update_check_get): this change touches no command file (the list is the branch's own diff against its base, not this commit); the commit changes only StepRecorderWidget.{h,cpp}, its test, upstream-modifications.txt and this report, so no command is affected.
