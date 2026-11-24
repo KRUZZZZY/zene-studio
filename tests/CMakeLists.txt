@@ -5654,7 +5654,12 @@ if(TARGET lmms_clap)
 	)
 	add_test(NAME ClapBusMapTest COMMAND ClapBusMapTest)
 	target_include_directories(ClapBusMapTest PRIVATE
+		# the generated headers the core's own headers carry: lmms_export.h
+		# (build/src) and lmmsconfig.h (build/include) - cluster new-p9-1 pulls in
+		# SidechainInputs.h, whose AudioBuffer.h needs them.
 		${CMAKE_BINARY_DIR}
+		${CMAKE_BINARY_DIR}/src
+		${CMAKE_BINARY_DIR}/include
 		${CMAKE_SOURCE_DIR}/include
 		${LMMS_CLAP_EFFECT_DIR}
 	)

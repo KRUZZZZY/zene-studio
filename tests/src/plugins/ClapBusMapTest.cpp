@@ -25,6 +25,7 @@
 #include <QtTest>
 
 #include "ClapBusMap.h"
+#include "SidechainInputs.h"
 #include "lmms_constants.h"
 
 namespace lmms::clap
@@ -51,6 +52,7 @@ private slots:
 	void testStereoPair();
 	void testMonoToStereo();
 	void testSideChain();
+	void testAMonoMainPortKeepsItsKeyOutOfTheDryMix();
 	void testSideChainReportedBeforeTheMainInput();
 	void testNoMainFlagKeepsTheFirstInputAsMain();
 	void testInputIndicesFollowThePluginsOwnPorts();
@@ -105,6 +107,27 @@ void ClapBusMapTest::testSideChain()
 	QCOMPARE(layout.hasSideChain, true);
 	QCOMPARE(layout.sideChainChannel, 2);  // E9: the second port starts after the main pair
 	QCOMPARE(layout.inputPortChannels, (std::vector<int>{2, 1}));
+}
+
+//! Cluster new-p9-1: the mono-main case end to end. A plug-in with a MONO main input port and a MONO
+//! side-chain has two input channels, and the side-chain's only channel is flattened channel 1 - what
+//! mapPorts reports as sideChainChannel. The wet/dry mix must stop at the main port's single channel:
+//! with the old `max(2, sideChainChannel)` rule the mix covered both channels, so at a fully dry mix
+//! the second output's dry half was the key signal itself.
+void ClapBusMapTest::testAMonoMainPortKeepsItsKeyOutOfTheDryMix()
+{
+	const auto layout = mapPorts({
+		makePort(PortDirection::Input, 1, true),  // the main input, one channel
+		makePort(PortDirection::Input, 1),        // the side-chain, one channel
+		makePort(PortDirection::Output, 2, true),
+	});
+
+	QCOMPARE(layout.inputs, 2);
+	QCOMPARE(layout.outputs, 2);
+	QCOMPARE(layout.hasSideChain, true);
+	QCOMPARE(layout.sideChainChannel, 1);  // the key starts right after the mono main channel
+	QCOMPARE(dryMixChannels(layout.inputs, layout.outputs, layout.sideChainChannel), ch_cnt_t{1});
+	QCOMPARE(dryMixChannels(layout.inputs, layout.outputs, -1), ch_cnt_t{2}); // no key: the whole port
 }
 
 //! A plug-in that lists its side-chain input BEFORE its main one still gets the main input on the
