@@ -6563,6 +6563,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
 	set_tests_properties(Train51Portability PROPERTIES TIMEOUT 120)
 endif()
 
+# cluster ci-8fceff87a3151aad-port: the windows-arm64 build fixes stay in place (static scan).
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME WindowsArm64PortCheck COMMAND ${PYTHON3_EXECUTABLE}
+		${CMAKE_CURRENT_SOURCE_DIR}/windows-arm64-port-check.py
+		--source-root ${CMAKE_SOURCE_DIR})
+	set_tests_properties(WindowsArm64PortCheck PROPERTIES TIMEOUT 120)
+endif()
+
 # Train 48: optional FFmpeg and platform-specific fixture compilation.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
 	add_test(NAME Train48Portability COMMAND ${PYTHON3_EXECUTABLE}

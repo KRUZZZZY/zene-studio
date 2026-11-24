@@ -2,109 +2,111 @@ ALREADY-FIXED
 
 ci-8fceff87a3151aad-port: ALREADY-FIXED
 
-Cluster `ci-8fceff87a3151aad-port` ("Port: CI regression: build / windows-arm64") asks for the
-windows-arm64 build regression to be ported to this branch (`bugs/qwen-ci-8fceff87a3151aad-port-port`,
-HEAD `e4194e0bf5` when the session began). The finding has no log or line numbers. So I checked the original
-failure and every later windows-arm64 build failure in the hosted train logs on this machine. Each one is
-already fixed on this branch. Nothing needed porting, and no product or test file changed in this session.
+Cluster `ci-8fceff87a3151aad-port` ("Port: CI regression: build / windows-arm64") asks for the windows-arm64
+build regression to be ported to `bugs/qwen-ci-8fceff87a3151aad-port-port`. Every windows-arm64 build failure
+on record is already fixed on this branch, so no product code changes. Round 5 adds one new static regression guard,
+`tests/windows-arm64-port-check.py` (ctest `WindowsArm64PortCheck`), which fails if any of the four fixes goes missing.
+Before this round, nothing guarded the SfzPlayerTest Abseil include path.
 
-## Evidence
+All logs for this round are in `/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r5/logs/`
+(called `$L` below).
 
-### 1. The original failure (cluster ci-8fceff87a3151aad) is on this branch
+## Evidence: each windows-arm64 failure and the code on HEAD that fixes it
 
-- The original failure was a Qt 5.15 build break: `src/gui/FollowActionEditor.cpp:207: error: no matching member function
-  for call to 'connect'` (bare `&QSpinBox::valueChanged`). See `docs/qwen-fixes-2026-10/cluster-ci-8fceff87a3151aad.md`.
-- Fix commit `ab20525e38` is an ancestor of HEAD: `git merge-base --is-ancestor ab20525e38 HEAD` → `ANC=0`.
-- The code on this branch, `src/gui/FollowActionEditor.cpp:210`:
-  `QObject::connect(jump, QOverload<int>::of(&QSpinBox::valueChanged), jump, ...)`.
-- The guard `tests/qt5-overloaded-signal-check.py` (ctest `Qt5OverloadedSignalCheck`) exists and passes on HEAD:
-  - `python3 tests/qt5-overloaded-signal-check.py .` → EXIT=0, with
-    "PASS: no connect names a Qt 5 overloaded signal without an explicit overload" (`/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/01-scan-head.log`).
-  - `ctest -R 'Qt5OverloadedSignalCheck|MocQt5TrailingReturnCheck'` → EXIT=0, "100% tests passed out of 2"
-    (`/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/test-green.log`).
-- A Qt 5.15 syntax compile of the file is clean:
-  `g++ -std=c++20 -fPIC -fsyntax-only $(pkg-config --cflags Qt5Widgets Qt5Xml) -Iinclude -Isrc -Ibuild/include -Ibuild/src src/gui/FollowActionEditor.cpp`
-  → EXIT=0 (`/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/02-qt5-syntax-FollowActionEditor.log`).
-
-### 2. Later windows-arm64 failures in the train logs are also fixed on this branch
-
-These are the three newest train runs in `~/.local/share/zene-bunny-fix/qwen/train-ci/`. All three SHAs are
-ancestors of HEAD. Each windows-arm64 job failed in its Build step:
-
-| Train SHA (run, job log) | windows-arm64 first error | Fixed on HEAD by | Code on HEAD |
+| Failure (hosted windows-arm64 build) | Fix commit (ancestor of HEAD) | Code on HEAD | Guard check |
 | --- | --- | --- | --- |
-| `fa4a5f2e78` (`run-43786984969-job-133036727687.log`) | `tests/src/gui/MixerSendsOnFadersTest.cpp:278:21: error: no matching constructor for initialization of 'QStringList'` (Qt 5.15 has no `QStringList(count, value)`) | `421f6f13ae` (cluster ci-ec26fd9bddef0dd4): ancestor of HEAD (`anc=0`), not in `fa4a5f2e78` (`in-fa4a=1`) | `tests/src/gui/MixerSendsOnFadersTest.cpp:277-281` fills `expected` in a loop; guarded by `tests/train-51-portability-check.py` |
-| `31f559ab47` (`run-43764792400-job-132967358917.log`) | `tests/src/plugins/SfzDistoBuffersTest.cpp:60:6: error: use of undeclared identifier 'posix_memalign'` | `6817e1b7dc` / `d9a26d06ad` / `f3b5426267`, all ancestors of HEAD (`anc=0`) | `tests/src/plugins/SfzDistoBuffersTest.cpp:56-61` uses `#if defined(_WIN32)` → `_aligned_malloc`; guarded by `tests/train-51-portability-check.py` |
-| `cc29a63dde` (`run-43710174450-job-132799809296.log`) | `absl/random/internal/iostream_state_saver.h:23:10: fatal error: 'absl/meta/type_traits.h' file not found` (SfzPlayerTest) | (in the train range, ancestor of HEAD) | `tests/CMakeLists.txt:2937-2941` adds `plugins/SfzPlayer/sfizz/external/abseil-cpp` to SfzPlayerTest's include path |
+| Qt 5.15: `src/gui/FollowActionEditor.cpp: no matching member function for call to 'connect'` (bare `&QSpinBox::valueChanged`, overloaded in Qt 5) | `ab20525e38` | `src/gui/FollowActionEditor.cpp:210` `QObject::connect(jump, QOverload<int>::of(&QSpinBox::valueChanged), ...)` | `qt5-overload-followaction` |
+| train `fa4a5f2e78`: `tests/src/gui/MixerSendsOnFadersTest.cpp:278:21: no matching constructor for initialization of 'QStringList'` | `421f6f13ae` (not in `fa4a5f2e78`) | `tests/src/gui/MixerSendsOnFadersTest.cpp:280-281` fills `expected` in a loop | `qt5-qstringlist-ctor` |
+| train `31f559ab47`: `tests/src/plugins/SfzDistoBuffersTest.cpp:60:6: use of undeclared identifier 'posix_memalign'` | `6817e1b7dc` (with `d9a26d06ad`, `f3b5426267`) | `tests/src/plugins/SfzDistoBuffersTest.cpp:56-61` `#if defined(_WIN32)` → `_aligned_malloc` (`:57`), `#else` → `posix_memalign` | `windows-aligned-alloc` |
+| train `cc29a63dde`: `absl/random/internal/iostream_state_saver.h:23:10: fatal error: 'absl/meta/type_traits.h' file not found` (SfzPlayerTest) | `16c24ac834` | `tests/CMakeLists.txt:2943-2945` `if(LMMS_TEST_NAME STREQUAL "SfzPlayerTest")` → `target_include_directories(... plugins/SfzPlayer/sfizz/external/abseil-cpp)` | `sfzplayer-abseil-include` |
 
-The MixerSendsOnFadersTest fix compiles on Qt 5.15:
-`g++ -std=c++20 -fPIC -fsyntax-only $(pkg-config --cflags Qt5Widgets Qt5Xml Qt5Test) -Iinclude -Isrc -Itests -Itests/src -Ibuild -Ibuild/include -Ibuild/src tests/src/gui/MixerSendsOnFadersTest.cpp`
-→ EXIT=1 (`/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/03-qt5-syntax-MixerSendsOnFadersTest.log`). The only diagnostic is
-`:300:10: fatal error: MixerSendsOnFadersTest.moc: No such file or directory`, because that test's autogen
-output has not been built here. Line 300 comes after the class closes (`:296`) and after `QTEST_MAIN` (`:298`).
-So the compiler had already parsed line 278's function body under Qt 5.15 headers and found no error.
-
-`FollowActionEditor` appears in none of the three logs' error lines. It shows up only in successful compile progress
-lines (Haiku's read of the logs).
-
-## Commands and exit codes
-
-All logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/`.
+Ancestry, rerun this round from the worktree:
 
 | Command | EXIT |
 | --- | --- |
 | `git merge-base --is-ancestor ab20525e38 HEAD` | 0 |
 | `git merge-base --is-ancestor 421f6f13ae HEAD` | 0 |
-| `git merge-base --is-ancestor 421f6f13ae fa4a5f2e78...` | 1 |
+| `git merge-base --is-ancestor 421f6f13ae fa4a5f2e78` | 1 (the fix came after the failing train) |
 | `git merge-base --is-ancestor {f3b5426267,d9a26d06ad,6817e1b7dc} HEAD` | 0, 0, 0 |
-| `python3 tests/qt5-overloaded-signal-check.py . > /home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/01-scan-head.log` | 0 |
-| Qt 5 syntax check of `FollowActionEditor.cpp` (`02-qt5-syntax-FollowActionEditor.log`) | 0 |
-| Qt 5 syntax check of `MixerSendsOnFadersTest.cpp` (`03-qt5-syntax-MixerSendsOnFadersTest.log`) | 1 (only the ungenerated `.moc` at :300, after the class) |
-| (from build/tests) `ctest -R '^(Train51Portability\|Qt5OverloadedSignalCheck)$' --output-on-failure --no-tests=error --output-junit /home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/test-green.xml > /home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/test-green.log 2>&1` | GREEN_EXIT=0 (2/2 passed) |
-| (from build/tests) `ctest -R '^(Train51Portability\|Qt5OverloadedSignalCheck)$' -V --no-tests=error > /home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/test-green-verbose.log 2>&1` | 0 |
-| `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > /home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/04-feature-check.log` | 0 (RESULT: PASS) |
+| `git merge-base --is-ancestor 16c24ac834 HEAD` | 0 |
+
+## Regression guard (new in this round)
+
+`tests/windows-arm64-port-check.py --source-root <dir>` is a stdlib-only static scan. It has no clock, sleep,
+subprocess or network use. It runs four checks and exits 1 if any of them fails:
+- (a) Every `&QSpinBox::valueChanged` in `FollowActionEditor.cpp` is wrapped in `QOverload<int>::of(...)`.
+- (b) `MixerSendsOnFadersTest.cpp` has no two-argument `QStringList(count, value)` constructor. Comments are ignored.
+- (c) `SfzDistoBuffersTest.cpp` uses `_aligned_malloc`, and every `posix_memalign` sits in the `#else` branch of an
+  `_WIN32` conditional.
+- (d) `tests/CMakeLists.txt`'s `SfzPlayerTest` block adds the `abseil-cpp` include directory.
+
+Registration:
+- **CMake:** `tests/CMakeLists.txt:6566-6572`, Linux + `PYTHON3_EXECUTABLE`, next to `Train51Portability`.
+- **`tests/fork-sources.txt`:** listed with a comment.
+- **`tests/all-sources.txt`:** deliberately not listed. Its header says it is the byte-exact generated list of
+  first-party C/C++ sources, so a `.py` entry would break the `all-sources-reproduce` gate (which passes, see Gates).
+
+### RED: pre-fix sources
+
+The red root is a scratch copy of the four files at their pre-fix revisions:
+- `git show ab20525e38^:src/gui/FollowActionEditor.cpp`
+- `git show 421f6f13ae^:tests/src/gui/MixerSendsOnFadersTest.cpp`
+- `git show 6817e1b7dc^:tests/src/plugins/SfzDistoBuffersTest.cpp` (the last version without `_aligned_malloc`;
+  `f3b5426267^` already has it)
+- `git show 16c24ac834^:tests/CMakeLists.txt`
+
+| Command | EXIT | Result |
+| --- | --- | --- |
+| `python3 tests/windows-arm64-port-check.py --source-root $L/red-root > $L/14-red-rerun.log 2>&1` | **RED_EXIT=1** | all four checks FAIL |
+| same, all four pre-fix files (Sonnet's run) → `$L/01-red.log` | 1 | all four FAIL, e.g. `FAIL qt5-qstringlist-ctor: tests/src/gui/MixerSendsOnFadersTest.cpp:278: QStringList(count, value) constructor does not exist in Qt 5.15` |
+| one pre-fix file each, the rest from HEAD → `$L/02-red-a.log` … `$L/05-red-d.log` | 1, 1, 1, 1 | each root fails only its own check, and the other three PASS |
+
+The scratch roots were deleted after the runs.
+
+### GREEN: HEAD, via ctest
+
+```
+cd build/tests && ctest -R '^WindowsArm64PortCheck$' --output-on-failure --no-tests=error --output-junit $L/test-green.xml > $L/12-test-green.log 2>&1
+```
+**GREEN_EXIT=0**: "1/1 Test #834: WindowsArm64PortCheck ... Passed", "100% tests passed out of 1".
+Artifacts: `$L/12-test-green.log`, `$L/test-green.xml`.
+
+| Command | EXIT |
+| --- | --- |
+| `cmake build` (direct reconfigure) → `$L/06-cmake-reconfigure.log` | 97: refused by the lane guard ("configuring is the parent's job ... Use 'cmake --build build --target <t>'") |
+| `ctest -R '^WindowsArm64PortCheck$' ...` before regeneration → `$L/07-test-green.log` | 8 ("No tests were found", tree not yet regenerated) |
+| `cmake --build build -j4 --target zene > $L/10-build-zene.log 2>&1` (regenerates the tree: "Configuring done", "Generating done") | 0 |
+| `ctest -N -R '^WindowsArm64PortCheck$' > $L/11-ctest-list.log 2>&1` | 0 ("Total Tests: 1") |
+| `ctest -R '^WindowsArm64PortCheck$' --output-on-failure --no-tests=error --output-junit $L/test-green.xml > $L/12-test-green.log 2>&1` | **0** |
+| `ctest -R '^(Train51Portability\|Qt5OverloadedSignalCheck\|WindowsArm64PortCheck)$' --output-on-failure --no-tests=error > $L/13-test-family.log 2>&1` | 0 ("100% tests passed out of 3") |
+| `python3 tests/windows-arm64-port-check.py --source-root . > $L/15-green-direct.log 2>&1` | 0 (four PASS lines) |
 
 ## Gates
 
-`feature_check.py` EXIT=0 (`/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/04-feature-check.log`):
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > $L/09-feature-check.log 2>&1`
+gave EXIT=0, with the new file and registrations in the tree:
 
 ```
-  PASS  fork-sources            exit 0
-  PASS  all-sources-reproduce   exit 0
-  PASS  no-upstream-regression  exit 0
-  PASS  check-namespace         exit 0
-  PASS  no-tautology            exit 0
-  PASS  doc-figures             exit 0
+  PASS  fork-sources
+  PASS  all-sources-reproduce
+  PASS  no-upstream-regression
+  PASS  check-namespace
+  PASS  no-tautology
+  PASS  doc-figures
   PASS  complexity              no new item in your files
   PASS  file-length             no new item in your files
 RESULT: PASS
 ```
 
-## Regression test (existing guards, run in round 4)
+Proof manifest: `$L/proof.json`. It holds one `regression-test` artifact for `tests/windows-arm64-port-check.py` /
+`WindowsArm64PortCheck`, with the RED and GREEN commands above, `red_exit` 1 and `green_exit` 0, and schema
+fields only (no `log` or `junit` keys).
 
-The command, from `build/tests`:
-
-```
-ctest -R '^(Train51Portability|Qt5OverloadedSignalCheck)$' --output-on-failure --no-tests=error --output-junit /home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/test-green.xml > /home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/test-green.log 2>&1
-```
-
-GREEN_EXIT=0, "100% tests passed out of 2". Artifacts: `/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/test-green.log`, `/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/test-green.xml`.
-The red side is built into the guards. The verbose rerun (`/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/test-green-verbose.log`, EXIT=0) prints
-Train51Portability's fixtures: `row-qt5-original: failed as expected`, `sfz-windows-original: failed as expected`
-(posix_memalign on Windows), `midi-windows-original` and `touch-unqualified-original: failed as expected`, plus
-`mixer-faders-qt5: compiled`. Qt5OverloadedSignalCheck prints `self-test: fixtures flagged and passed as expected`.
-
-
-Proof manifest: `/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/proof.json`, one `test` artifact per guard (`tests/train-51-portability-check.py` / `Train51Portability`, `tests/qt5-overloaded-signal-check.py` / `Qt5OverloadedSignalCheck`), each with the ctest command above and `green_exit` 0. The manifest uses only the schema's field names (round 3's `log`/`junit` fields were refused); the log and junit paths are listed here instead.
-
-No new test. Nothing changed, so there is no RED/GREEN pair to show. Existing guards already cover the
-regressions: `Qt5OverloadedSignalCheck` (FollowActionEditor) and `tests/train-51-portability-check.py`
-(MixerSendsOnFadersTest's QStringList, SfzDistoBuffersTest's aligned allocation).
-
-Delegation (round 4): Haiku reran every command in the table above (ancestry checks, the Qt 5 overload scan, both Qt 5 syntax checks, the gates, the green ctest with junit and the verbose ctest) into the r4 log folder and reported the exit codes; I checked `test-green.log` ("100% tests passed out of 2") and `04-feature-check.log` ("RESULT: PASS") myself and wrote the report and proof manifest. The r3 log folder no longer exists, so every log reference now points at r4. Round 3: Haiku ran the green ctest. Round 2: Haiku #1 read the windows-arm64 job logs in the three newest train-CI folders and reported the
-first error of each. Haiku #2 ran the Qt 5 syntax checks, the `zene` build and the ctest Qt5 checks. I ran
-the ancestry checks, the corrected Qt 5 syntax check (06), the gates and the commit myself. Sonnet was not
-used because there was no fix or test to write.
+Delegation: Sonnet wrote `tests/windows-arm64-port-check.py`, registered it in `tests/CMakeLists.txt` and
+`tests/fork-sources.txt`, and ran the RED roots (01-05) and the gates (09). Its direct `cmake` reconfigure was
+refused by the lane guard (06). Haiku regenerated the tree through `cmake --build` and ran the GREEN and family ctest
+runs (10-13). I reviewed the script and diff, reran the combined RED root (14) and the direct green run (15), checked
+the ancestry and cited lines, and wrote the report, manifest and commit. DeepSeek was not used.
 
 ## Other findings
 
@@ -112,22 +114,27 @@ None.
 
 ## Self-check
 
-- **RED/GREEN:** does not apply. The verdict is ALREADY-FIXED, so no product change and no new test were made.
-  `git show --stat` on this session's commit lists only this report. The existing guards pass on HEAD:
-  `Train51Portability` + `Qt5OverloadedSignalCheck` → GREEN_EXIT=0, 2/2 passed (`/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/test-green.log`);
-  `python3 tests/qt5-overloaded-signal-check.py .` → EXIT=0 (`/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/01-scan-head.log`). The original lane's
-  RED/GREEN for that guard is in `docs/qwen-fixes-2026-10/cluster-ci-8fceff87a3151aad.md`.
-- **Deterministic:** no test was added. The existing guard is a static source scan with built-in fixtures
-  and no clock, sleep or threads.
-- **Cause and complete:** nothing was changed. Section 2 above covers every windows-arm64 build failure in
-  the three newest train runs, each with the HEAD code that resolves it. The Qt 5 overload sweep is tree-wide
-  (`/home/kruzzzzy/.config/kads/zene/state/runs/ci-8fceff87a3151aad-port.r4/logs/01-scan-head.log`).
-- **No collateral damage:** no product, save-format, command or test file was touched, so projects and saved data
-  load exactly as before.
-- **ALREADY-FIXED evidence:** `src/gui/FollowActionEditor.cpp:210` (fix `ab20525e38`, ancestor of HEAD);
-  `tests/src/gui/MixerSendsOnFadersTest.cpp:277-281` (fix `421f6f13ae`, ancestor of HEAD);
-  `tests/src/plugins/SfzDistoBuffersTest.cpp:56-61`; `tests/CMakeLists.txt:2937-2941`.
-- **Sibling commands / "tests added" list:** the check computes these from the branch's diff against the
-  train base `fa4a5f2e7` (576 files from other lanes' merges, e.g. `tests/control-audio-test-tone.py`). They
-  are not from this session. This session's only commit adds this report and changes no command file, so no
-  `app.*` or other command is affected.
+- **RED/GREEN:** no product change was made (ALREADY-FIXED). The new guard is the regression test:
+  - On the pre-fix sources it gives RED_EXIT=1 (`$L/14-red-rerun.log`, `$L/01-red.log`), and each single-defect
+    root fails only its own check (`$L/02-red-a.log` … `$L/05-red-d.log`).
+  - On HEAD it gives GREEN_EXIT=0 through ctest (`$L/12-test-green.log`, `$L/test-green.xml`).
+- **Deterministic:** the guard is a pure text scan of four files under `--source-root`. It uses no clock, sleep,
+  threads, subprocess or network.
+- **Cause and complete:** all four windows-arm64 failures on record are listed above, each with its fix on HEAD
+  and its own check in the guard. Check (d) closes the one gap that no existing guard covered. The family ctest
+  (`Train51Portability`, `Qt5OverloadedSignalCheck`, `WindowsArm64PortCheck`) passes, 3/3 (`$L/13-test-family.log`).
+- **No collateral damage:** the only changes are one new test script, one ctest registration (Linux + Python only)
+  and one `fork-sources.txt` entry. No product, save-format or command file was touched, so projects and saved data
+  load exactly as before. All gates pass.
+- **ALREADY-FIXED evidence:**
+  - `src/gui/FollowActionEditor.cpp:210`
+  - `tests/src/gui/MixerSendsOnFadersTest.cpp:280-281`
+  - `tests/src/plugins/SfzDistoBuffersTest.cpp:56-61`
+  - `tests/CMakeLists.txt:2943-2945`
+
+  All four fix commits are ancestors of HEAD (table above).
+- **Test file changed:** yes. This round adds `tests/windows-arm64-port-check.py` and edits `tests/CMakeLists.txt`
+  and `tests/fork-sources.txt`. The earlier "no test file changed" statement no longer holds.
+- **Sibling commands:** the check derives its list of command files from the branch's diff against the train base,
+  which contains other lanes' merges. This lane changes no command file, so no `app.*`, `arrangement.*` or other
+  command is affected.
