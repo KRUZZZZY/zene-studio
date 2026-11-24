@@ -67,6 +67,12 @@ public:
 	//! change. Not real-time safe, never call from the audio thread.
 	void reprepare();
 
+	//! GUI thread: re-read the plug-in's latency and let the owning chain re-align when the plug-in
+	//! reported kLatencyChanged. The callback that hears the report may run on the plug-in's own
+	//! thread, including the audio thread, so it only raises the flag this polls (BUGS 11.34, as
+	//! Vst3Instrument does). Not real-time safe, never call from the audio thread.
+	void refreshLatencyIfChanged();
+
 #ifdef LMMS_TESTING
 	//! Test-only pause point after admission closes, so wrapper processing can be driven during re-prepare.
 	using ReprepareTestHook = void (*)(void*);
@@ -129,6 +135,9 @@ private:
 	//! Set from the audio thread when the plug-in is not prepared, polled by
 	//! Vst3EffectControls on the GUI thread which then calls reprepare().
 	std::atomic<bool> m_needsReprepare{false};
+	//! Set whenever the plug-in reports kLatencyChanged - from any thread, so cacheLatency() (which
+	//! walks the chain and may log) waits for refreshLatencyIfChanged() on the GUI thread.
+	std::atomic<bool> m_latencyChanged{false};
 	std::atomic<int> m_latencyFrames{0};
 	std::atomic<int> m_tailFrames{0};
 
