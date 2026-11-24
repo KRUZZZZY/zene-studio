@@ -2996,11 +2996,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "DrumRackPadsTest" OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest")
 		add_dependencies(${LMMS_TEST_NAME} audiofileprocessor)
 	endif()
-	# Cluster new-p15-260-port: the stutter-continuation regression inspects the continuation the concurrent note jobs
-	# share, so the test reads the plugin's own header.
-	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest")
-		target_include_directories(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/plugins/AudioFileProcessor")
-	endif()
+	# Cluster new-p15-260-port: the stutter-continuation regression is its own target
+	# (SamplerStutterContinuationTest, below); this test drives the sampler as a module.
 	# Q050-066 stage 2: the pad-chain cases put the build's amplifier module on a pad's channel.
 	if(LMMS_TEST_NAME STREQUAL "DrumRackPadsTest" OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest")
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
@@ -5130,6 +5127,43 @@ target_compile_definitions(TripleOscillatorUserWaveTest PRIVATE
 	PLUGIN_NAME=tripleoscillator
 )
 set_tests_properties(TripleOscillatorUserWaveTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# Cluster new-p15-260-port: AudioFileProcessor's notes share ONE stutter continuation, and the note start in
+# playNoteImpl() tested that frame against the sample end and then loaded it (and the direction) again, so a note
+# start could combine one publication's frame with another's direction while a sibling note job published. The
+# plugin sources are compiled into this test binary (the TripleOscillatorUserWaveTest pattern) so the regression
+# drives the shipping note-start path with the plug-in's LMMS_TESTING note-start hook in place. The hook is
+# absent from the plug-in build, which does not define LMMS_TESTING.
+add_executable(SamplerStutterContinuationTest
+	src/plugins/SamplerStutterContinuationTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/AudioFileProcessor/AudioFileProcessor.cpp
+	${CMAKE_SOURCE_DIR}/plugins/AudioFileProcessor/AudioFileProcessor.h
+)
+add_test(NAME SamplerStutterContinuationTest COMMAND SamplerStutterContinuationTest)
+target_include_directories(SamplerStutterContinuationTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/AudioFileProcessor
+	# the generated plugin_export.h (PLUGIN_EXPORT) of the sampler plugin
+	${CMAKE_BINARY_DIR}/plugins/AudioFileProcessor
+)
+target_static_libraries(SamplerStutterContinuationTest PRIVATE lmmsobjs)
+target_link_libraries(SamplerStutterContinuationTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(SamplerStutterContinuationTest PRIVATE cxx_std_20)
+target_compile_definitions(SamplerStutterContinuationTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=audiofileprocessor
+	# the test compiles the plugin sources itself, so PLUGIN_EXPORT must not
+	# be the import attribute of the plugin's own export header
+	PLUGIN_STATIC_DEFINE
+)
+if(TARGET audiofileprocessor)
+	add_dependencies(SamplerStutterContinuationTest audiofileprocessor)
+endif()
+set_tests_properties(SamplerStutterContinuationTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # Cluster new-p11-82: the Delay plugin's delay-time parameter is read by its

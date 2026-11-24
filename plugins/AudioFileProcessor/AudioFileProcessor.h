@@ -36,8 +36,13 @@
 #include "LmmsTypes.h"
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
+
+#ifdef LMMS_TESTING
+#include <functional>
+#endif
 
 
 namespace lmms
@@ -94,6 +99,14 @@ public:
 	//! Playback voices in use (stolen ones still fading included). Control-thread / test use.
 	Q_INVOKABLE int activeVoices() const;
 
+	//! One publication of the stutter continuation: the frame a note starts from and the direction it plays it in.
+	//! The two belong together, so they are published and read as one value (cluster new-p15-260-port).
+	struct StutterStart
+	{
+		f_cnt_t frame = 0;
+		bool backwards = false;
+	};
+
 
 public slots:
 	void setAudioFile(const QString& _audio_file, bool _rename = true);
@@ -144,32 +157,63 @@ private:
 	};
 	static_assert(sizeof(NoteVoice) <= 1024, "NoteVoice must fit NotePlayHandle::PluginDataStorageSize");
 
-	//! One read of the stutter continuation. The frame and direction belong together: a note start tests the frame
-	//! against the sample end and then starts from the same pair, while other note jobs publish their own position.
-	struct StutterStart
+	//! Bit 63 of the continuation word carries the playback direction and bits 0-62 carry the frame (a frame count of
+	//! 2^62 is beyond any sample). The pair is published and read as ONE word, so a note start can never combine a
+	//! frame from one publication with a direction from another, even while other note jobs of this instrument
+	//! publish their own position (cluster new-p15-260-port).
+	static constexpr std::uint64_t StutterBackwardsBit = std::uint64_t{1} << 63;
+	static constexpr std::uint64_t StutterFrameMask = StutterBackwardsBit - 1;
+
+	static auto packStutterStart(StutterStart start) noexcept -> std::uint64_t
 	{
-		f_cnt_t frame = 0;
-		bool backwards = false;
-	};
+		return (static_cast<std::uint64_t>(start.frame) & StutterFrameMask)
+			| (start.backwards ? StutterBackwardsBit : 0);
+	}
+
+	//! The stutter continuation as one coherent pair: one relaxed load of the shared word.
+	auto stutterContinuation() const noexcept -> StutterStart
+	{
+		const std::uint64_t word = m_stutterContinuation.load(std::memory_order_relaxed);
+		return StutterStart{word & StutterFrameMask, (word & StutterBackwardsBit) != 0};
+	}
+
+	//! Publish \a start as the stutter continuation: one relaxed store of the shared word.
+	void publishStutterContinuation(StutterStart start) noexcept
+	{
+		m_stutterContinuation.store(packStutterStart(start), std::memory_order_relaxed);
+	}
 
 	//! Read the shared continuation once, restarting it at the sample start when stutter is on and it is at the end.
 	//! The render path calls this on a note's first period; the returned pair is exactly what the note starts from.
-	StutterStart stutterStartForNote(bool stutter) noexcept
+	auto stutterStartForNote(bool stutter) noexcept -> StutterStart
 	{
-		StutterStart start{
-			m_nextPlayStartPoint.load(std::memory_order_relaxed),
-			m_nextPlayBackwards.load(std::memory_order_relaxed)};
+		StutterStart start = stutterContinuation();
 		if (stutter && start.frame >= static_cast<std::size_t>(m_sample.endFrame()))
 		{
 			// Restart playing the note if in stutter mode, not in loop mode, and we're at the end of the sample.
 			start.frame = m_sample.startFrame();
 			start.backwards = false;
-			m_nextPlayStartPoint.store(start.frame, std::memory_order_relaxed);
-			m_nextPlayBackwards.store(false, std::memory_order_relaxed);
+			publishStutterContinuation(start);
 		}
 		return start;
 	}
 
+	//! Test seam: runs where a note start has read the continuation and is about to write its voice state, so a
+	//! regression test can publish another continuation exactly there (SamplerStutterContinuationTest). It does
+	//! nothing in a build without the test seams.
+	void noteStartHook() const;
+
+#ifdef LMMS_TESTING
+protected:
+	//! Test seams (cluster new-p15-260-port): the function a regression test installs at the note-start point, and the
+	//! reads that let it see what a note start consumed, what it published and the voice state it published from.
+	std::function<void()> m_noteStartHook;
+	auto testStutterContinuation() const noexcept -> StutterStart { return stutterContinuation(); }
+	void testPublishStutterContinuation(StutterStart start) noexcept { publishStutterContinuation(start); }
+	auto testVoiceState(const NotePlayHandle* nph) const noexcept -> StutterStart;
+#endif
+
+private:
 	//! Control thread: publish \a next as the instrument's sample. A sounding note keeps the buffer
 	//! it captured; the replaced one is retired until no note holds it and only then freed here.
 	void replaceSample(Sample next);
@@ -201,10 +245,11 @@ private:
 	//! Built once, in the converter mode Sample::play requests, so the render path only claims and releases voices.
 	std::unique_ptr<SamplerVoicePool> m_voices;
 
-	//! Written by knob/automation slots and the render thread, read by note starts: atomic. Notes of one instrument
-	//! render on several engine threads at once, so these must never be a plain field or a lock (cluster new-p15-260).
-	std::atomic<f_cnt_t> m_nextPlayStartPoint;
-	std::atomic<bool> m_nextPlayBackwards;
+	//! The stutter continuation: ONE lock-free word (bit 63 the direction, bits 0-62 the frame), written by the
+	//! control-thread reset slots and the render thread and read by note starts. Notes of one instrument render on
+	//! several engine threads at once, so this must never be a plain field or a lock, and a note start must never
+	//! read the frame and the direction as two separate loads (cluster new-p15-260-port).
+	std::atomic<std::uint64_t> m_stutterContinuation{0};
 } ;
 
 } // namespace lmms

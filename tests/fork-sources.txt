@@ -4059,3 +4059,8 @@ tests/src/core/StemPythonDiscoveryServiceTest.cpp
 # pass advances the source with the same reads the audible pass makes (fork-NEW test).
 tests/src/tracks/SampleClipMuteCursorTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-223.md
+# cluster new-p15-260-port (round 3): the sampler's stutter continuation is ONE lock-free word (bit 63 the direction,
+# bits 0-62 the frame), and the note start publishes/reads it once - a note can no longer start at one note job's
+# frame with another's direction. This white-box regression compiles the plugin and drives the shipping note-start
+# path through the LMMS_TESTING note-start hook (fork-NEW test).
+tests/src/plugins/SamplerStutterContinuationTest.cpp
