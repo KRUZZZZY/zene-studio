@@ -6,7 +6,10 @@ ci-539b88713935565b-port: ALREADY-FIXED
 
 ## Verdict
 
-**ALREADY-FIXED on this branch (HEAD `e4194e0bf5`).** No product or test code changed in this job.
+**ALREADY-FIXED on this branch (HEAD `e4194e0bf5`).** This job's own commits change no product or test code (only this report). The branch does carry the
+earlier fix's test files relative to `master`: `tests/qt5-worker-thread-check.py`,
+`tests/src/gui/Warp/SampleClipWarpEditTest.cpp` and `tests/src/core/RemotePluginAudioPortsTest.cpp`
+(`git diff --stat $(git merge-base master HEAD) HEAD` lists all three as added).
 
 The cluster's original failure (the reported commit `c20ef591b5`, which is an ancestor of HEAD) was
 `'create' is not a member of 'QThread'` in `tests/src/gui/Warp/SampleClipWarpEditTest.cpp`: the
@@ -39,7 +42,12 @@ different `-Werror=unused-function` helper, and HEAD fixes each of them:
 All three fix commits are ancestors of HEAD (`git merge-base --is-ancestor <c> HEAD` gave exit 0 for
 `79691f5414`, `f3b5426267` and `9feb23eb1b`).
 
-## Commands run (logs in `~/.config/kads/zene/state/runs/ci-539b88713935565b-port.r2/logs`)
+## Commands run, round 3 (logs and manifest in `~/.config/kads/zene/state/runs/ci-539b88713935565b-port.r3/logs`, manifest `proof.json`)
+
+1. `cmake --build build --target zene RemotePluginAudioPortsShmCompileCheck RemotePluginAudioPortsTest SampleClipWarpEditTest WarpMarkersTest MidiOutTimingTest ExportWavWriteErrorTest -j4 > logs/build-green.log 2>&1` gave **EXIT=0** (`build-green.exit`). The log ends `[100%] Built target ExportWavWriteErrorTest`. sha256 `7679ae9751aa55bb30fe650ec7f5f2a638069473fdf71a3685e1621305d0c763`.
+2. From `build/tests`: `ctest -R '^(Qt5WorkerThreadCheck|RemotePluginAudioPortsTest|SampleClipWarpEditTest|WarpMarkersTest|MidiOutTimingTest|ExportWavWriteErrorTest)$' --output-on-failure > logs/test-green.log 2>&1` gave **EXIT=0** (`test-green.exit`), `100% tests passed out of 6`. sha256 `0ac246f5f004ae3ad8c00475c0ba23d2848d4532d6adab71aa87f9e3b5d4b9cb`.
+
+## Commands run, round 2 (earlier run, kept for history; that log folder no longer exists)
 
 1. `cmake --build build --target zene RemotePluginAudioPortsShmCompileCheck RemotePluginAudioPortsTest MidiOutTimingTest ExportWavWriteErrorTest SampleClipWarpEditTest WarpMarkersTest -j4 > logs/build-1.log 2>&1` gave **EXIT=0**. The log ends `[100%] Built target WarpMarkersTest`, with no `error:` lines.
 2. From `build/tests`: `ctest -R 'Qt5WorkerThreadCheck|RemotePluginAudioPortsTest|MidiOutTimingTest|ExportWavWriteErrorTest|WarpMarkersTest|SampleClipWarpEditTest' --output-on-failure > logs/test-1.log 2>&1` gave **EXIT=0**. The summary was `100% tests passed out of 6`: SampleClipWarpEditTest, ExportWavWriteErrorTest, MidiOutTimingTest, RemotePluginAudioPortsTest, WarpMarkersTest and Qt5WorkerThreadCheck.
@@ -56,9 +64,11 @@ All three fix commits are ancestors of HEAD (`git merge-base --is-ancestor <c> H
 
 ## Self-check
 
-* Regression test: none is new, because there is no fix in this job. The existing regression guards
-  `Qt5WorkerThreadCheck` and `RemotePluginAudioPortsShmCompileCheck` were built and run green (commands 1–2).
-* Registration: no files were added or modified besides this report, which is under `docs/`.
+* Regression tests: this job adds none, because it makes no fix. The branch-added guards `Qt5WorkerThreadCheck`
+  (`tests/qt5-worker-thread-check.py`), `SampleClipWarpEditTest`, `RemotePluginAudioPortsTest` and the
+  `RemotePluginAudioPortsShmCompileCheck` object target were built and run green in round 3 (commands 1–2).
+  The manifest records them as `test` artifacts with green_exit 0 and the sha256 of each log.
+* Registration: this job's commits add or modify only this report, which is under `docs/`.
 * Realtime, undo and commands: untouched.
 * RED/GREEN with the product change reverted: not applicable. This job made no product change, so
   there is nothing to revert. The existing guards above are green at HEAD (ctest EXIT=0, 6/6).
@@ -74,7 +84,8 @@ All three fix commits are ancestors of HEAD (`git merge-base --is-ancestor <c> H
 * Sibling commands (app.* and others): not affected. No command file was changed by this job. The
   files that submit_check lists as "tests added or changed" (`tests/control-*.py`) come from the
   branch's earlier merge commits against the base, not from this job.
-* submit_check: `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-539b88713935565b-port` gave EXIT=0, `RESULT: PASS - submit` (logs/submit-1.log).
+* submit_check: `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> ci-539b88713935565b-port` gave EXIT=0, `RESULT: PASS - submit` (round-2 logs/submit-1.log).
+* Round 3 gates: `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > r3/logs/gates-1.log 2>&1` gave EXIT=0, `RESULT: PASS`. The round-3 submit_check result is in `r3/logs/submit-1.log`.
 
 Delegation: Haiku (1) found the mingw64 job in the three newest ancestor CI log sets and extracted
 the failing `error:` lines. Haiku (2) ran the build (command 1) and the ctest run (command 2) and
