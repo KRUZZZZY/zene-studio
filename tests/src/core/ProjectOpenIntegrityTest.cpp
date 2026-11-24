@@ -165,6 +165,39 @@ QString projectWithSessionBlock()
 		"</lmms-project>\n" ).arg( version );
 }
 
+//! A minimal project whose mixer master volume is written in ELEMENT form -
+//! `<volume value="0.5"/>` rather than the volume="0.5" attribute. That is how a
+//! save writes an automatable model that carries a journal id or a scale type
+//! (the tree's own demo songs contain them), and reading one calls
+//! AutomatableModel::setValue() - the same call an edit makes. A load that runs
+//! with journalling ON therefore records an undo step for the document it is
+//! loading; a load that keeps the journalling its own entry point turned off
+//! records none.
+QString projectWithAnElementFormModelValue()
+{
+	DataFile fresh( DataFile::Type::SongProject );
+	const QString version = fresh.documentElement().attribute( QStringLiteral( "version" ) );
+	return QString(
+		"<?xml version=\"1.0\"?>\n"
+		"<lmms-project version=\"%1\" type=\"song\" creator=\"Zene Studio\">\n"
+		"  <head bpm=\"140\" mastervol=\"100\" timesig_numerator=\"4\" "
+		"timesig_denominator=\"4\" masterpitch=\"0\"/>\n"
+		"  <song>\n"
+		"    <trackcontainer type=\"song\">\n"
+		"      <track type=\"0\" name=\"t\" muted=\"0\">\n"
+		"        <instrumenttrack/>\n"
+		"      </track>\n"
+		"    </trackcontainer>\n"
+		"    <mixer>\n"
+		"      <mixerchannel num=\"0\" name=\"Master\" muted=\"0\" soloed=\"0\">\n"
+		"        <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+		"        <volume value=\"0.5\"/>\n"
+		"      </mixerchannel>\n"
+		"    </mixer>\n"
+		"  </song>\n"
+		"</lmms-project>\n" ).arg( version );
+}
+
 //! The modulation layer as the PROJECT WRITER writes it: a fresh document's
 //! root holding exactly the <modulation-layer> element saveSettings produces,
 //! serialised through the DOCUMENT (QDomDocument::toString, which every Qt this
@@ -392,6 +425,61 @@ private slots:
 		const QString after = dir.filePath( QStringLiteral( "after-failed-open.mmp" ) );
 		QVERIFY( song->saveProjectFile( after ) );
 		QVERIFY( QFile::exists( after ) );
+	}
+
+	//! gui-1112 (Luna 050/m0-train-27): loading a fresh project left a spurious
+	//! undo step, so Edit > Undo was enabled with nothing edited and Undo
+	//! History reported one step.
+	//!
+	//! The load's own contract is that it reads the document with journalling
+	//! OFF: Song::loadProject() disables it before the walk (Song.cpp:2031) and
+	//! re-enables it once the load is complete (Song.cpp:2340). clearProject()
+	//! runs INSIDE that window and used to re-enable journalling unconditionally
+	//! at its end, so every reader after it - the mixer's volume load here, the
+	//! GUI's keymap readers in the sweep's startup path - recorded a step for a
+	//! change the user never made. It now saves the state it found and restores
+	//! it (Song.cpp:1745-1746, Song.cpp:1884-1885).
+	//!
+	//! The fixture writes the master volume in ELEMENT form (`<volume
+	//! value="0.5"/>`), the shape a save writes for an automatable model that
+	//! carries a journal id (the tree's demo songs contain them). Reading it
+	//! calls AutomatableModel::setValue(), which is exactly what pushes a
+	//! checkpoint - so this measures the load's journalling state, not a
+	//! special case in the mixer reader. The value itself is asserted too: a
+	//! reader that never ran would leave the depth at zero for the wrong reason.
+	void aFreshProjectLoadRecordsNoUndoStep()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+
+		const QString project = dir.filePath( QStringLiteral( "element-form-volume.mmp" ) );
+		QVERIFY( writeText( project, projectWithAnElementFormModelValue() ) );
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->setLoadOnLaunch( false );
+		ProjectJournal* journal = Engine::projectJournal();
+		journal->clearJournal();
+		QCOMPARE( journal->undoDepth(), 0 );
+
+		song->loadProject( project );
+		QVERIFY2( song->loadRefusal().isEmpty(), qPrintable( song->loadRefusal() ) );
+
+		// The reader ran: the element-form volume reached the model.
+		QCOMPARE( Engine::mixer()->mixerChannel( 0 )->m_volumeModel.value(), 0.5f );
+		QVERIFY2( journal->undoDepth() == 0,
+			qPrintable( QStringLiteral( "loading the project recorded %1 undo step(s): a fresh "
+				"load must leave nothing to undo" ).arg( journal->undoDepth() ) ) );
+		QVERIFY2( !journal->canUndo(), "Undo was enabled after a load with no user edit" );
+
+		// The control: the load must RETURN with journalling on, or the empty
+		// stack above would only mean journalling was left off.
+		QVERIFY2( journal->isJournalling(), "the load left undo journalling off" );
+		Engine::mixer()->mixerChannel( 0 )->m_volumeModel.setValue( 0.25f );
+		QCOMPARE( journal->undoDepth(), 1 );
+		journal->undo();
+		QCOMPARE( Engine::mixer()->mixerChannel( 0 )->m_volumeModel.value(), 0.5f );
+		QCOMPARE( journal->undoDepth(), 0 );
 	}
 
 	//! D6, the half that is this build's to keep: the elements an older build
