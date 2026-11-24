@@ -4060,3 +4060,5 @@ tests/src/core/StemPythonDiscoveryServiceTest.cpp
 # pass advances the source with the same reads the audible pass makes (fork-NEW test).
 tests/src/tracks/SampleClipMuteCursorTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-223.md
+# cluster new-p12-248 (2026-11): the audio thread never waits on an automation clip's lock (fork-NEW regression).
+tests/src/core/AutomationRenderLockTest.cpp
