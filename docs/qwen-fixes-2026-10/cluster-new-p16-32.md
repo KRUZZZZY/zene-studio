@@ -131,6 +131,11 @@ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktr
   PASS fork-sources / all-sources-reproduce / no-upstream-regression /
        check-namespace / no-tautology / doc-figures / complexity / file-length
   RESULT: PASS
+
+# completion check
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p16-32 \
+    > logs/submit-1.log 2>&1                                                 EXIT=0
+  RESULT: PASS - submit (no FAIL; every ASK answered above)
 ```
 
 After the last test/restore cycle `git status --short` was empty and `git rev-parse HEAD` was
