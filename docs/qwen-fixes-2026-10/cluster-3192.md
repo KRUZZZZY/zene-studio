@@ -179,6 +179,51 @@ feature-check kads-3192 (base fa4a5f2e7, 654 changed files; logs in .../build/fe
 RESULT: PASS
 ```
 
+## Self-check
+
+- **The regression test fails with the product change reverted and passes with it.** Step 10-12
+  above reversed exactly the `src/tracks/InstrumentTrack.cpp` hunk (`git apply -R logs/fix.patch`,
+  EXIT 0), rebuilt (EXIT 0) and ran: EXIT **8**, failing on the three drives; step 13-15 restored it
+  (`git apply logs/fix.patch`, EXIT 0), rebuilt (EXIT 0) and ran: EXIT **0**. Logs:
+  `test-red-2-proof.log`, `test-green-5-proof.log`.
+- **The test is deterministic.** No sleep decides anything. The seam is
+  `AudioEngine::modelChangeWaiters()`, which reports a control thread parked inside
+  `requestChangeInModel()`; the test takes `AudioEngine::requestChangesGuard()` on its own thread to
+  stand in for the render period, then decides on which of two events happened first (writer parked,
+  or writer finished). The 10 s deadline only turns a missing guard into a failure instead of a
+  hang, the same idiom `TakeLaneCompPlaybackTest::compositeEditsWaitForTheEngineChangeLock` uses.
+  The values it asserts are injected, not timed: bend 12288 -> 2400 cents, pressure 96, release
+  velocity 96 at base velocity 100.
+- **The fix is at the cause and complete.** The two functions that write a live handle from the MIDI
+  input thread are the two the finding names, each has exactly one caller (`trackMpeInputEvent`),
+  and both now take the guard. The third writer in that path - the note-on stamp - happens before
+  `addPlayHandle()` publishes the handle to the engine, so the render thread cannot observe it; that
+  is recorded in the new comment beside the guard. The `MidiKeyPressure` sibling that is a real
+  unguarded write is listed under Other findings instead of being changed here.
+- **No collateral damage.** No saved-data format, project attribute, model, command, undo step or
+  limit changed: the diff adds two RAII guard lines and comments to one .cpp. Old projects load and
+  play exactly as before - MPE capture still runs only while `MpeExpression::isEnabled()`, and with
+  it off `trackMpeInputEvent()` returns at once, as before. Nothing rejects a caller that used to
+  work; the guard is the engine's own recursive lock, so nesting inside the pre-existing note-off
+  bracket is a no-op. Behaviour change is limited to the write now waiting for the period boundary.
+- **Verdict evidence for a not-real claim:** not applicable - the verdict is FIXED, and the
+  REAL evidence (writer, reader, lock) is cited with file:line in the verdict section above.
+- **Sibling commands.** This fix changes no command file and registers no command: the commit holds
+  `src/tracks/InstrumentTrack.cpp`, `tests/src/core/MpeInputPathTest.cpp`,
+  `tests/upstream-modifications.txt` and this report (`git show --stat HEAD`). The list the checker
+  printed (`app.about`, `arrangement.fit_tracks`, ...) comes from the branch's merged history
+  (`git diff --name-only <base>..HEAD` is the whole train, 654 files), not from this cluster's
+  change, so no command's behaviour or reversibility class is touched here.
+- **Old projects and new data.** Nothing serialized changed: no `saveState`/`restoreState`, no
+  project attribute, no new model. The pre-existing save/load round-trip slots in this same file
+  (`noteOffVelocityIsCapturedOnTheReleasedNote`) still pass with the fix (EXIT 0, `test-green-1.log`).
+- **Realtime.** Nothing new runs on the audio thread. `requestChangesGuard()` is taken on the MIDI
+  input thread (`MidiClient.cpp:327` and the backend input threads), which is a control thread; it
+  blocks that thread until the period ends, which is what every other control-thread edit already
+  does. On the render thread `requestChangeInModel()` returns immediately
+  (`src/core/AudioEngine.cpp:1985`), so the audio path gains no lock, allocation, free, log or wait.
+  Local TSan does not run on this box, so this is a design argument, and it is stated as one.
+
 ## Files committed
 
 - `src/tracks/InstrumentTrack.cpp` - the fix (registered in `tests/upstream-modifications.txt`).
