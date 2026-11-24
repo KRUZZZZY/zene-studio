@@ -39,6 +39,7 @@ class QTextStream;
 namespace lmms
 {
 
+class DataFileSaveLock;
 class ProjectVersion;
 
 
@@ -93,9 +94,20 @@ public:
 	bool validate( QString extension );
 
 	QString nameWithExtension( const QString& fn ) const;
+	//! nameWithExtension() for a caller with no DataFile: the name a document of
+	//! \a type is written under (cluster new-p10-89: whoever takes the save lock
+	//! before writeFile() must name the file writeFile() will write).
+	static QString normalisedName( Type type, const QString& fn );
+
+	//! The lock a save of one file holds (include/DataFileSaveLock.h).
+	using SaveLock = DataFileSaveLock;
 
 	void write( QTextStream& strm );
-	bool writeFile(const QString& fn, bool withResources = false);
+	//! \a held is the save lock the caller already owns for the file this writes
+	//! (QLockFile is not re-entrant for one process, so it cannot be taken
+	//! twice); null makes writeFile() take and release its own. A held lock for
+	//! another file is refused, never trusted.
+	bool writeFile(const QString& fn, bool withResources = false, SaveLock* held = nullptr);
 	bool copyResources(const QString& resourcesDir); //!< Copies resources to the resourcesDir and changes the DataFile to use local paths to them
 	bool hasLocalPlugins(QDomElement parent = QDomElement(), bool firstCall = true) const;
 
