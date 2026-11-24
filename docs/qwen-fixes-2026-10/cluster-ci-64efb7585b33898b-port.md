@@ -60,7 +60,20 @@ DeepSeek were not used, because nothing was implemented: no fix or test could be
 the failure.
 
 ## Self-check
-(answered after running submit_check.py; see below)
+I ran `python3 .../qwen/submit_check.py <worktree> ci-64efb7585b33898b-port > logs/submit-1.log 2>&1`
+and it returned EXIT=0 (`RESULT: PASS - submit`). Every PASS row passed, including the gates
+(feature_check.py). The ? items:
+- **Red/green:** none, because no fix was made. The verdict is NEEDS-CONTEXT: no failure was ever
+  observed, so nothing exists to turn red.
+- **Deterministic:** no test was added, for the same reason. The only tests I ran were the existing
+  AutomationLaneChild ctests (EXIT=0, logs/test-1.log).
+- **Cause and completeness:** no product code was changed, so no caller or sibling is affected.
+- **No collateral damage:** no product code, data format or limit was changed. This commit adds the
+  report file only.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence:** neither applies; the verdict is NEEDS-CONTEXT.
+- **Sibling commands (app.*, arrangement.*):** this commit changes no command file. The check lists
+  test files and commands that earlier commits on this branch brought in relative to master
+  (tests/control-*.py), and none of them is touched here.
 
 ## Other findings
 None.
