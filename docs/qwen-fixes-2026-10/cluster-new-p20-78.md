@@ -134,6 +134,12 @@ RESULT: PASS
 5. **Verdict evidence.** REAL is evidenced by the starting-HEAD code at
    `src/core/midi/MidiSndio.cpp:169` and the RED run. This is not an
    ALREADY-FIXED or FALSE-POSITIVE claim.
+6. **Sibling commands.** This commit changes no `ControlCommands*`,
+   `ControlRegistry`, `ControlReversibilityTable` or command snapshot file.
+   `git show --stat --oneline HEAD` lists exactly the five files above. The
+   `app.*`/`arrangement.*` ids in the pre-submit question come from the
+   train-wide merge-base diff, not from this fix; no command was added or
+   changed, so there is no command sibling to update.
 
 ## Other findings
 
