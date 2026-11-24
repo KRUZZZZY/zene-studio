@@ -182,3 +182,20 @@ is left exactly as it was.
   it is left unchanged — flagging it for its own ticket. Also note `SessionScheduler::applyCommand`
   applies a `Stop` with the slot's stored quantisation, so `stop_slot`'s `quantisation` argument does not
   decide when the stop lands.
+
+## QA follow-up
+
+The retry test now uses an open-ended take. A one-bar take already has a scheduled stop, which could
+make the final assertion pass even if the retry failed to queue its own stop. Cancellation now checks
+the recorder state while the engine is held and queues a stop for armed and recording takes. A
+finishing take has already stopped its cell and may be discarded even when the queue is full.
+`aFinishingTakeCanBeCancelledWithAFullQueue` drives that state by rendering the timed take's
+stop without staging input, then checks that cancellation succeeds without a dropped command.
+
+With only the product file reverted to the branch base, rebuilding `SessionAudioRecordTest`
+exited 0 and `ctest -R '^SessionAudioRecordTest$' --output-on-failure` from `build/tests` exited 8.
+The open-ended cancel returned success instead of Busy, and the finishing cancel incremented
+the dropped-command counter.
+
+With the QA patch restored, rebuilding `zene` and the five session test targets exited 0.
+The same five-test CTest command listed in the family check exited 0.

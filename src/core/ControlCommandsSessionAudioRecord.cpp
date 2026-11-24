@@ -139,14 +139,17 @@ ControlResult cancelRecording(Song& song)
 	SessionAudioRecorder& recorder = scheduler.audioRecorder();
 	const int track = recorder.track();
 	const int scene = recorder.scene();
-	const SessionAudioRecorder::State before = recorder.state();
-	const bool stopsCell = before != SessionAudioRecorder::State::Idle && before != SessionAudioRecorder::State::Done;
+	auto before = SessionAudioRecorder::State::Idle;
 	// BUG 4: the stop is queued BEFORE the take is dropped, under the same hold, and a refused stop is not ignored.
 	// Dropping first would throw the take away and leave its cell playing with the command reporting success; the
 	// refusal leaves both in hand, and a retry (once the audio thread has drained the queue) cancels as usual.
 	bool stopQueued = true;
 	withEngineHeld([&]
 	{
+		before = recorder.state();
+		// Finishing captures the remaining input after the cell has stopped.
+		const bool stopsCell = before == SessionAudioRecorder::State::Armed
+			|| before == SessionAudioRecorder::State::Recording;
 		stopQueued = !stopsCell || scheduler.requestStop(track, scene, LaunchMode::Trigger, LaunchQuantisation::None);
 		if (stopQueued) { recorder.cancel(); }
 	});

@@ -568,8 +568,9 @@ private slots:
 	//! under the same hold as the drop: a refusal leaves the take in hand, the cell playing, and says so.
 	void aCancelWhoseStopCannotBeQueuedKeepsTheTakeInHand()
 	{
+		// An open-ended take has no automatic stop that could make the retry appear to work.
 		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column},
-			{QStringLiteral("scene"), 0}, {QStringLiteral("bars"), 1}}).ok);
+			{QStringLiteral("scene"), 0}}).ok);
 		for (int i = 0; i < 4000 && state() != QStringLiteral("recording"); ++i) { period(); }
 		QCOMPARE(state(), QStringLiteral("recording"));
 		SessionScheduler& scheduler = Engine::getSong()->sessionScheduler();
@@ -600,6 +601,31 @@ private slots:
 		// The stop lands on the slot's own quantisation (the cell's bar line), so the periods drive the clock to it.
 		for (int i = 0; i < 4000 && scheduler.trackIsSessionActive(m_column); ++i) { period(); }
 		QVERIFY(!scheduler.trackIsSessionActive(m_column));
+	}
+
+	void aFinishingTakeCanBeCancelledWithAFullQueue()
+	{
+		QVERIFY(run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("bars"), 1}}).ok);
+
+		// Render without staging input so the stopped take still needs frames to finish.
+		AudioEngine* engine = Engine::audioEngine();
+		for (int i = 0; i < 6000 && state() != QStringLiteral("finishing"); ++i) { engine->renderNextPeriod(); }
+		QCOMPARE(state(), QStringLiteral("finishing"));
+		SessionScheduler& scheduler = Engine::getSong()->sessionScheduler();
+		QVERIFY(!scheduler.trackIsSessionActive(m_column));
+		while (scheduler.commandQueueSpace() > 0)
+		{
+			QVERIFY(scheduler.requestStop(999, 0, LaunchMode::Trigger, LaunchQuantisation::None));
+		}
+		const std::uint64_t dropped = scheduler.droppedCommands();
+
+		const ControlResult cancelled = run(QStringLiteral("session.record_slot"), {{QStringLiteral("track"), m_column},
+			{QStringLiteral("scene"), 0}, {QStringLiteral("cancel"), true}});
+		QVERIFY2(cancelled.ok, qPrintable(cancelled.errorMessage));
+		QVERIFY(cancelled.result.value(QStringLiteral("cancelled")).toBool());
+		QCOMPARE(state(), QStringLiteral("idle"));
+		QCOMPARE(scheduler.droppedCommands(), dropped);
 	}
 
 private:
