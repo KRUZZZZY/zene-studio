@@ -111,6 +111,24 @@ QString scopeName(NoteScope scope);
  */
 void checkpointNoteEdit(MidiClip* clip, bool changes);
 
+/*! The dirty half of a note edit: the project is marked MODIFIED, so closing it,
+ *  replacing it or quitting asks before the edit is lost.
+ *
+ *  THE OTHER HALF OF THE SAME RULE, and the reason it lives here too: every verb
+ *  that changes note state has to say so. note.add, note.remove, note.edit,
+ *  note.slide_set, note.slide_clear, note.transpose, note.velocity_offset and
+ *  note.velocity_scale checkpointed the clip and emitted dataChanged() - so the
+ *  editors repainted - but never called Song::setModified(), and only the shared
+ *  notes::finish() path did; a project edited through one of them and then closed
+ *  or replaced was announced clean and the edit was lost without a prompt (Luna
+ *  cluster new-p17-14).
+ *
+ *  @a changed is the caller's answer to "does this edit change anything?", the same
+ *  answer it hands checkpointNoteEdit: an edit that changed NOTHING leaves the flag
+ *  alone, because it leaves no undo step either (Luna cluster new-p14-41).
+ */
+void markProjectEdited(bool changed = true);
+
 } // namespace control
 
 } // namespace lmms

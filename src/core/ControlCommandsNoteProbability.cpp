@@ -54,6 +54,7 @@
 
 #include "ClipLinks.h"
 #include "ControlEdit.h"
+#include "ControlNoteShared.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "MidiClip.h"
@@ -152,7 +153,7 @@ void registerNoteProbabilitySet(ControlRegistry& registry)
 		note->setProbability(requested);
 		clip->dataChanged();
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // a linked copy carries the same probability
-		if (changed) { Engine::getSong()->setModified(); }
+		markProjectEdited(changed);  // the shared finalizer: the project is dirty
 
 		QJsonObject result = noteState(note, index);
 		result.insert(QStringLiteral("clip"), clipId(ref.id));

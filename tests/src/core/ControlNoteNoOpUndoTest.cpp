@@ -451,6 +451,72 @@ private slots:
 		QVERIFY2(failures.isEmpty(), qPrintable(failures.join(QLatin1Char('\n'))));
 	}
 
+	//! The other half of every note edit in this family: a call that DID change
+	//! something marks the project modified, so closing, replacing or quitting it
+	//! asks before the edit is lost (cluster new-p17-14). The verbs here are the
+	//! ones that emitted dataChanged() and left Song::isModified() false; they are
+	//! checked through the same seam as the group above, one project at a time.
+	void directNoteEditsMarkProjectDirty()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		QStringList failures;
+
+		checkProjectDirtyAfter(QStringLiteral("note.transpose"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("semitones"), 12}}, &failures);
+		checkProjectDirtyAfter(QStringLiteral("note.velocity_offset"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("delta"), -10}}, &failures);
+		checkProjectDirtyAfter(QStringLiteral("note.velocity_scale"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("factor"), 1.5}}, &failures);
+		// The batch verb the note editor sends for a drag: one note, one field.
+		checkProjectDirtyAfter(QStringLiteral("note.edit"),
+			{{QStringLiteral("clip"), fixture.clip},
+				{QStringLiteral("edits"), QJsonArray{QJsonObject{{QStringLiteral("note"), fixture.note},
+					{QStringLiteral("velocity"), 90}}}}}, &failures);
+		checkProjectDirtyAfter(QStringLiteral("note.slide_set"),
+			noteMutationArgs(fixture, QStringLiteral("slide"), true), &failures);
+		checkProjectDirtyAfter(QStringLiteral("note.slide_clear"),
+			{{QStringLiteral("clip"), fixture.clip}}, &failures);
+
+		// note.add and note.remove: the two halves that change the clip's note LIST,
+		// and the ones a user meets first. The added note is removed again so the
+		// removal is of a note this test knows exists.
+		markProjectClean();
+		const ControlResult added = run(QStringLiteral("note.add"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("key"), 62},
+				{QStringLiteral("position"), 48}, {QStringLiteral("length"), 24},
+				{QStringLiteral("velocity"), 100}});
+		if (!added.ok) { failures.append(QStringLiteral("note.add failed: ") + added.errorMessage); }
+		else if (!Engine::getSong()->isModified())
+		{
+			failures.append(QStringLiteral("note.add left the project clean"));
+		}
+		const QString addedNote = added.ok ? added.result.value(QStringLiteral("note")).toString() : QString();
+		if (addedNote.isEmpty()) { failures.append(QStringLiteral("note.add reported no note id")); }
+		else
+		{
+			checkProjectDirtyAfter(QStringLiteral("note.remove"),
+				{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("note"), addedNote}}, &failures);
+		}
+
+		QVERIFY2(failures.isEmpty(), qPrintable(failures.join(QLatin1Char('\n'))));
+	}
+
+	//! The control for the test above: a slide_set that sets the flag to the value
+	//! the note already carries changes nothing, so it takes no undo step and must
+	//! leave the project CLEAN - the marking above is not a blanket true.
+	void noOpSlideSetLeavesProjectClean()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		markProjectClean();
+		const ControlResult set = run(QStringLiteral("note.slide_set"),
+			noteMutationArgs(fixture, QStringLiteral("slide"), false));
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		QCOMPARE(set.result.value(QStringLiteral("slide")).toBool(), false);
+		QVERIFY(!Engine::getSong()->isModified());
+	}
+
 	//! An invalid note reference fails before the checkpoint or dirty-state update.
 	void failedNoteMutationLeavesProjectClean()
 	{

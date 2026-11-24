@@ -27,6 +27,7 @@
 
 #include "ClipLinks.h"
 #include "ControlEdit.h"
+#include "ControlNoteShared.h"
 #include "ControlRegistry.h"
 #include "Engine.h"
 #include "MidiClip.h"
@@ -137,6 +138,10 @@ void registerNoteAdd(ControlRegistry& registry)
 		Note* added = clip->addNote(fresh, false);
 		added->setSelected(false);
 		clip->dataChanged();
+		// A note the clip did not hold a moment ago is project state: mark it edited
+		// here, on the add, so even the "not in the clip" reply below leaves the
+		// project dirty - the note WAS added, whatever the listing says.
+		markProjectEdited();
 
 		const int index = indexOfNote(clip, added);
 		if (index < 0)
@@ -198,6 +203,7 @@ void registerNoteRemove(ControlRegistry& registry)
 		clip->addJournalCheckPoint();
 		clip->removeNote(note);
 		clip->dataChanged();
+		markProjectEdited();  // a note the clip no longer holds is project state
 
 		// The selection store holds the SELECTED NOTES' IDS (control::selectNotes),
 		// which travel with their notes, so this remove needs no remapping: every
@@ -283,7 +289,7 @@ void registerNoteMove(ControlRegistry& registry)
 		// Row 6: a content edit to a linked clip is an edit to the whole group -
 		// the members' note lists are rebuilt from this clip's, in the same step.
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
-		if (position != previousPos) { Engine::getSong()->setModified(); }
+		markProjectEdited(position != previousPos);
 
 		const int newIndex = indexOfNote(clip, note);
 		if (newIndex < 0)
@@ -368,7 +374,7 @@ void registerNoteResize(ControlRegistry& registry)
 		clip->updateLength();
 		clip->dataChanged();
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
-		if (changed) { Engine::getSong()->setModified(); }
+		markProjectEdited(changed);
 
 		QJsonObject result = control::noteState(note, index);
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));
@@ -436,7 +442,7 @@ void registerNoteVelocitySet(ControlRegistry& registry)
 		note->setVolume(requested);
 		clip->dataChanged();
 		if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
-		if (changed) { Engine::getSong()->setModified(); }
+		markProjectEdited(changed);
 
 		QJsonObject result = control::noteState(note, index);
 		result.insert(QStringLiteral("clip"), control::clipId(ref.id));

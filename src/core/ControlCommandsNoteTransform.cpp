@@ -247,6 +247,7 @@ ControlResult transpose(const QJsonObject& args)
 	// did not, so one member's keys/velocities were changed while its copies kept the old
 	// ones - and the group then reported itself divergent.
 	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
+	markProjectEdited(changes);  // a moved key is project state
 
 	QJsonObject arguments;
 	arguments.insert(QStringLiteral("semitones"), semitones);
@@ -290,6 +291,7 @@ ControlResult velocityOffset(const QJsonObject& args)
 	const int changed = NoteTransform::offsetVelocity(notes, delta);
 	clip->dataChanged();
 	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // cluster 5690, as transpose above
+	markProjectEdited(changes);  // a moved velocity is project state
 
 	QJsonObject arguments;
 	arguments.insert(QStringLiteral("delta"), delta);
@@ -331,6 +333,7 @@ ControlResult velocityScale(const QJsonObject& args)
 	const int changed = NoteTransform::scaleVelocity(notes, boundedFactor);
 	clip->dataChanged();
 	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }  // cluster 5690, as transpose above
+	markProjectEdited(changes);  // a moved velocity is project state
 
 	QJsonObject arguments;
 	arguments.insert(QStringLiteral("factor"), factor);

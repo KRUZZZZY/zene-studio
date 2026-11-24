@@ -4048,3 +4048,5 @@ tests/src/plugins/SfzCompressorStereoLinkTest.cpp
 # cluster new-p9-240 (2026-10): LOMM sample-rate change regression - the lookahead ring cursor and contents are re-anchored when the rings are resized (fork-NEW test).
 tests/src/plugins/LommSampleRateTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p9-240.md
+# cluster new-p17-14 (2026-10): every note edit that changes note state marks the project modified through control::markProjectEdited (add, remove, edit, slide, the three transforms); regression ControlNoteNoOpUndoTest::directNoteEditsMarkProjectDirty.
+docs/qwen-fixes-2026-10/cluster-new-p17-14.md
