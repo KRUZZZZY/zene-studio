@@ -2331,7 +2331,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/Vestige
 			${CMAKE_BINARY_DIR}/plugins/Vestige)
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=vestige)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_NAME=vestige
+			MIDI_HANDOFF_QUEUE_HEADER="${CMAKE_SOURCE_DIR}/include/MidiHandoffQueue.h")
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE vstbase)
 		add_dependencies(${LMMS_TEST_NAME} vestige)
 		# The vstbase module resolves the LMMS core symbols from its host process,
