@@ -113,6 +113,17 @@ cd build/tests && ctest -V -R '^Train39-unused-result$' > LOGS/test-3-green-rest
 # PASS mount namespace helper checks every write result
 ```
 
+The same pair is reproducible from the log folder alone with
+`LOGS/run-regression-proof.sh`, which reverse-applies the header for `red` and
+restores it on exit, and ensures the fixed header for `green`:
+
+```sh
+LOGS/run-regression-proof.sh red > LOGS/test-5-red-wrapper.log 2>&1
+# EXIT=8
+LOGS/run-regression-proof.sh green > LOGS/test-6-green-wrapper.log 2>&1
+# EXIT=0
+```
+
 Direct consumer and family:
 
 ```sh
