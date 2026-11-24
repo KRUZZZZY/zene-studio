@@ -107,8 +107,22 @@ The completion check after the final commit is recorded below.
 
 The pre-commit `submit_check.py` run had one expected FAIL, "working tree clean", because the report
 and its registration were not yet committed; every other row passed and all ASK items are answered
-in `## Self-check` above (`submit-check-1.log`). The final clean-tree run is recorded in the run
-logs after the commit.
+in `## Self-check` above (`submit-check-1.log`). After commit `55f349bdbe`, the clean-tree run
+exited 0 (`submit-check-2.log`):
+
+```
+PRE-SUBMIT CHECK for ci-9b3cdba8549c073f-port
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f-port.md
+  PASS  tests added or changed - tests/Qt5QStringListSizeConstructorCheck.py, tests/clang-template-keyword-check.py, tests/control-audio-test-tone.py
+  PASS  new test files registered in tests/CMakeLists.txt
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
+The ASK items printed by that run are answered in `## Self-check`. A final re-run after this report
+update is recorded as `submit-check-3.log`.
 
 ## Other findings
 
