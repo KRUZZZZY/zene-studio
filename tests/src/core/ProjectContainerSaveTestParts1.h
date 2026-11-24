@@ -421,3 +421,39 @@ void ProjectContainerSaveTest::aRefusedUndoRestoreKeepsTheContainerFormat() {
 	QVERIFY( song->isContainerV2Project() );
 	QCOMPARE( stateOf(), state );
 }
+void ProjectContainerSaveTest::aSaveRefusedByAHeldLockRotatesNothing() {
+	QTemporaryDir dir;
+	QVERIFY( dir.isValid() );
+	buildSession();
+	const QString path = dir.filePath( QStringLiteral( "locked.mmp" ) );
+	QVERIFY( saveTo( path ).ok );
+	QVERIFY( saveTo( path ).ok );	// the second save leaves rev0 and a .bak behind
+	const QString rev0 = path + QStringLiteral( ".rev0" );
+	const QString bak = path + QStringLiteral( ".bak" );
+	QVERIFY( QFile::exists( rev0 ) && QFile::exists( bak ) );
+	const QByteArray liveBefore = readBytes( path );
+	const QByteArray rev0Before = readBytes( rev0 );
+	const QByteArray bakBefore = readBytes( bak );
+
+	{
+		const std::unique_ptr<DataFileSaveLock> writer = DataFileSaveLock::tryAcquire( path );
+		QVERIFY2( writer, "the fixture could not take the save lock" );
+		const ControlResult refused = saveTo( path );
+		QVERIFY2( !refused.ok, "project.save ran while another save held the lock" );
+		QCOMPARE( refused.errorKind, ControlErrorKind::Refused );
+		QVERIFY2( refused.errorMessage.contains( QStringLiteral( "NOT saved" ) ), qPrintable( refused.errorMessage ) );
+		// Nothing moved: no rotation (rev0 would now be the live file, rev1 would exist), no temp, no
+		// backup change, and the live file is the one the other save will replace.
+		QCOMPARE( readBytes( path ), liveBefore );
+		QCOMPARE( readBytes( rev0 ), rev0Before );
+		QVERIFY2( !QFile::exists( path + QStringLiteral( ".rev1" ) ), "a refused save rotated the revision set" );
+		QCOMPARE( readBytes( bak ), bakBefore );
+		QVERIFY( !QFile::exists( path + QStringLiteral( ".new" ) ) );
+	}
+
+	const ControlResult landed = saveTo( path );
+	QVERIFY2( landed.ok, qPrintable( landed.errorMessage ) );
+	QVERIFY( landed.result.value( QStringLiteral( "revision_kept" ) ).toBool() );
+	QVERIFY( QFile::exists( path + QStringLiteral( ".rev1" ) ) );
+	QVERIFY2( !QFile::exists( path + QStringLiteral( ".save-lock" ) ), "a completed save left its lock behind" );
+}

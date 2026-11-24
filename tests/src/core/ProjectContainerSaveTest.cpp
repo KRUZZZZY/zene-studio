@@ -25,6 +25,8 @@
 
 #include <QtTest>
 
+#include <memory>
+
 #include <QByteArray>
 #include <QDir>
 #include <QFile>
@@ -39,6 +41,7 @@
 #include "ControlProjectAssets.h"
 #include "ControlRegistry.h"
 #include "DataFile.h"
+#include "DataFileSaveLock.h"
 #include "Engine.h"
 #include "ProjectContainer.h"
 #include "ProjectJournal.h"
@@ -235,6 +238,12 @@ private slots:
 	//! Control: a saved container cut in half is malformed - its directory is gone -
 	//! and is refused as such, never as an unreadable file.
 	void aTruncatedSavedContainerIsRefusedAsMalformed();
+
+	//! Cluster new-p10-89, round 3. project.save takes the save lock BEFORE it rotates the revision
+	//! set. A save refused because another instance holds the lock is a typed Refused result that
+	//! rotated nothing, wrote no .new and changed no .bak; with the lock gone the same save lands and
+	//! rotates exactly once.
+	void aSaveRefusedByAHeldLockRotatesNothing();
 };
 
 #include "ProjectContainerSaveTestParts1.h"

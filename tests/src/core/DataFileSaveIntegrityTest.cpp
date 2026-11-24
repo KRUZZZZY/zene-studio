@@ -25,15 +25,21 @@
 
 #include <QtTest>
 
+#include <memory>
+
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QLockFile>
 #include <QRegularExpression>
 #include <QTemporaryDir>
 
 #include "ConfigManager.h"
 #include "DataFile.h"
+#include "DataFileSaveLock.h"
+#include "ProjectRevisions.h"
+#include "RevisionTimeline.h"
 #include "XmlDepthGuard.h"
 
 using namespace lmms;
@@ -330,10 +336,66 @@ private slots:
 	//! still adopts the temp and writes no .bak, so the option keeps its meaning
 	//! on the recovery path too.
 	void adoptionHonoursTheDisableBackupConfiguration();
+
+	//! Cluster new-p10-89. A save writes <name>.new BEFORE it replaces <name>,
+	//! so during that window a COMPLETE temp belongs to a save that is still
+	//! running in another instance - it is not an orphan. Recovery used to adopt
+	//! it, which consumes the temp the writer is about to publish: the writer's
+	//! own rename then fails and reports a failed save, and if recovery ran
+	//! before the writer's backup step the writer copies the recovered content
+	//! over the previous <name>.bak, destroying the only older copy.
+	//!
+	//! The writer says so with the save lock it holds for exactly that window
+	//! (<name>.save-lock, a QLockFile naming its pid). Recovery must leave both
+	//! the temp and the project alone while that lock is held - and adopt the
+	//! very same temp once the holder is gone, which is what a writer that
+	//! crashed leaves behind, so the recovery path is not closed for real
+	//! orphans. The lock is the REAL one, held here in this process: QLockFile
+	//! refuses a second lock on a file whose recorded pid is a live process, and
+	//! this process is one, so holding it stands in for another instance holding
+	//! it without any timing or second process.
+	//!
+	//! The fixture AGES the held sidecar to 1970 before the load. A real save can
+	//! run past QLockFile's 30 second default staleness age, and a lock that is
+	//! reclaimed on age is no lock at all, so the aged case is the one that
+	//! matters: recovery must still leave it alone.
+	void liveSaveInAnotherInstanceIsNotAdopted();
+
+	//! Cluster new-p10-89, the writer's half. Two instances must not both write
+	//! <name>.new, so a save whose lock is held elsewhere is refused, says so,
+	//! and changes nothing on disk (project, previous backup and temp all
+	//! untouched). The held sidecar is aged here too, so a long-running writer
+	//! keeps its lock. Once the holder is gone the same save lands, and a
+	//! completed save leaves no lock behind - otherwise every later save would
+	//! be refused.
+	void saveIsRefusedWhileAnotherInstanceHoldsTheLock();
+
+	//! Cluster new-p10-89, the fail-closed half. A save that cannot take its
+	//! lock must not write <name>.new anyway: a name that is occupied by
+	//! something that is not a lock file, and a folder that refuses the lock
+	//! file outright (permission), both refuse the save with a report and leave
+	//! the project, the older backup and the temp untouched. Recovery is
+	//! fail-closed on the same terms: an unusable lock means the temp stays
+	//! where it is, which is the harmless direction.
+	void unusableSaveLockFailsClosed();
+
+	//! Cluster new-p10-89, round 3. The lock is an RAII type a caller can hold
+	//! ACROSS a save: it is exclusive, it is released when it goes out of scope,
+	//! writeFile() given a held lock for the file it writes uses it (QLockFile is
+	//! not re-entrant for one process, so a second acquisition would refuse) and
+	//! leaves it held, and a lock held for another file is refused.
+	void aHeldSaveLockIsExclusiveAndHandedToWriteFile();
+
+	//! A restore rotates the revision set and replaces the project, so it must
+	//! not run while another instance's save holds the lock: both restore paths
+	//! (the keep-3 rotation ids and the timeline's other slots) refuse BEFORE
+	//! staging or rotating anything, and succeed once the lock is gone.
+	void restoreIsRefusedBeforeRotatingWhileASaveHoldsTheLock();
 };
 
 #include "DataFileSaveIntegrityTestParts1.h"
 #include "DataFileSaveIntegrityTestParts2.h"
+#include "DataFileSaveIntegrityTestParts3.h"
 
 QTEST_GUILESS_MAIN( DataFileSaveIntegrityTest )
 #include "DataFileSaveIntegrityTest.moc"

@@ -380,6 +380,7 @@ include/CrashReporter.h
 include/CrashReporterFormat.h
 include/CrossfadeEditorDialog.h
 include/DataFile.h
+include/DataFileSaveLock.h
 include/DawProjectInterchange.h
 include/Delay.h
 include/DeltaTap.h
@@ -2041,6 +2042,7 @@ src/core/CrashReporter.cpp
 src/core/CrashReporterFormat.cpp
 src/core/CrashReporterWindows.cpp
 src/core/DataFile.cpp
+src/core/DataFileSaveLock.cpp
 src/core/DawProjectModel.cpp
 src/core/DawProjectRead.cpp
 src/core/DawProjectReadShared.h
@@ -2984,6 +2986,7 @@ tests/src/core/DataFileFormatTest.cpp
 tests/src/core/DataFileSaveIntegrityTest.cpp
 tests/src/core/DataFileSaveIntegrityTestParts1.h
 tests/src/core/DataFileSaveIntegrityTestParts2.h
+tests/src/core/DataFileSaveIntegrityTestParts3.h
 tests/src/core/DawProjectDeflateImportTest.cpp
 tests/src/core/DawProjectInterchangeRoundTripTest.cpp
 tests/src/core/DeviceAbUndoTest.cpp
