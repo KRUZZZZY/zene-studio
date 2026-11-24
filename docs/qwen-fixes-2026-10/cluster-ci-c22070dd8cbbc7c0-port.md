@@ -58,6 +58,51 @@ An earlier ctest run (`test-1-family.log`) returned EXIT 8. The only failure was
 because that binary had not been built in this tree yet. After the build above, the same tests
 passed 4/4.
 
+## Round 3: closing the gap in the arm check (tests/qt5-signal-overload-arm-check.py)
+
+The reviewer sent this back because the proof had no test artifact. The product line stays as it
+is, and the ALREADY-FIXED verdict for `src/gui/FollowActionEditor.cpp:210` is unchanged. The
+linux-arm64 cluster's own check had a real gap. Its `QT5_OVERLOADED` list lacked four Qt 5.15
+overloads that its sibling checks know about and that have already broken a hosted Qt 5 build
+(`f06e257207`, `QSslSocket::sslErrors` in StemModelStoreTest). The list now includes them. The
+citations come from the qtbase 5.15 headers at `https://code.qt.io/cgit/qt/qtbase.git/plain/<path>?h=5.15`:
+
+| Signal | Qt 5.15 overloads | Header lines |
+| --- | --- | --- |
+| `QSslSocket::sslErrors` | signal beside the deprecated `sslErrors() const` getter | `qsslsocket.h:216,196` |
+| `QSignalMapper::mapped` | int, QString, QWidget*, QObject* | `qsignalmapper.h:71,73,75,77` |
+| `QNetworkReply::error` | signal beside the `error() const` getter | `qnetworkreply.h:161,127` |
+| `QAbstractSocket::error` | signal beside the `error() const` getter | `qabstractsocket.h:211,183` |
+
+- The red fixture gains one bare connect line per new signal. `FIXTURE_EXPECTED` now holds six
+  findings (fixture lines 12-17); the two existing ones moved from 7 and 8 to 12 and 13 after the
+  new includes.
+- The green fixture gains the disambiguated forms: `QOverload<const QList<QSslError>&>::of`,
+  `qOverload<int>`, `static_cast<void (QNetworkReply::*)(QNetworkReply::NetworkError)>` and
+  `QOverload<QAbstractSocket::SocketError>::of`.
+- `DISAMBIGUATED` now accepts one level of nested template arguments (`TEMPLATE_ARGS`). Without
+  that, the correct spelling `QOverload<const QList<QSslError>&>::of(...)` was itself flagged. The
+  change only accepts more disambiguated spellings, so no previously caught bare use is let through.
+- The file is 269 lines, under the 500-line cap. No function changed.
+
+| Step | Command | EXIT | Log |
+| --- | --- | --- | --- |
+| **RED** (new fixtures, list not yet extended) | `python3 tests/qt5-signal-overload-arm-check.py --root <worktree>` | **1** (`SELF-TEST FAIL: red fixture found [(12,...),(13,...)], expected [... (14,'QSslSocket','sslErrors'), (15,'QSignalMapper','mapped'), (16,'QNetworkReply','error'), (17,'QAbstractSocket','error')]`) | `test-1-red-arm.log` |
+| **GREEN** (list extended) | same | 0 (`PASS: every Qt 5 overloaded signal member pointer is disambiguated`, whole tree clean) | `test-2-green-arm.log` |
+| ctest | `cd build/tests && ctest -R '^Qt5SignalOverloadArmCheck$' --output-on-failure` | 0 (`100% tests passed out of 1`) | `test-3-ctest-arm.log` |
+| Product line reverted to bare `&QSpinBox::valueChanged` (working tree only) | `python3 tests/qt5-signal-overload-arm-check.py --root <worktree>` | **1** (`src/gui/FollowActionEditor.cpp:210: &QSpinBox::valueChanged is overloaded in Qt 5`) | `test-4-product-line-reverted-arm.log` |
+| Product line restored (`git checkout -- src/gui/FollowActionEditor.cpp`) | same | 0 | `test-5-product-line-restored-arm.log` |
+| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 (8/8 PASS) | `feature-check-1.log` |
+
+All round-3 logs are in `~/.config/kads/zene/state/runs/ci-c22070dd8cbbc7c0-port.r3/logs/`.
+
+Proof artifact (regression-test): `tests/qt5-signal-overload-arm-check.py`, test
+`Qt5SignalOverloadArmCheck`, red_exit 1, green_exit 0.
+
+Delegation (round 3): a Sonnet engineer fetched the Qt 5.15 headers and made the list, fixture and
+regex change, then ran the red, green and ctest commands. I reviewed the diff, ran the
+product-line revert/restore cycle and the gates, and wrote this report and the manifest.
+
 ## Self-check
 
 - **Verdict evidence:** the fix is at `src/gui/FollowActionEditor.cpp:210`, it is an ancestor commit
@@ -74,6 +119,12 @@ passed 4/4.
 - **Sibling commands (app.*, arrangement.*):** not affected. Those command files appear in the
   check's list only because the branch carries merged train work. This lane's commit adds only this
   report: `git show --stat HEAD` lists one file under `docs/`. No command file or handler was changed.
+- **Round 3 regression test:** `tests/qt5-signal-overload-arm-check.py` fails with the list extension
+  absent (EXIT 1, `test-1-red-arm.log`) and passes with it (EXIT 0, `test-2-green-arm.log`). It also
+  fails when the product line is reverted (EXIT 1, `test-4-...`). It is a pure source scan with
+  fixed fixtures: no clock, sleeps or threads.
+- **Round 3 collateral:** only a test script changed. The whole-tree scan stays clean, so no existing
+  first-party source is newly rejected (`test-2-green-arm.log`).
 - **Realtime / undo / commands:** untouched.
 - **Qt 5 compile not reproduced here:** this box has no Qt 5 tree at `~/.local/opt/qt5` (`ls` failed),
   so a real Qt 5 compile of the translation unit was not re-run in this session. The original cluster
