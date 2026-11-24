@@ -21,8 +21,11 @@
 #include <QJsonObject>
 #include <QSignalSpy>
 
+#include <atomic>
 #include <cmath>
 #include <memory>
+#include <type_traits>
+#include <utility>
 
 #include "ControlVocabulary.h"
 #include "InstrumentView.h"
@@ -31,8 +34,25 @@
 #include "ReversibilityTestSupport.h"
 #include "SamplerTestSupport.h"
 
+// Cluster new-p15-260-port: the stutter continuation is inspected here, so this TU reads the plugin's own
+// declaration. No member of the class is constructed or called through this header.
+#define private public
+#include "AudioFileProcessor.h"
+#undef private
+
 using namespace lmms;
 using namespace lmms::sampler_test;
+
+namespace
+{
+//! True when the sampler exposes the one coherent read of the shared stutter continuation (the fix).
+template <typename T, typename = void>
+struct HasStutterStartSnapshot : std::false_type {};
+
+template <typename T>
+struct HasStutterStartSnapshot<T, std::void_t<decltype(std::declval<T&>().stutterStartForNote(true))>>
+	: std::true_type {};
+}
 
 class SamplerEnvelopeTest : public SamplerFixture
 {
@@ -139,6 +159,85 @@ private slots:
 		const float half = p.left[static_cast<std::size_t>(static_cast<long>(m_fpp) * 2 + release / 2)];
 		QVERIFY2(std::abs(half - 0.5f * full) < 0.05f * full, qPrintable(QStringLiteral("%1 vs %2").arg(half).arg(full)));
 		NotePlayHandleManager::release(p.nph);
+	}
+
+	//! Stutter still chains notes: a note started after another one begins where the previous note stopped. This is
+	//! the behaviour the shared continuation exists for, and the coherent-snapshot fix must leave it exactly as it was.
+	void stutterContinuesWhereThePreviousNoteStopped()
+	{
+		freshSampler(writeWav(m_dir.filePath(QStringLiteral("ramp.wav")), true));
+		setValue(QStringLiteral("Stutter"), 1.f);
+		setValue(QStringLiteral("Loop mode"), 0.f);
+
+		Played a = start();
+		renderPeriods({&a}, 2);
+		// Key 69 plays the sample at its own pitch: two periods advanced the sample by two periods' frames, and the
+		// ramp sample makes the first frame of the next note show where it started.
+		const f_cnt_t stopped = 2 * m_fpp;
+		const float rampAtStop = 0.9f * static_cast<float>(stopped) / static_cast<float>(2 * m_rate);
+		QVERIFY(rampAtStop > 0.f);
+
+		Played b = start();
+		renderPeriod(b);
+		QVERIFY2(b.left.size() == static_cast<std::size_t>(m_fpp), "the note rendered a period");
+		QVERIFY2(std::abs(b.left[0] - rampAtStop) < 0.15f * rampAtStop + 1e-4f,
+			qPrintable(QStringLiteral("the stutter note started at the ramp value %1 instead of %2")
+				.arg(b.left[0]).arg(rampAtStop)));
+		NotePlayHandleManager::release(a.nph);
+		NotePlayHandleManager::release(b.nph);
+	}
+
+	//! Cluster new-p15-260-port: note jobs of one sampler render concurrently, so the continuation frame and direction
+	//! must be read once and the end-of-sample restart must use the same values. The test injects a continuation at
+	//! the end of the sample and reads it back through the exact function playNoteImpl uses; there is no thread,
+	//! sleep or clock in it.
+	void stutterStartIsOneCoherentSnapshot()
+	{
+		QVERIFY2((HasStutterStartSnapshot<AudioFileProcessor>::value),
+			"the stutter continuation frame and direction must be read together for a note start");
+
+		const auto checkSnapshot = [&]<typename T>()
+		{
+			if constexpr (HasStutterStartSnapshot<T>::value)
+			{
+				freshSampler(writeWav(m_dir.filePath(QStringLiteral("ramp.wav")), true));
+				setValue(QStringLiteral("Stutter"), 1.f);
+				auto* const sampler = static_cast<T*>(m_instrument);
+				QVERIFY(sampler != nullptr);
+
+				const f_cnt_t startFrame = sampler->sample().startFrame();
+				const f_cnt_t endFrame = sampler->sample().endFrame();
+				QVERIFY(endFrame > startFrame);
+
+				// The failure path: the continuation is at the end, so the note restarts at the sample start and the
+				// reset pair is published. The returned pair is the one the note starts from.
+				sampler->m_nextPlayStartPoint.store(endFrame, std::memory_order_relaxed);
+				sampler->m_nextPlayBackwards.store(true, std::memory_order_relaxed);
+				auto cursor = sampler->stutterStartForNote(true);
+				QCOMPARE(cursor.frame, startFrame);
+				QCOMPARE(cursor.backwards, false);
+				QCOMPARE(sampler->m_nextPlayStartPoint.load(std::memory_order_relaxed), startFrame);
+				QCOMPARE(sampler->m_nextPlayBackwards.load(std::memory_order_relaxed), false);
+
+				// The normal path: a continuation inside the sample is returned unchanged, direction included.
+				const f_cnt_t midFrame = startFrame + (endFrame - startFrame) / 2;
+				sampler->m_nextPlayStartPoint.store(midFrame, std::memory_order_relaxed);
+				sampler->m_nextPlayBackwards.store(true, std::memory_order_relaxed);
+				cursor = sampler->stutterStartForNote(true);
+				QCOMPARE(cursor.frame, midFrame);
+				QCOMPARE(cursor.backwards, true);
+
+				// Stutter off: the continuation is not inspected or reset.
+				sampler->m_nextPlayStartPoint.store(endFrame, std::memory_order_relaxed);
+				sampler->m_nextPlayBackwards.store(true, std::memory_order_relaxed);
+				cursor = sampler->stutterStartForNote(false);
+				QCOMPARE(cursor.frame, endFrame);
+				QCOMPARE(cursor.backwards, true);
+				QCOMPARE(sampler->m_nextPlayStartPoint.load(std::memory_order_relaxed), endFrame);
+				QCOMPARE(sampler->m_nextPlayBackwards.load(std::memory_order_relaxed), true);
+			}
+		};
+		checkSnapshot.template operator()<AudioFileProcessor>();
 	}
 
 	//! The envelope values and the voice limit save, load, and leave the loop controls as they were.

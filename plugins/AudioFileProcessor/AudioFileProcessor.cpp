@@ -72,6 +72,13 @@ Plugin::Descriptor PLUGIN_EXPORT audiofileprocessor_plugin_descriptor =
 
 
 
+// Cluster new-p15-260-port: note jobs of one instrument render on the engine's worker pool. The continuation they
+// share must be lock-free: a lock or allocation here would stall the render path.
+static_assert(std::atomic<f_cnt_t>::is_always_lock_free, "note jobs share the stutter continuation lock-free");
+static_assert(std::atomic<bool>::is_always_lock_free, "note jobs share the stutter continuation lock-free");
+
+
+
 
 AudioFileProcessor::AudioFileProcessor( InstrumentTrack * _instrument_track ) :
 	Instrument( _instrument_track, &audiofileprocessor_plugin_descriptor ),
@@ -163,8 +170,8 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 	// played.
 	if( m_stutterModel.value() == true && nph->frequency() < 20.0 )
 	{
-		m_nextPlayStartPoint = m_sample.startFrame();
-		m_nextPlayBackwards = false;
+		m_nextPlayStartPoint.store( m_sample.startFrame(), std::memory_order_relaxed );
+		m_nextPlayBackwards.store( false, std::memory_order_relaxed );
 		return;
 	}
 
@@ -178,13 +185,9 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 		nph->m_pluginData = handle;
 		handle->claim = pool->acquire(m_voiceLimitModel.value());
 
-		if (m_stutterModel.value() == true && m_nextPlayStartPoint >= static_cast<std::size_t>(m_sample.endFrame()))
-		{
-			// Restart playing the note if in stutter mode, not in loop mode,
-			// and we're at the end of the sample.
-			m_nextPlayStartPoint = m_sample.startFrame();
-			m_nextPlayBackwards = false;
-		}
+		// Restart the continuation at the sample start when stutter mode is on and it reached the end. The pair is
+		// read once, so the value tested here is the value this note starts from even while another note publishes.
+		const StutterStart start = stutterStartForNote(m_stutterModel.value() == true);
 		if (handle->claim.valid())
 		{
 			// Capture the source once, on the note's first period. A file replacement later must not
@@ -192,8 +195,8 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 			handle->sample = m_sample;
 			handle->loopMode = m_loopModel.value();
 			auto& state = pool->voice(handle->claim.index).state;
-			state.setFrameIndex(m_nextPlayStartPoint);
-			state.setBackwards(m_nextPlayBackwards);
+			state.setFrameIndex(start.frame);
+			state.setBackwards(start.backwards);
 		}
 	}
 
@@ -257,8 +260,8 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 
 	if( m_stutterModel.value() == true )
 	{
-		m_nextPlayStartPoint = voice.state.frameIndex();
-		m_nextPlayBackwards = voice.state.backwards();
+		m_nextPlayStartPoint.store( voice.state.frameIndex(), std::memory_order_relaxed );
+		m_nextPlayBackwards.store( voice.state.backwards(), std::memory_order_relaxed );
 	}
 }
 
@@ -424,9 +427,10 @@ auto AudioFileProcessor::beatLen(NotePlayHandle* note) const -> f_cnt_t
 	const auto sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate())
 		/ m_sampleRate.load(std::memory_order_relaxed);
 
-	const auto startFrame = m_nextPlayStartPoint >= static_cast<std::size_t>(m_sample.endFrame())
+	const f_cnt_t resumeFrame = m_nextPlayStartPoint.load(std::memory_order_relaxed);
+	const auto startFrame = resumeFrame >= static_cast<std::size_t>(m_sample.endFrame())
 		? m_sample.startFrame()
-		: static_cast<f_cnt_t>(m_nextPlayStartPoint);
+		: resumeFrame;
 	const auto duration = m_sample.endFrame() - startFrame;
 
 	return static_cast<f_cnt_t>(std::floor(duration * freqFactor * sampleRateRatio));
@@ -493,8 +497,8 @@ void AudioFileProcessor::replaceSample(Sample next)
 void AudioFileProcessor::reverseModelChanged()
 {
 	m_sample.setReversed(m_reverseModel.value());
-	m_nextPlayStartPoint = m_sample.startFrame();
-	m_nextPlayBackwards = false;
+	m_nextPlayStartPoint.store( m_sample.startFrame(), std::memory_order_relaxed );
+	m_nextPlayBackwards.store( false, std::memory_order_relaxed );
 	emit sampleUpdated();
 }
 
@@ -510,8 +514,8 @@ void AudioFileProcessor::ampModelChanged()
 
 void AudioFileProcessor::stutterModelChanged()
 {
-	m_nextPlayStartPoint = m_sample.startFrame();
-	m_nextPlayBackwards = false;
+	m_nextPlayStartPoint.store( m_sample.startFrame(), std::memory_order_relaxed );
+	m_nextPlayBackwards.store( false, std::memory_order_relaxed );
 }
 
 
@@ -583,8 +587,8 @@ void AudioFileProcessor::pointChanged()
 	const auto f_end = static_cast<f_cnt_t>(m_endPointModel.value() * m_sample.sampleSize());
 	const auto f_loop = static_cast<f_cnt_t>(m_loopPointModel.value() * m_sample.sampleSize());
 
-	m_nextPlayStartPoint = f_start;
-	m_nextPlayBackwards = false;
+	m_nextPlayStartPoint.store( f_start, std::memory_order_relaxed );
+	m_nextPlayBackwards.store( false, std::memory_order_relaxed );
 
 	m_sample.setAllPointFrames(f_start, f_end, f_loop, f_end);
 	emit dataChanged();

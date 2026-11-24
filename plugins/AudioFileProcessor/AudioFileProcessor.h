@@ -144,6 +144,32 @@ private:
 	};
 	static_assert(sizeof(NoteVoice) <= 1024, "NoteVoice must fit NotePlayHandle::PluginDataStorageSize");
 
+	//! One read of the stutter continuation. The frame and direction belong together: a note start tests the frame
+	//! against the sample end and then starts from the same pair, while other note jobs publish their own position.
+	struct StutterStart
+	{
+		f_cnt_t frame = 0;
+		bool backwards = false;
+	};
+
+	//! Read the shared continuation once, restarting it at the sample start when stutter is on and it is at the end.
+	//! The render path calls this on a note's first period; the returned pair is exactly what the note starts from.
+	StutterStart stutterStartForNote(bool stutter) noexcept
+	{
+		StutterStart start{
+			m_nextPlayStartPoint.load(std::memory_order_relaxed),
+			m_nextPlayBackwards.load(std::memory_order_relaxed)};
+		if (stutter && start.frame >= static_cast<std::size_t>(m_sample.endFrame()))
+		{
+			// Restart playing the note if in stutter mode, not in loop mode, and we're at the end of the sample.
+			start.frame = m_sample.startFrame();
+			start.backwards = false;
+			m_nextPlayStartPoint.store(start.frame, std::memory_order_relaxed);
+			m_nextPlayBackwards.store(false, std::memory_order_relaxed);
+		}
+		return start;
+	}
+
 	//! Control thread: publish \a next as the instrument's sample. A sounding note keeps the buffer
 	//! it captured; the replaced one is retired until no note holds it and only then freed here.
 	void replaceSample(Sample next);
@@ -175,7 +201,8 @@ private:
 	//! Built once, in the converter mode Sample::play requests, so the render path only claims and releases voices.
 	std::unique_ptr<SamplerVoicePool> m_voices;
 
-	//! Written by knob/automation slots and the render thread, read by note starts: atomic.
+	//! Written by knob/automation slots and the render thread, read by note starts: atomic. Notes of one instrument
+	//! render on several engine threads at once, so these must never be a plain field or a lock (cluster new-p15-260).
 	std::atomic<f_cnt_t> m_nextPlayStartPoint;
 	std::atomic<bool> m_nextPlayBackwards;
 } ;

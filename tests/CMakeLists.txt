@@ -2996,6 +2996,11 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "DrumRackPadsTest" OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest")
 		add_dependencies(${LMMS_TEST_NAME} audiofileprocessor)
 	endif()
+	# Cluster new-p15-260-port: the stutter-continuation regression inspects the continuation the concurrent note jobs
+	# share, so the test reads the plugin's own header.
+	if(LMMS_TEST_NAME STREQUAL "SamplerEnvelopeTest")
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE "${CMAKE_SOURCE_DIR}/plugins/AudioFileProcessor")
+	endif()
 	# Q050-066 stage 2: the pad-chain cases put the build's amplifier module on a pad's channel.
 	if(LMMS_TEST_NAME STREQUAL "DrumRackPadsTest" OR LMMS_TEST_NAME STREQUAL "DrumRackPanelTest")
 		add_dependencies(${LMMS_TEST_NAME} amplifier)
