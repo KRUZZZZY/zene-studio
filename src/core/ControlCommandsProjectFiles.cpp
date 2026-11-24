@@ -369,11 +369,13 @@ void registerProjectRestoreRevision(ControlRegistry& registry)
 		}
 		const int revision = args.value(QStringLiteral("revision")).toInt();
 		QString error;
-		// The restore rotates the live file in as the new revision 0, so ONE
-		// action step restoring revision 0 again is the exact inverse - and the
-		// redo re-restores the revision this call chose. Where there was NO live
-		// file, nothing was rotated in: the undo removes the file the restore
-		// created instead (new-p15-24), because revision 0 cannot undo a creation.
+		// The restore rotates the live file into the keep-3 set, so ONE action step
+		// putting the REPLACED file back is the exact inverse - identified by the
+		// content of that file, not by revision 0, which is a position every later
+		// save shifts (Luna cluster new-p9-58, BUG 2) - and the redo re-restores the
+		// revision this call chose. Where there was NO live file, nothing was
+		// rotated in: the undo removes the file the restore created instead
+		// (new-p15-24), because revision 0 cannot undo a creation.
 		//
 		// The step is recorded AFTER the restore has succeeded (Luna cluster
 		// 5737): restoreProjectRevision() is the call that can refuse - the
@@ -385,6 +387,12 @@ void registerProjectRestoreRevision(ControlRegistry& registry)
 		//
 		// Read BEFORE the restore replaces the file: it decides what the undo is.
 		const bool liveExisted = QFileInfo::exists(target);
+		// The file this restore is about to REPLACE, identified by its content
+		// BEFORE it is replaced (Luna cluster new-p9-58, BUG 2): the recorded undo
+		// restores the retained revision holding these bytes. Revision 0 by NUMBER
+		// is not that - every rotation shifts the slot, so restoring "revision 0"
+		// after a save wrote the file the SAVE replaced over the live project.
+		const QString replacedSha = liveExisted ? sha256OfFile(target) : QString();
 		if (!control::restoreProjectRevision(target, revision, &error))
 		{
 			return ControlResult::failure(ControlErrorKind::NotFound, error);
@@ -402,15 +410,23 @@ void registerProjectRestoreRevision(ControlRegistry& registry)
 		// sibling command (`revisions.restore`) reports the same failure the
 		// same way, through the same channel.
 		control::addUndoStep(
-			[target, liveExisted]() {
+			[target, liveExisted, replacedSha]() {
 				if (!liveExisted) { removeRestoreCreatedFile(target); return; }
 				QString reason;
-				if (control::restoreProjectRevision(target, 0, &reason)) { return; }
-				control::recordActionRestoreFailure(
-					QStringLiteral("the project file %1 was NOT put back from the revision this "
-						"restore rotated in (revision 0) - %2. The live file still holds what it "
-						"held when the undo ran; project.get_state reports the retained set and "
-						"project.restore_revision restores what it still holds").arg(target, reason));
+				// WHICH revision is decided by CONTENT, never by the slot number the
+				// rotation left the replaced file in (Luna cluster new-p9-58, BUG 2):
+				// revision 0 is a POSITION every save shifts, so restoring it wrote a
+				// project this restore never touched over the live one. -1: those bytes
+				// are no longer retained, and a typed refusal beats a wrong overwrite.
+				const int current = revisionHoldingBytes(target, replacedSha);
+				if (current >= 0 && control::restoreProjectRevision(target, current, &reason)) { return; }
+				control::recordActionRestoreFailure(current < 0
+					? QStringLiteral("the project file %1 was NOT put back: the bytes this restore "
+						"replaced (sha256 %2) are no longer retained in the keep-3 set, so undo left "
+						"the live file as it is. project.get_state reports the retained set")
+						.arg(target, replacedSha)
+					: QStringLiteral("the project file %1 was NOT put back from revision %2 - %3")
+						.arg(target).arg(current).arg(reason));
 			},
 			[target, restoredSha]() {
 				QString reason;
@@ -446,18 +462,21 @@ void registerProjectRestoreRevision(ControlRegistry& registry)
 		transaction.insert(QStringLiteral("before"),
 			QJsonObject{{QStringLiteral("file"), target},
 				{QStringLiteral("revision"), revision}});
-		// A restore that CREATED the file is inverted by control.undo, the recorded step that
-		// removes it (the same shape as revisions.restore's created-file case); otherwise the
-		// inverse is the revision-0 restore that step performs.
-		transaction.insert(QStringLiteral("inverse"), liveExisted
-			? QJsonObject{{QStringLiteral("op"), QStringLiteral("project.restore_revision")},
-				{QStringLiteral("args"), QJsonObject{{QStringLiteral("path"), target},
-					{QStringLiteral("revision"), 0}}}}
-			: QJsonObject{{QStringLiteral("op"), QStringLiteral("control.undo")},
+		// The inverse is control.undo in BOTH cases: it is the recorded action step that runs,
+		// and that step restores the file this call replaced - or removes the file it created.
+		// Naming `project.restore_revision(revision: 0)` here advertised a SLOT NUMBER as the
+		// inverse (Luna cluster new-p9-58, BUG 2): revision 0 is a position every save shifts,
+		// so a client replaying the pair after a save wrote another revision's bytes over the
+		// live project. revisions.restore advertises the same inverse for the same reason
+		// (Luna cluster 1223).
+		transaction.insert(QStringLiteral("inverse"),
+			QJsonObject{{QStringLiteral("op"), QStringLiteral("control.undo")},
 				{QStringLiteral("args"), QJsonObject()}});
 		transaction.insert(QStringLiteral("mechanism"), liveExisted
-			? QStringLiteral("action checkpoint: the live file was rotated in as revision 0 before "
-				"the restore, so the recorded undo step restores it")
+			? QStringLiteral("action checkpoint: the live file was rotated into the keep-3 set "
+				"before the restore replaced it, and the recorded undo step restores the retained "
+				"revision holding the bytes of the file this call replaced - identified by CONTENT, "
+				"not by the slot number a later save shifts")
 			: QStringLiteral("action checkpoint: the project file did not exist before this call, so "
 				"the recorded undo step REMOVES the file the restore created - a file that never "
 				"existed cannot be restored from revision 0"));

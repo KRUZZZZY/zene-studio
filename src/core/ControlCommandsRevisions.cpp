@@ -21,7 +21,10 @@
  *   revisions.restore  true_inverse  - an action checkpoint: the live file is
  *                                      rotated into the keep-3 set before the
  *                                      staged bytes replace it, so the recorded
- *                                      undo step restores revision 0 - and where
+ *                                      undo step restores the retained revision
+ *                                      holding the bytes of the file it
+ *                                      replaced (by content, never by the slot
+ *                                      number a later save shifts) - and where
  *                                      there was no live file the recorded step
  *                                      REMOVES the file the restore created, while
  *                                      that file still holds the bytes it wrote.
@@ -178,20 +181,40 @@ void undoCreatedFileStep(const QString& target, const QString& restoredSha)
 	}
 }
 
-//! The recorded UNDO half of revisions.restore: put revision 0 - the file the
-//! restore rotated in - back over the live file, or, when the restore CREATED
-//! the file, remove it, because a file that never existed cannot be restored.
-void undoRestoreStep(const QString& target, bool liveExisted, const QString& restoredSha)
+//! The recorded UNDO half of revisions.restore: put the file this restore
+//! REPLACED back over the live file, or, when the restore CREATED the file,
+//! remove it, because a file that never existed cannot be restored.
+//!
+//! WHICH revision is decided by CONTENT, not by the slot number the rotation left
+//! it in (Luna cluster new-p9-58, BUG 2). Revision 0 is a POSITION in the keep-3
+//! set and every save shifts it, so restoring "revision 0" after a save wrote the
+//! file the SAVE replaced - a project this restore never touched - over the live
+//! file, under a success it had not earned. \a replacedSha is the content of the
+//! file this restore replaced, taken BEFORE it was replaced; when no retained
+//! revision holds those bytes any more (three rotations since) the undo REFUSES
+//! typed instead of overwriting the live project with another revision's bytes.
+void undoRestoreStep(const QString& target, bool liveExisted, const QString& replacedSha,
+	const QString& restoredSha)
 {
 	if (liveExisted)
 	{
 		QString reason;
-		if (control::restoreProjectRevision(target, 0, &reason)) { return; }
+		const int current = revisionHoldingBytes(target, replacedSha);
+		if (current < 0)
+		{
+			control::recordActionRestoreFailure(
+				QStringLiteral("the project file %1 was NOT put back: the bytes this restore "
+					"replaced (sha256 %2) are no longer retained in the keep-3 set, so undo left "
+					"the live file as it is rather than overwrite it with a revision this restore "
+					"never replaced. revisions.list reports the retained set").arg(target, replacedSha));
+			return;
+		}
+		if (control::restoreProjectRevision(target, current, &reason)) { return; }
 		control::recordActionRestoreFailure(
-			QStringLiteral("the project file %1 was NOT put back from the revision this "
-				"restore rotated in (revision 0) - %2. The live file still holds what it "
-				"held when the undo ran; revisions.list reports the retained set and "
-				"restores what it still holds").arg(target, reason));
+			QStringLiteral("the project file %1 was NOT put back from revision %2 (the retained "
+				"revision holding the bytes this restore replaced) - %3. The live file still "
+				"holds what it held when the undo ran; revisions.list reports the retained set "
+				"and restores what it still holds").arg(target).arg(current).arg(reason));
 		return;
 	}
 	undoCreatedFileStep(target, restoredSha);
@@ -237,15 +260,17 @@ void redoRestoreStep(const QString& target, const QString& recoveryFile,
 			.arg(target, id, reason));
 }
 
-//! Record the ONE action step a successful restore carries: the undo restores
-//! revision 0 (the file this call rotated in) - or, when the restore CREATED the
-//! file, removes it, because a file that never existed cannot be restored. The
-//! redo re-resolves \a restoredSha, not \a id, when \a id was a rotation position.
+//! Record the ONE action step a successful restore carries: the undo puts back the
+//! file this call replaced - or, when the restore CREATED the file, removes it,
+//! because a file that never existed cannot be restored. The undo re-resolves
+//! \a replacedSha (the CONTENT of the file this call replaced) and the redo
+//! re-resolves \a restoredSha, not \a id, when \a id was a rotation position.
 void recordRestoreUndoStep(const QString& target, const QString& recoveryFile,
-	const QString& id, bool liveExisted, const QString& restoredSha)
+	const QString& id, bool liveExisted, const QString& replacedSha, const QString& restoredSha)
 {
 	control::addUndoStep(
-		[target, liveExisted, restoredSha]() { undoRestoreStep(target, liveExisted, restoredSha); },
+		[target, liveExisted, replacedSha, restoredSha]()
+		{ undoRestoreStep(target, liveExisted, replacedSha, restoredSha); },
 		[target, recoveryFile, id, restoredSha]() { redoRestoreStep(target, recoveryFile, id, restoredSha); });
 }
 
@@ -427,6 +452,12 @@ void registerRevisionsRestore(ControlRegistry& registry)
 
 		const bool liveExisted = QFileInfo::exists(target);
 		const qint64 replacedBytes = liveExisted ? QFileInfo(target).size() : 0;
+		// The file this restore is about to REPLACE, identified by its content
+		// BEFORE it is replaced (Luna cluster new-p9-58, BUG 2): the recorded undo
+		// restores the retained revision holding these bytes. Revision 0 by NUMBER
+		// is not that - every save shifts the slot, so restoring "revision 0" after
+		// a save wrote the file the SAVE replaced over the live project.
+		const QString replacedSha = liveExisted ? sha256OfFile(target) : QString();
 		// The restore BEFORE the checkpoint is recorded (Luna cluster 4877):
 		// restoreTimelineRevision() is the call that can refuse, and it can refuse
 		// AFTER the revision's own bytes were read - a live file over the policy's
@@ -449,7 +480,7 @@ void registerRevisionsRestore(ControlRegistry& registry)
 		// the live one, under a success it had not earned. An id naming a stable
 		// artefact ('backup', 'autosave', 'git:<sha>') is re-resolved as itself.
 		const QString restoredSha = sha256OfFile(target);
-		recordRestoreUndoStep(target, recoveryFile, id, liveExisted, restoredSha);
+		recordRestoreUndoStep(target, recoveryFile, id, liveExisted, replacedSha, restoredSha);
 
 		QJsonObject result;
 		result.insert(QStringLiteral("file"), target);
@@ -461,8 +492,9 @@ void registerRevisionsRestore(ControlRegistry& registry)
 		result.insert(QStringLiteral("sha256"), sha256OfFile(target));
 		result.insert(QStringLiteral("revisions"), control::projectRevisionState(target));
 		result.insert(QStringLiteral("recovered_by"),
-			liveExisted ? QStringLiteral("revision 0 of the keep-3 set (the file this restore "
-				"replaced), through control.undo or project.restore_revision")
+			liveExisted ? QStringLiteral("the retained revision holding the bytes this restore "
+				"replaced (identified by content, not by the slot number a later save shifts), "
+				"through control.undo")
 						: QStringLiteral("nothing: the restore created the file, so control.undo "
 				"removes it again while it still holds the bytes the restore wrote"));
 		result.insert(QStringLiteral("__transaction"), transactionPayload(
@@ -484,7 +516,9 @@ void registerRevisionsRestore(ControlRegistry& registry)
 			liveExisted
 				? QStringLiteral("action checkpoint: the live file was rotated into the 'keep-3' "
 					"revision set before the staged revision replaced it, and the recorded undo "
-					"step restores revision 0 (the file this call replaced). The redo re-restores "
+					"step restores the retained revision holding the bytes of the file this call "
+					"replaced - identified by CONTENT, because revision 0 is a position every "
+					"save shifts. The redo re-restores "
 					"the revision this call chose, from its own artefact - which is why a "
 					"file-level inverse is a COMMAND here and not a journal step (see "
 					"docs/A16-REVERSIBILITY.md)")
