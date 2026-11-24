@@ -73,7 +73,109 @@
 // equivalent and no such call, so the loader-lock proof is Linux-only.
 #include <link.h>
 #endif
+#if defined(__linux__) && defined(__GLIBC__)
+// The signal-entry probe below interposes the allocator and both loader object
+// lookups the unwinder has used (dl_iterate_phdr, and _dl_find_object since
+// glibc 2.35).  glibc's __libc_* entry points let the probe forward an ordinary
+// call without recursing through its own malloc wrapper.
+#include <dlfcn.h>
+extern "C" {
+void* __libc_malloc(size_t);
+void __libc_free(void*);
+void* __libc_calloc(size_t, size_t);
+void* __libc_realloc(void*, size_t);
+}
 #endif
+#endif
+
+#if defined(__linux__) && defined(__GLIBC__)
+namespace
+{
+// Set in the forked child immediately before the real fault.  Every interposed
+// entry checks it: when set, the handler (or anything it calls) is trying to do
+// work a signal handler must not do.  The child leaves with a distinct code so
+// the parent can name the entry in its failure message.  volatile sig_atomic_t
+// is the async-signal-safe read; the child is single-threaded here.
+volatile sig_atomic_t s_watchSignalEntries = 0;
+
+enum SignalEntryCode
+{
+	kEnteredLoader = 42,
+	kEnteredAllocator = 43
+};
+
+[[noreturn]] void signalEntryRefused(int code)
+{
+	::_exit(code);
+}
+} // namespace
+
+#if defined(__GLIBC_PREREQ)
+#if __GLIBC_PREREQ(2, 35)
+// glibc 2.35 replaced the unwinder's dl_iterate_phdr() walk with the versioned
+// _dl_find_object@GLIBC_2.35 entry point.  Defining the same version in the
+// executable puts our check ahead of libc in the lookup scope; an unversioned
+// definition does not match the versioned reference and would silently miss it.
+extern "C" __attribute__((visibility("default")))
+int zeneProbeDlFindObject(void* pc, struct dl_find_object* result) noexcept;
+__asm__(".symver zeneProbeDlFindObject,_dl_find_object@GLIBC_2.35");
+extern "C" __attribute__((visibility("default")))
+int zeneProbeDlFindObject(void* pc, struct dl_find_object* result) noexcept
+{
+	if (s_watchSignalEntries) { signalEntryRefused(kEnteredLoader); }
+	using FindFn = int (*)(void*, struct dl_find_object*);
+	static FindFn real = nullptr;
+	if (real == nullptr)
+	{
+		real = reinterpret_cast<FindFn>(::dlsym(RTLD_NEXT, "_dl_find_object"));
+	}
+	return real != nullptr ? real(pc, result) : -1;
+}
+#endif
+#endif
+
+// The loader's object walk.  A handler may not take the loader lock or look a
+// module up, so entering this (directly or from an unwinder) is a failure.
+extern "C" __attribute__((visibility("default")))
+int dl_iterate_phdr(int (*callback)(struct dl_phdr_info*, size_t, void*),
+	void* data) noexcept
+{
+	if (s_watchSignalEntries) { signalEntryRefused(kEnteredLoader); }
+	using IterateFn = int (*)(int (*)(struct dl_phdr_info*, size_t, void*), void*);
+	static IterateFn real = nullptr;
+	if (real == nullptr)
+	{
+		real = reinterpret_cast<IterateFn>(::dlsym(RTLD_NEXT, "dl_iterate_phdr"));
+	}
+	return real != nullptr ? real(callback, data) : -1;
+}
+
+// The allocator.  Any allocation while the flag is set fails the probe; an
+// ordinary call (the whole test binary goes through these) forwards to glibc.
+extern "C" __attribute__((visibility("default"))) void* malloc(size_t size) noexcept
+{
+	if (s_watchSignalEntries) { signalEntryRefused(kEnteredAllocator); }
+	return __libc_malloc(size);
+}
+
+extern "C" __attribute__((visibility("default"))) void free(void* pointer) noexcept
+{
+	if (s_watchSignalEntries) { signalEntryRefused(kEnteredAllocator); }
+	__libc_free(pointer);
+}
+
+extern "C" __attribute__((visibility("default"))) void* calloc(size_t count, size_t size) noexcept
+{
+	if (s_watchSignalEntries) { signalEntryRefused(kEnteredAllocator); }
+	return __libc_calloc(count, size);
+}
+
+extern "C" __attribute__((visibility("default"))) void* realloc(void* pointer, size_t size) noexcept
+{
+	if (s_watchSignalEntries) { signalEntryRefused(kEnteredAllocator); }
+	return __libc_realloc(pointer, size);
+}
+#endif // __linux__ && __GLIBC__
 
 namespace
 {
@@ -162,17 +264,21 @@ Frames readFrames(const QByteArray& report)
 // into rather than one frame. The recursion goes through a VOLATILE function
 // pointer: GCC turns `f(n-1) + 1` into a loop and inlines what it can, and a
 // depth the optimiser collapsed would make the "bounded" proof measure nothing.
+// `cookie` is volatile so every level keeps a real stack slot; the target is
+// also compiled with -fno-omit-frame-pointer, so the saved frame-pointer chain
+// this feature walks is actually present.
 int crashAtDepth(int depth, volatile int* sink);
 int (*volatile s_crashAtDepth)(int, volatile int*) = &crashAtDepth;
 
 __attribute__((noinline)) int crashAtDepth(int depth, volatile int* sink)
 {
-	if (depth <= 0)
+	volatile int cookie = depth;
+	if (cookie <= 0)
 	{
 		*sink = 1;                 // SIGSEGV, si_addr == 1
 		return 0;
 	}
-	return s_crashAtDepth(depth - 1, sink) + 1;
+	return s_crashAtDepth(cookie - 1, sink) + cookie;
 }
 
 // Fork a child that installs the reporter and faults `depth` frames down.
@@ -269,11 +375,12 @@ private slots:
 		QVERIFY2(pc != 0, "the test binary's architecture must expose a program counter");
 		QCOMPARE(frames.addresses.value(0), pc);
 #if defined(__linux__)
-		// glibc carries CFI for its signal trampoline, so the walk crosses the
-		// signal frame and reaches the caller chain. Darwin's unwinder stops at
-		// its trampoline - that is a documented limit, not a claim made here.
+		// The raw walk starts from the interrupted context's frame pointer, so it
+		// reaches the caller chain without unwinding the signal frame at all.
+		// The recursion is three real frames deep, so the PC plus callers must
+		// be more than the crash site alone.
 		QVERIFY2(frames.declared >= 3,
-			"the walk must cross the signal frame into the caller chain on Linux");
+			"the raw frame walk must reach the caller chain on Linux");
 #endif
 		QVERIFY2(static_cast<unsigned long>(report.size()) <= kMaxReportBytes,
 			"the report exceeded kMaxReportBytes");
@@ -283,7 +390,7 @@ private slots:
 	// 2. The walk is BOUNDED (Q050-224.2, criterion 2): a crash 200 frames deep
 	//    keeps exactly kMaxCrashFrames addresses rather than one per frame, the
 	//    report stays inside kMaxReportBytes, and a smaller budget truncates the
-	//    walk - which is what stops a corrupt or cyclic unwind.
+	//    walk - which is what stops a corrupt or cyclic chain.
 	// -----------------------------------------------------------------------
 	void frames_are_capped_on_a_deep_crash()
 	{
@@ -322,11 +429,10 @@ private slots:
 
 	// -----------------------------------------------------------------------
 	// 3. A crash while the dynamic loader is busy still reports and still dies
-	//    (Q050-224.2, criterion 2): the frame walk consults the loaded modules'
-	//    unwind tables through the loader's RECURSIVE lock, so a fault on the
-	//    thread that already holds it must not hang the handler. Crashing inside
-	//    dl_iterate_phdr's callback is that state, and it is the shape of a crash
-	//    during plug-in loading.
+	//    (Q050-224.2, criterion 2): the raw walk takes NO loader lock, so a fault
+	//    on the thread that already holds it must not hang the handler. Crashing
+	//    inside dl_iterate_phdr's callback is that state, and it is the shape of
+	//    a crash during plug-in loading.
 	// -----------------------------------------------------------------------
 	void crash_while_the_loader_is_busy_still_reports()
 	{
@@ -366,6 +472,68 @@ private slots:
 		QVERIFY2(static_cast<unsigned long>(report.size()) <= kMaxReportBytes,
 			"the report exceeded kMaxReportBytes");
 #endif // __linux__
+	}
+
+	// -----------------------------------------------------------------------
+	// 4. The handler enters neither the allocator nor the loader (Q050-224.2,
+	//    criterion 2).  The first version called _Unwind_Backtrace() from the
+	//    handler; its frame budget bounded the STEPS, not the unwinder's loader
+	//    object lookup, and the unwinder can allocate.  This is a REAL fault in
+	//    a forked child whose malloc/free/calloc/realloc, dl_iterate_phdr and
+	//    (glibc 2.35+) _dl_find_object are interposed.  If the handler calls any
+	//    of them the child exits with that entry's code; if it stays raw it
+	//    writes the report and still dies by SIGSEGV, which is what the
+	//    assertions require.
+	// -----------------------------------------------------------------------
+	void fatal_handler_enters_neither_allocator_nor_loader()
+	{
+#if !(defined(__linux__) && defined(__GLIBC__))
+		QSKIP("the allocator/loader interposition probe is glibc-on-Linux only");
+#else
+		QTemporaryDir dir;
+		QVERIFY2(dir.isValid(), "could not create a temporary working directory");
+		const std::string workDir = dir.path().toStdString();
+		QVERIFY(install(workDir));
+
+		::fflush(nullptr);
+		const pid_t pid = ::fork();
+		QVERIFY2(pid >= 0, "fork failed");
+		if (pid == 0)
+		{
+			install(workDir);
+			// Nothing below may allocate: crashAtDepth() is a plain recursive
+			// call and the store is the fault.
+			s_watchSignalEntries = 1;
+			crashAtDepth(3, reinterpret_cast<volatile int*>(static_cast<uintptr_t>(1)));
+			::_exit(75);               // unreachable
+		}
+
+		int status = 0;
+		QVERIFY2(waitBounded(pid, 15000, status),
+			"the crashing child hung: the handler must never wait");
+		if (WIFEXITED(status))
+		{
+			const int code = WEXITSTATUS(status);
+			const char* entry = code == kEnteredAllocator ? "the allocator"
+				: code == kEnteredLoader ? "the loader's object walk"
+				: "an unexpected path";
+			QFAIL(qPrintable(QStringLiteral(
+				"the fatal handler entered %1 (child exit %2); it must do neither")
+				.arg(QLatin1String(entry)).arg(code)));
+		}
+		QVERIFY2(WIFSIGNALED(status) && WTERMSIG(status) == SIGSEGV,
+			"the child must still die by SIGSEGV");
+
+		const QByteArray report = slurp(reportPathIn(dir));
+		QVERIFY2(!report.isEmpty(),
+			"no report was written even though no forbidden entry was taken");
+		const Frames frames = readFrames(report);
+		QVERIFY2(frames.declared >= 1, "the report carries no frame sequence");
+		QVERIFY2(frames.declared <= kMaxCrashFrames,
+			"the frame sequence exceeded kMaxCrashFrames");
+		QVERIFY2(static_cast<unsigned long>(report.size()) <= kMaxReportBytes,
+			"the report exceeded kMaxReportBytes");
+#endif // __linux__ && __GLIBC__
 	}
 
 #endif // Q_OS_WIN

@@ -136,6 +136,8 @@ void zeneCrashSignalHandler(int signum, siginfo_t* info, void* context)
 	// Raw frames, captured HERE rather than in the writer: the walk starts from
 	// the signal context and the crashing thread's own stack, and the writer is
 	// also the tests' entry point, which has neither. Bounded to kMaxCrashFrames.
+	// The walk reads saved frame pointers only: no unwinder, therefore no loader
+	// object lookup, no unwind-table query and no allocation in the handler.
 	ci.frameCount = captureFrames(context, ci.frames, kMaxCrashFrames);
 	ci.threadId = currentThreadId();
 	ci.processId = static_cast<unsigned long long>(::getpid());
@@ -269,6 +271,12 @@ bool setReportDirectory(const std::string& workingDirectory)
 
 bool installAlternateStackForCurrentThread()
 {
+	// Raise the raw frame walk's stack ceiling to this call's frame. Taking a
+	// local's address allocates nothing and takes no lock, so the audio-thread
+	// callers (renderNextPeriod, JACK's callback) stay real-time safe. The first
+	// call is the shallowest, and only a higher marker replaces it.
+	noteThreadStackMarker();
+
 	static thread_local bool registered = false;
 	if (registered) { return true; }
 
@@ -284,6 +292,11 @@ bool installAlternateStackForCurrentThread()
 bool install(const std::string& workingDirectory)
 {
 	if (!setReportDirectory(workingDirectory)) { return false; }
+	// Exact stack bounds for the raw frame walk. install() runs on the main or
+	// control thread, never the audio callback, so the allocation inside
+	// pthread_getattr_np is outside the real-time path. The render/JACK paths
+	// only ever call the marker half above.
+	recordThreadStackBounds();
 	// Repeated installs may come from a different thread; each caller needs its
 	// own alternate stack even when the process-wide handlers are already armed.
 	installAlternateStackForCurrentThread();

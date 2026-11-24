@@ -2180,6 +2180,24 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
 
 	add_executable(${LMMS_TEST_NAME} ${LMMS_TEST_SRC})
+	# Q050-224.2: the crash report's raw walk reads saved frame pointers, so the
+	# test's recursive crash chain must actually emit them. The product's walk
+	# is in lmmsobjs and needs no option; only the crashing test frames do. This
+	# makes the "200-deep stack is capped at kMaxCrashFrames" proof measure real
+	# frames rather than a single PC.
+	if(LMMS_TEST_NAME STREQUAL "CrashReporterFramesTest")
+		if(MSVC)
+			target_compile_options(${LMMS_TEST_NAME} PRIVATE /Oy-)
+		else()
+			target_compile_options(${LMMS_TEST_NAME} PRIVATE -fno-omit-frame-pointer)
+		endif()
+		# The signal-entry probe defines allocator/loader/unwinder interposers;
+		# they only preempt calls from shared libraries (libgcc_s, libc) when
+		# they are in the executable's dynamic symbol table.
+		if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+			target_link_options(${LMMS_TEST_NAME} PRIVATE -rdynamic)
+		endif()
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "SfizzLeakDetectorTest")
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz)

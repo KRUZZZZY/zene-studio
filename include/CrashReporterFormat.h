@@ -77,12 +77,16 @@ unsigned long long programCounterFrom(void* context);
 //!
 //! \p context is the signal ucontext the handler was given, or nullptr outside a
 //! signal: the faulting instruction it exposes becomes frame 0, so the sequence
-//! starts at the crash site, and the platform unwinder supplies the callers.
-//! Zero addresses are dropped and repeated ones are kept (a recursive chain
-//! reaches one call site at every depth). The walk stops as soon as \p capacity
-//! addresses are kept, which is the budget that keeps a corrupt or cyclic
-//! unwinding bounded. NO symbol or module resolution happens here - there is
-//! none in a signal handler - so these stay raw addresses.
+//! starts at the crash site, and the saved frame-pointer chain supplies the
+//! callers. The walk is raw memory reads only: no unwinder, so no loader object
+//! lookup, no unwind-table query, no allocation. It stays inside the stack
+//! bounds recorded for this thread by recordThreadStackBounds(), and every
+//! saved frame pointer must strictly increase inside those bounds, so a
+//! corrupt or cyclic chain stops rather than spinning. The frame budget \p
+//! capacity is the second bound. Zero addresses are dropped and repeated ones
+//! are kept (a recursive chain reaches one call site at every depth). NO symbol
+//! or module resolution happens here - there is none in a signal handler - so
+//! these stay raw addresses.
 int captureFrames(void* context, unsigned long long* out, int capacity);
 
 //! Appends the report's frame block: "frames=<count>\n" and one
@@ -91,9 +95,24 @@ int captureFrames(void* context, unsigned long long* out, int capacity);
 unsigned long appendFrames(char* buf, unsigned long cap, unsigned long pos,
 	const unsigned long long* frames, int count);
 
-//! The thread id, straight from the kernel (gettid); 0 on Darwin, which has no
-//! declared syscall() to reach one through - see the note in the .cpp.
+//! The thread id, straight from the kernel (gettid) on Linux, or from the
+//! thread's Mach port on Darwin; see the note in the .cpp.
 unsigned long long currentThreadId();
+
+//! Record the calling thread's EXACT stack bounds, used by captureFrames() to
+//! keep the raw frame-pointer walk inside mapped stack memory. Call it on the
+//! thread itself, outside a signal and NOT on a real-time thread:
+//! pthread_getattr_np() allocates (its CPU-set buffer). install() calls it on
+//! the main/control thread at startup.
+void recordThreadStackBounds();
+
+//! Cheap real-time-safe half: raise the calling thread's stack ceiling to a
+//! local's address. No allocation, lock or I/O, so the render/JACK callbacks
+//! call it through installAlternateStackForCurrentThread() on every pass; the
+//! first (shallowest) registration wins. A thread with only this marker gets
+//! the frame chain from the interrupted SP up to the marker; one that recorded
+//! exact bounds through recordThreadStackBounds() keeps them.
+void noteThreadStackMarker();
 
 } // namespace lmms::crashreporter
 

@@ -286,7 +286,7 @@ frame[9]=0x5589894368d5
 The report preserves context and refuses to interpret it. `captureFrames()`
 (`src/core/CrashReporterFormat.cpp`) is called from the handler with the signal
 context; it writes the faulting instruction first and then walks the crashing
-thread's stack with `_Unwind_Backtrace`, keeping at most `kMaxCrashFrames`
+thread's **saved frame-pointer chain**, keeping at most `kMaxCrashFrames`
 addresses. `appendFrames()` writes them through the same capped appenders as
 every other field. There is no `dladdr`, no `backtrace_symbols`, no `.symtab`
 read, no `maps` parse and no module lookup anywhere in the handler: the
@@ -295,24 +295,31 @@ the report names in `version=`/`platform=`/`compiler=`.
 
 Why the walk is safe here, and where the argument stops:
 
-- **No allocation, no I/O, no lock of ours.** The unwinder reads the thread's
-  unwind tables; nothing in this path builds a container, formats a string or
-  touches a file.
-- **Bounded, not merely finite.** The callback returns `_URC_END_OF_STACK` once
-  the budget is full, so a corrupt or cyclic unwind ends at 24 steps rather than
-  spinning, and the frame lines cannot push the report past `kMaxReportBytes`.
-- **The loader's lock is recursive.** Resolving an FDE consults the loaded
-  modules through the loader, whose lock glibc (`__rtld_lock_define_recursive`)
-  and musl define recursively. A fault on the thread that already holds it —
-  i.e. during plug-in loading — therefore re-enters instead of deadlocking.
-  `CrashReporterFramesTest::crash_while_the_loader_is_busy_still_reports` puts a
-  child in exactly that state and asserts a bounded wait, a written report and
-  death by `SIGSEGV`.
-- **What it cannot promise.** A crash that corrupts the loader's own structures
-  can yield fewer frames or none; Darwin's unwinder stops at its signal
-  trampoline, so the interrupted call chain may be missing there (frame 0, the
-  faulting instruction, is still present); Windows captures nothing, as
-  everywhere else in this module.
+- **No unwinder, therefore no loader and no allocator.** The first version used
+  `_Unwind_Backtrace()`; a frame budget bounded its steps, not the FDE lookup
+  the unwinder does through the loader, and the unwinder can allocate. That is
+  the defect this pass removes. The walk now dereferences only the stack's own
+  saved frame pointers: no loader object lookup (`dl_iterate_phdr`/
+  `_dl_find_object`), no unwind-table query, no allocation, no lock and no I/O.
+  `CrashReporterFramesTest::fatal_handler_enters_neither_allocator_nor_loader`
+  interposes the allocator, `dl_iterate_phdr` and (glibc 2.35+)
+  `_dl_find_object` in a forked real-fault child: any entry exits the child with
+  a distinct code, and the test requires death by `SIGSEGV` plus a written
+  report.
+- **Bounded, not merely finite.** Every dereference lies in
+  `[interrupted SP, recorded stack ceiling]`. The exact ceiling comes from
+  `pthread_getattr_np()`/`pthread_get_stackaddr_np()` in `install()` (main or
+  control thread, never the audio callback); the render/JACK paths only raise a
+  cheap ceiling to the current frame with `noteThreadStackMarker()` (a local's
+  address, no allocation, lock or I/O). Each saved frame pointer must be
+  16-byte aligned and strictly increase, so a corrupt or cyclic chain stops
+  instead of spinning, and the 24-frame budget caps the report lines so
+  `kMaxReportBytes` still holds.
+- **What it cannot promise.** A build compiled with frame pointers omitted
+  yields fewer callers (the PC is still frame 0); a crash reached after
+  registration returned but above the recorded ceiling (a very shallow frame)
+  yields the PC but no walk; a thread that never registered yields the PC only.
+  Windows captures nothing, as everywhere else in this module.
 
 ---
 
