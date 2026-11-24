@@ -63,6 +63,13 @@ cleanly.
   errors (probe-3 EXIT=1). It is deterministic: a compile-time contract with no timing.
 - **No product change.** This commit adds only this report. No source, test, gate or baseline was
   edited, so persistence, realtime, undo and commands are untouched, and no registration is needed.
+- **Fix at the cause, siblings, collateral damage.** These are covered by the original fix's report
+  (`cluster-ci-4e020460347493c3.md`, Self-check). `RemotePluginBase.h` is the only file that defines
+  `SYNC_WITH_SHM_FIFO`; the socket branch and the mingw `<process.h>` path are unchanged. This port
+  changes nothing, so there is nothing new to check.
+- **Sibling commands (submit_check ASK).** This job changes no command file. The listed `app.*` /
+  `arrangement.*` commands come from earlier branch history that `submit_check` diffs against its base,
+  not from this commit (`git show --stat HEAD` touches only this report). They are not affected.
 - **Platform.** This host is Linux. macOS itself was not run here. Apple's predefine difference
   (`__unix__` absent) is reproduced with `-U__unix__`, which is how the in-tree guard target does it.
 - **Unverified.** I did not see a green hosted macos-arm64 run of this branch. That happens when the
