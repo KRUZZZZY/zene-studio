@@ -123,6 +123,14 @@ could pass before this checker existed.
   code is a Python source scan and a syntax-only compiler probe.
 - Undo/commands: no command, undo step, reversibility class or snapshot
   canary is touched.
+- Sibling commands (`app.*`, `arrangement.*` and the rest listed by
+  `submit_check`): they belong to merge-train commits already between the base
+  `fa4a5f2e` and this branch's `HEAD`, not to this job. This job's only commit
+  `c7e66c4af` changes `tests/Qt5QStringListSizeCheck.py`,
+  `tests/CMakeLists.txt`, `tests/fork-sources.txt`,
+  `tests/upstream-modifications.txt` and this report (`git show --stat HEAD` in
+  `28-sibling-evidence.log`). It registers no command, handler, reversibility
+  class or snapshot entry, so those commands are unaffected.
 
 ## Other findings
 
