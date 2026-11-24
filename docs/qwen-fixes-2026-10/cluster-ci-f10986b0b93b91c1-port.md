@@ -50,6 +50,15 @@ regression test, fix.patch or proof manifest (NEEDS-CONTEXT reports need no mani
   to obtain them are listed above with their output.
 - Regression test? Not applicable: no fix was made.
 - Gates: no product or test file changed, only this report.
+- submit_check.py (log `01-submit-check.log`, EXIT=0, `RESULT: PASS - submit`). Its "?" items:
+  - Red/green regression test: not applicable. No product change, so there is nothing to revert.
+  - Determinism: not applicable. No test was added.
+  - Fix at the cause and complete: not applicable. No fix was made, because the cause is unknown (see above).
+  - Collateral damage: none. Only this report file is changed (`git show --stat HEAD`).
+  - ALREADY-FIXED / FALSE-POSITIVE evidence: not applicable. The verdict is NEEDS-CONTEXT.
+  - Sibling commands (app.*, arrangement.*): not affected. This lane changed no command file.
+    The "tests added" files and command files that the check lists come from the train merge commits
+    already on this branch, not from this lane.
 - git status clean after commit: yes (only this report is committed).
 
 Delegation: none. The work was five short read-only checks (searches, `which`, `docker`, `gh`, two
