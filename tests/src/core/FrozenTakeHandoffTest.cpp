@@ -28,6 +28,8 @@
 // whole period (AudioEngine::renderNextPeriod), so a control-thread change waits for the period to end.
 
 #include <QtTest>
+#include <QDomDocument>
+#include <QDomElement>
 #include <QJsonObject>
 #include <QTemporaryDir>
 
@@ -274,6 +276,64 @@ private slots:
 		const bool waited = workWaitsWhileRenderLockHeld([&] { track->unfreeze(); });
 		QVERIFY2(waited, "unfreeze finished while the render thread held the change lock: it did not wait for the period");
 		QVERIFY(!track->isFrozen());
+	}
+
+	//! 5415: a loaded take's metadata and audio are published together under the render lock.
+	void loadedTakeIsPublishedUnderTheRenderLock()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("take.wav")), 220.0);
+		QVERIFY(!wav.isEmpty());
+
+		Song* const song = Engine::getSong();
+		song->clearProject();
+		QVERIFY(run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("sample")}}).ok);
+		Track* const track = song->tracks().back();
+		QVERIFY(track != nullptr);
+		QVERIFY(!track->isFrozen());
+
+		QDomDocument doc;
+		QDomElement element = doc.createElement(QStringLiteral("track"));
+		element.setAttribute(QStringLiteral("type"), QString::number(static_cast<int>(track->type())));
+		element.setAttribute(QStringLiteral("frozenAudio"), wav);
+		element.setAttribute(QStringLiteral("frozenStart"), QStringLiteral("0"));
+		element.setAttribute(QStringLiteral("frozenEnd"), QStringLiteral("1920"));
+		doc.appendChild(element);
+
+		{
+			std::lock_guard lock(s_probeMutex);
+			s_probeReached = false;
+			s_allowLockAttempt = false;
+		}
+		Track::setFrozenTakeLockProbeForTest(&pauseBeforeFrozenTakeLock);
+		std::thread worker([&] { track->loadSettings(element); });
+		bool reached = false;
+		{
+			std::unique_lock lock(s_probeMutex);
+			reached = s_probeCv.wait_for(lock, std::chrono::seconds(5), [] { return s_probeReached; });
+		}
+		// The file is decoded; the load is parked before the engine's change guard. Nothing of
+		// the take may be visible yet, with or without a render period being held here.
+		bool publishedBeforeGuard = track->isFrozen() || track->frozenAudioReady();
+		{
+			const auto renderLock = Engine::audioEngine()->requestChangesGuard();
+			publishedBeforeGuard = publishedBeforeGuard || track->isFrozen() || track->frozenAudioReady();
+			{
+				std::lock_guard lock(s_probeMutex);
+				s_allowLockAttempt = true;
+			}
+			s_probeCv.notify_all();
+		}
+		worker.join();
+		Track::setFrozenTakeLockProbeForTest(nullptr);
+
+		QVERIFY2(reached, "the load never reached its publication boundary");
+		QVERIFY2(!publishedBeforeGuard, "the load published the take before taking the render lock");
+		QVERIFY(track->isFrozen());
+		QVERIFY(track->frozenAudioReady());
+		QCOMPARE(track->frozenTake().path, wav);
+		QCOMPARE(track->frozenTake().endTicks, static_cast<tick_t>(1920));
 	}
 
 	//! Cluster 5127: clicks claim prepared handles, match fresh audio and retire without render-path allocation.
