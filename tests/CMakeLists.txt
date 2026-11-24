@@ -9779,6 +9779,13 @@ if(PYTHON3_EXECUTABLE)
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Qt5QJsonValueIntegerCheck.py
 			--root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR} --cxx ${CMAKE_CXX_COMPILER})
 	set_tests_properties(Qt5QJsonValueIntegerCheck PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
+	# cluster ci-e58078851126eac9-port: the same hosted Qt 5 failure, asserted from both sides -
+	# the two source_bytes reads in ScriptClockTest must stay on jsonInteger(value, -1), and the real
+	# translation unit is recompiled against Qt 5 through this build's compile_commands.json probe.
+	add_test(NAME ScriptClockQt5JsonIntegerPortCheck
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/ScriptClockQt5JsonIntegerPortCheck.py
+			--root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR} --cxx ${CMAKE_CXX_COMPILER})
+	set_tests_properties(ScriptClockQt5JsonIntegerPortCheck PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
 	execute_process(COMMAND pkg-config --exists Qt5Core RESULT_VARIABLE ZENE_HAS_QT5_CORE
 		OUTPUT_QUIET ERROR_QUIET)
 	if(ZENE_HAS_QT5_CORE EQUAL 0)

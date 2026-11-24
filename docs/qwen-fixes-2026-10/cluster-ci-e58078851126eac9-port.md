@@ -39,8 +39,65 @@ Qt 5 does the equivalent checked whole-number conversion of the value's double.
   Qt 5). `tests/Qt5QJsonToIntegerCheck.py:1-27` names this exact cluster and
   records the historical `build / linux-x86_64` error.
 
-No product or test source changed in this port. The only files added or changed
-by this job are this report and its `tests/fork-sources.txt` registration.
+No product or test source changed in this port: the fix is inherited, and this
+job only adds its own regression check (round 3, below), the registrations for
+it, and this report.
+
+## Round 3: the port-local regression check
+
+Round 2 was sent back because its proof had no `test`/`regression-test`
+artifact naming a test file the branch adds or changes. This round adds one,
+for exactly this cluster, with both halves of the defect asserted in one
+deterministic process:
+
+- `tests/ScriptClockQt5JsonIntegerPortCheck.py` (new, 222 lines):
+  - **both sites**: reads `tests/src/core/ScriptClockTest.cpp` and requires
+    exactly the two `source_bytes` reads (line 409 `scheduleState(id)` and line
+    416 `stateJson()`), each through `jsonInteger(value, -1)`. A reverted site, a
+    half-reverted pair, a missing site and a changed default are all findings.
+  - **the hosted compiler input**: recompiles the real
+    `tests/src/core/ScriptClockTest.cpp` `-fsyntax-only` through this build's
+    `build/compile_commands.json` entry, retargeted at the Qt 5.15 headers with
+    the Qt 5 moc standing in for the Qt 6 autogen output. It drives the existing
+    probe in `tests/Qt5QJsonValueIntegerCheck.py` (imported, so the two cannot
+    drift) and its Qt 5 bad/good fixtures (Qt 5 must reject `toInteger` and
+    accept `jsonInteger`).
+  - `--self-test` feeds the site scan the reverted, half-reverted and
+    wrong-default shapes (each must be a finding) and the portable pair (must be
+    clean).
+  - exit 0 = clean, 1 = finding, 2 = usage, 77 = skipped (no Qt 5 development
+    tree or moc; CTest `SKIP_RETURN_CODE 77`). Both halves always run, so a
+    missed site cannot hide the compile result.
+- Registration: `tests/CMakeLists.txt` (new `add_test` next to the other Qt 5
+  JSON checks, with `TIMEOUT 300` and `SKIP_RETURN_CODE 77`),
+  `tests/fork-sources.txt` (the new file) and `tests/upstream-modifications.txt`
+  (the `tests/CMakeLists.txt` registration line).
+
+| step | command | EXIT | log |
+|---|---|---|---|
+| branch build + reconfigure | `cmake --build build --target zene -j4` | 0 | `build-1.log` |
+| self-test (fixtures) | `python3 tests/ScriptClockQt5JsonIntegerPortCheck.py --self-test` | 0 | `test-1-selftest.log` |
+| GREEN direct | `python3 tests/ScriptClockQt5JsonIntegerPortCheck.py --root . --build-dir build` | 0 | `test-2-direct-green.log` |
+| GREEN ctest | `cd build/tests && ctest -R '^ScriptClockQt5JsonIntegerPortCheck$' --output-on-failure` | 0 | `test-3-ctest-green.log` |
+| RED ctest (bug put back) | same ctest, after both sites returned to `.toInteger(-1)` | 8 | `test-5-ctest-red.log` |
+| RED Qt 5 probe only | `python3 tests/Qt5QJsonValueIntegerCheck.py --root . --build-dir build` on the reverted tree | 1 | `test-6-qt5-probe-red.log` |
+| RED direct, both halves | `python3 tests/ScriptClockQt5JsonIntegerPortCheck.py --root . --build-dir build` on the reverted tree | 1 | `test-7-direct-red-both-halves.log` |
+| restore | `git apply -R $LOGS/bug-reintroduced.patch` | 0 | `bug-reintroduced.patch` |
+| GREEN direct, restored | `python3 tests/ScriptClockQt5JsonIntegerPortCheck.py --root . --build-dir build` | 0 | `test-8-direct-green-restored.log` |
+| GREEN ctest family | `cd build/tests && ctest -R '^(ScriptClockQt5JsonIntegerPortCheck\|ScriptClockTest\|Qt5QJsonToIntegerCheck\|Qt5QJsonValueIntegerCheck\|Qt5JsonIntegerCheck\|Qt5JsonValueIntegerCheck)$' --output-on-failure` | 0 (6/6) | `test-9-ctest-family-green.log` |
+
+`bug-reintroduced.patch` is the RED state: both `jsonInteger(...)` reads put back
+to the historical `.toInteger(-1)` (2 lines changed). `git diff --stat --
+tests/src/core/ScriptClockTest.cpp` was empty after `git apply -R`.
+
+The RED run shows both halves of the same hosted failure in one process:
+
+```
+tests/src/core/ScriptClockTest.cpp: line 409: reads source_bytes through QJsonValue::toInteger, which Qt 5.15 does not declare: ...toInteger(-1);
+tests/src/core/ScriptClockTest.cpp: line 416: reads source_bytes through QJsonValue::toInteger, which Qt 5.15 does not declare: ...toInteger(-1);
+tests/src/core/ScriptClockTest.cpp:409:92: error: ‘class QJsonValue’ has no member named ‘toInteger’
+tests/src/core/ScriptClockTest.cpp:416:69: error: ‘class QJsonValue’ has no member named ‘toInteger’
+```
 
 ## Regression proof
 
@@ -84,8 +141,9 @@ integers through jsonInteger` (EXIT 0).
 
 | Path | Covered by |
 |---|---|
-| Normal path | Qt 5.15.19 compile probe of the real `ScriptClockTest.cpp`, EXIT 0 (`test-5`, `test-10`); Qt 6 `ScriptClockTest` ctest, 1/1 (`test-4`, `test-11`) |
-| Failure path | Reinserted historical `.toInteger(-1)`: Qt 5 probe EXIT 1 (`test-7`); source scan EXIT 1 (`test-8`); ctest EXIT 8 (`test-6`) |
+| Normal path | `ScriptClockQt5JsonIntegerPortCheck` on the real source and TU, EXIT 0 (`test-2`, `test-3`, `test-8`, `test-9`); Qt 5.15.19 compile probe of the real `ScriptClockTest.cpp`, EXIT 0 (`test-5`, `test-10`); Qt 6 `ScriptClockTest` ctest, 1/1 (`test-4`, `test-11`) |
+| Failure path | Reinserted historical `.toInteger(-1)` at both sites: new check EXIT 1 (`test-7`) and ctest EXIT 8 (`test-5`); Qt 5 probe EXIT 1 (`test-7` round 2); source scan EXIT 1 (`test-8` round 2) |
+| Partial repair | `--self-test` half-reverted fixture must be a finding; the port check fails if either site leaves `jsonInteger(value, -1)` (`test-1-selftest.log`, EXIT 0 on the fixtures themselves) |
 | Exhaustion / reconfiguration | Not applicable: the change reads one JSON value; there is no queue, cap, persistent state or reconfiguration path |
 | Audio-thread constraints | Not applicable: no `processImpl`/`playImpl`/mixer/render code changed; this port changes no product code |
 | Supported-platform build | Qt 5.15.19 (the hosted job's compiler input) compiles the real TU; the configured Qt 6 build also compiles and runs it |
@@ -93,7 +151,16 @@ integers through jsonInteger` (EXIT 0).
 
 ## Self-check
 
-- **The regression test FAILS with the fix reverted and PASSES with it.** RED:
+- **The regression test FAILS with the fix reverted and PASSES with it (round 3,
+  `tests/ScriptClockQt5JsonIntegerPortCheck.py`).** RED: direct EXIT **1**
+  (`test-7-direct-red-both-halves.log`) and ctest EXIT **8**
+  (`test-5-ctest-red.log`) after both sites were returned to `.toInteger(-1)`
+  (`bug-reintroduced.patch`). GREEN: direct EXIT **0**
+  (`test-8-direct-green-restored.log`) and ctest EXIT **0**
+  (`test-3-ctest-green.log`, `test-9-ctest-family-green.log`, 6/6) after
+  `git apply -R`. Same test, same command, opposite exit codes.
+- **The regression test FAILS with the fix reverted and PASSES with it (round 2,
+  the inherited checks).** RED:
   `Qt5QJsonValueIntegerCheck.py` EXIT **1** (`test-7-red-qt5-real-tu.log`) and
   `Qt5QJsonToIntegerCheck.py` EXIT **1** (`test-8-red-scan.log`), plus ctest EXIT
   **8** (`test-6-red-ctest-scan.log`), after the historical `.toInteger(-1)`
@@ -102,17 +169,23 @@ integers through jsonInteger` (EXIT 0).
   `Qt5QJsonToIntegerCheck` family (`test-11`). `git apply -R` of the captured
   bug patch restored the tree; `git status --porcelain` then showed no source
   change.
-- **Deterministic.** The source scan is a pure read of 4308 repository files
-  with fixed strings and no sleeps, clocks, threads or network. The Qt 5 probe
-  runs `c++ -fsyntax-only` on the real translation unit with the recorded
-  compile flags retargeted at the installed Qt 5.15.19 headers; it has no
-  timing or race input. The self-test fixtures are two fixed strings.
+- **Deterministic.** The new check has no sleeps, clocks, threads, network or
+  temporary state that can come out differently twice: it reads
+  `tests/src/core/ScriptClockTest.cpp`, matches fixed strings, and runs
+  `c++ -fsyntax-only` on the real translation unit with the flags recorded in
+  `build/compile_commands.json` retargeted at the installed Qt 5.15 headers. Its
+  fixtures are fixed strings written into a `TMPDIR` temporary directory. The
+  round-2 instruments are the same: the source scan is a pure read of 4308
+  repository files with fixed strings, and the Qt 5 probe is a compile.
 - **The fix is at the cause and complete.** The scanner reports 0 first-party
   `QJsonValue::toInteger` calls over all 4308 first-party sources. The only
   remaining occurrence is the guarded Qt 6 branch of the adapter at
   `include/DeprecationHelper.h:109`, which the scanner intentionally exempts.
   The two original call sites are both converted (`ScriptClockTest.cpp:409` and
-  `:416`); there is no other first-party caller to update.
+  `:416`), and the new check asserts both of them by name and by line, so a
+  repair that converts only one is red: `--self-test` proves that with the
+  half-reverted fixture, and the RED run above shows both sites flagged. There
+  is no other first-party caller to update.
 - **No collateral damage.** No product code, save format, schema, command or
   limit changed in this port. On Qt 6 `jsonInteger` calls `toInteger(default)`,
   so the value and the `-1` sentinel are exactly as before; on Qt 5 it is the
@@ -122,18 +195,32 @@ integers through jsonInteger` (EXIT 0).
   HEAD; current lines 409 and 416 use `jsonInteger`. See
   `logs/evidence-1-already-fixed.log`.
 - **Sibling commands.** This port changes no command file (`git diff` for this
-  job touches only this report and `tests/fork-sources.txt`), so `app.about`,
+  job touches only this report, the new check, `tests/fork-sources.txt`,
+  `tests/upstream-modifications.txt` and `tests/CMakeLists.txt`), so `app.about`,
   `app.ask`, `app.help`, `app.online_help`, `app.task_cancel`, `app.tasks`,
   `app.tour`, `app.tours`, `app.update_check_get`, `app.update_check_run`,
   `app.update_check_set`, `app.version`, `app.whats_new`,
   `arrangement.fit_tracks` and `arrangement.get_state` are unaffected. The
   broader `050/m0-train-35..HEAD` baseline contains earlier train changes, not
   this cluster's repair.
-- **Registration.** The new report is listed in `tests/fork-sources.txt`; the
-  existing scanner and Qt 5 probe were already registered in
-  `tests/CMakeLists.txt` and `tests/fork-sources.txt` by the original repair.
-- **Realtime, undo and commands.** No audio path, undo action or control
-  command is touched; the diff is documentation and a registration list entry.
+- **Registration.** The new check is listed in `tests/fork-sources.txt`, its
+  `add_test` is in `tests/CMakeLists.txt` (recorded in
+  `tests/upstream-modifications.txt`), and the file is named after its CTest so
+  `ctest -R '^ScriptClockQt5JsonIntegerPortCheck$'` finds it
+  (`test-3-ctest-green.log`). The existing scanner and Qt 5 probe were already
+  registered by the original repair.
+- **Realtime, undo and commands.** No audio path, undo action or control command
+  is touched; the diff is one Python check, its registrations and this report.
+  No allocation, lock, wait or log is added anywhere that runs per period.
+
+## Round 3 outcome against the send-back
+
+The send-back said the proof had no `test`/`regression-test` artifact naming a
+test file this branch adds or changes. It now does:
+`ScriptClockQt5JsonIntegerPortCheck.py` is added by this branch, registered, run
+green directly (EXIT 0) and through CTest (EXIT 0), and red with the historical
+spelling restored (EXIT 1 direct, EXIT 8 through CTest). See
+`logs/proof.json`.
 
 ## Other findings
 
