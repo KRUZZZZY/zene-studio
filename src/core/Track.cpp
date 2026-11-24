@@ -1452,29 +1452,27 @@ void Track::loadFrozenTake(const QDomElement& element)
 	// loading thread - never on the audio thread - and a take whose file has
 	// moved is still frozen state (the file is what the user asked for): it is
 	// reported as unloaded by track.get_state rather than silently dropped.
-	m_frozen.path = element.attribute(QStringLiteral("frozenAudio"));
-	if (m_frozen.path.isEmpty()) { return; }
+	FrozenTake take;
+	take.path = element.attribute(QStringLiteral("frozenAudio"));
+	if (take.path.isEmpty()) { return; }
 
 	if ((element.hasAttribute(QStringLiteral("frozenStart"))
-			&& !parseTick(element.attribute(QStringLiteral("frozenStart")), m_frozen.startTicks))
+			&& !parseTick(element.attribute(QStringLiteral("frozenStart")), take.startTicks))
 		|| (element.hasAttribute(QStringLiteral("frozenEnd"))
-			&& !parseTick(element.attribute(QStringLiteral("frozenEnd")), m_frozen.endTicks)))
+			&& !parseTick(element.attribute(QStringLiteral("frozenEnd")), take.endTicks)))
 	{
-		// loadTrack() releases the clips this rejected take muted, once those clips are loaded.
-		m_frozen = FrozenTake{};
 		return;
 	}
-	m_frozen.mutedClips = parseMutedClipsAttribute(
+	take.mutedClips = parseMutedClipsAttribute(
 		element.attribute(QStringLiteral("frozenMuted")));
 	// A file written before the flag existed: a take that starts after tick 0 or muted clips is a region.
-	m_frozen.region = element.hasAttribute(QStringLiteral("frozenRegion"))
+	take.region = element.hasAttribute(QStringLiteral("frozenRegion"))
 		? element.attribute(QStringLiteral("frozenRegion")).toInt() != 0
-		: (m_frozen.startTicks > 0 || !m_frozen.mutedClips.empty());
-	if (m_frozen.region && !isValidRegionWindow(m_frozen.startTicks, m_frozen.endTicks))
+		: (take.startTicks > 0 || !take.mutedClips.empty());
+	if (take.region && !isValidRegionWindow(take.startTicks, take.endTicks))
 	{
 		// A region that ends before it starts is refused like an unparseable tick: the track keeps its own
 		// clips, and loadTrack() releases the clips this rejected take muted.
-		m_frozen = FrozenTake{};
 		return;
 	}
 
@@ -1482,25 +1480,31 @@ void Track::loadFrozenTake(const QDomElement& element)
 	// way), so the record is NOT replayed here: a load must not write to the
 	// clips it is still reading.
 	subscribeFrozenTakeSignals();
-	m_frozenBuffer = SampleBuffer::fromFile(m_frozen.path);
+	std::shared_ptr<const SampleBuffer> buffer = SampleBuffer::fromFile(take.path);
+	if (buffer != nullptr && buffer->empty()) { buffer.reset(); }
+	const bool missingBuffer = buffer == nullptr;
+	const QString takePath = take.path;
 #ifdef LMMS_TESTING
 	// Cluster 5415: the load's file work is done and its take is about to be published.
 	if (s_frozenTakeLockProbeForTest != nullptr) { s_frozenTakeLockProbeForTest(); }
 #endif
+	// Decode and parse into locals first: the track remains untouched until one
+	// guarded publication replaces the metadata and its matching audio buffer.
 	{
 		const auto renderLock = Engine::audioEngine()->requestChangesGuard();
+		m_frozen = std::move(take);
+		m_frozenBuffer = std::move(buffer);
 		adoptTempoMapForFrozenTake(Engine::getSong()->tempoMap().map());
+		const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
+		updateFrozenVoiceCapacity(timeline.loopEnabled(), timeline.loopBegin().getTicks(), timeline.loopEnd().getTicks());
 	}
-	if (m_frozenBuffer == nullptr || m_frozenBuffer->empty())
+	if (missingBuffer)
 	{
 		// The take's file moved or cannot be decoded: the track stays frozen (state is kept so project.relink
 		// and freeze.unfreeze can repair it) but the source plays; the load report names both ways out.
-		m_frozenBuffer.reset();
 		Engine::getSong()->collectError(tr("Frozen take not found: %1 (project.relink points it at the moved file; "
-			"freeze.unfreeze, undoable, gives the track its own clips back)").arg(m_frozen.path));
+			"freeze.unfreeze, undoable, gives the track its own clips back)").arg(takePath));
 	}
-	const Timeline& timeline = Engine::getSong()->getTimeline(Song::PlayMode::Song);
-	updateFrozenVoiceCapacity(timeline.loopEnabled(), timeline.loopBegin().getTicks(), timeline.loopEnd().getTicks());
 }
 
 
