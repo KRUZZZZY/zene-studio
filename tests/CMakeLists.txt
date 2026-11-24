@@ -121,6 +121,9 @@ set(LMMS_TESTS
 	# on the ramp Song::buildAutomationRamps publishes, deterministically across
 	# a start/stop/return and through a whole-project save/reload.
 	src/core/AutomationPreFirstValueTest.cpp
+	# cluster new-p12-248: the per-block ramp publish, the per-tick read and a whole render period
+	# take an automation clip's lock without waiting, so a control-thread edit never stalls playback.
+	src/core/AutomationRenderLockTest.cpp
 	# Sample-accurate automation (feature-list row 9, board task #646): renders
 	# real blocks through Song::processNextBuffer() and measures the per-sample
 	# buffer the audio path reads against the clip's own curve, frame by frame -
@@ -3914,6 +3917,9 @@ set_tests_properties(SampleAccurateAutomationTest PROPERTIES
 # render periods itself and saves/reloads a project, so it needs the headless
 # Qt platform for the same reason.
 set_tests_properties(AutomationPreFirstValueTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# AutomationRenderLockTest (cluster new-p12-248) builds a full Engine and drives render periods itself.
+set_tests_properties(AutomationRenderLockTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # UndoBoundsTest constructs a full Engine, drives the control surface and starts
