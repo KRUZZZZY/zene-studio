@@ -17,3 +17,11 @@ FIXED
 - Sibling, not fixed: if the carry has energy but every candidate in the search window is exactly silent, all scores still tie at 0 and `-searchRadius` still wins. It needs a tie-break toward offset 0 and is outside this finding's described fix.
 
 Delegation: Haiku ran every build, ctest and the feature_check gate run (four runs) and reported exit codes and failure lines; I checked test-2.log and the patch/diff myself and wrote the test, fix, patch reversal and this report.
+
+## Self-check
+- Red/green: with `src/core/AudioStretcher.cpp` reverted the test fails (test-1.log and test-3.log, ctest EXIT=8, frame 588 is 0 instead of 0.0533878); with the fix it passes (test-2.log and test-4.log, EXIT=0).
+- Deterministic: the test uses a synthetic source (zeros, then 1.0 from frame 1100), fixed parameters {1024, 128}, speed 2.0, and an analytic expected output. There is no clock, sleep, thread or random input.
+- Cause and completeness: the only caller of the alignment search is `AudioStretcher::produceHop`, and the only path into it is `process`. The fix is in the search's guard. The header is unchanged. The sibling case of a non-silent carry with all-silent candidates is listed above under Other findings and is not changed.
+- Collateral: with a non-silent carry (energy above 1e-12) the search is unchanged, so the existing pitch, period-sized-call and first-hop tests still pass (test-4.log). With a silent carry the output changes only by starting the grain at the cursor. No saved data or project format is involved, and no limit was added.
+- Verdict is FIXED, so the ALREADY-FIXED/FALSE-POSITIVE item does not apply.
+- Sibling commands: this change touches no command file (only AudioStretcher.cpp and its test), so the listed app.*/arrangement.* commands are not affected. No control commands were added.
