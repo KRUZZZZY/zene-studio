@@ -179,9 +179,13 @@ private:
 	float m_34Last;
 
 	float m_lastNoteFreq;
-	float m_lastFreq1;
-	float m_lastFreq2;
-	float m_lastFreq3;
+	//! The channel coarse detunes the wavelengths below were built from. They
+	//! are the values the audio thread read from the models (see
+	//! NesObject::updatePitch()), so every field here is written by the audio
+	//! thread only.
+	float m_lastCrs1;
+	float m_lastCrs2;
+	float m_lastCrs3;
 	float m_lastNoiseFreq;
 	bool m_lastNoiseFreqMode;
 	bool m_lastNoiseQuantize;
@@ -222,17 +226,6 @@ public:
 	}
 	
 	gui::PluginView* instantiateView( QWidget * parent ) override;
-	
-public slots:
-	void updateFreq1();
-	void updateFreq2();
-	void updateFreq3();
-
-protected:
-	//freq  helpers
-	float m_freq1;
-	float m_freq2;
-	float m_freq3;
 	
 private:
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
