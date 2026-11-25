@@ -76,7 +76,8 @@ public:
 	//! past MaxChannels - 1) is dropped whole: neither channel is written.
 	void add(int start, int width, const SampleFrame* src, f_cnt_t frames, float gain = 1.f) noexcept;
 	//! Render thread, 0.5.0 F7 (MX-060): add one plane @a src at @a channel - a surround channel's speaker
-	//! beyond its pair - times @a gains[f] when given, else @a gain. A channel outside the bus is dropped.
+	//! beyond its pair - times @a gain and, when given, @a gains[f] as well (a sample-exact fader, plus the
+	//! one gain that follows it). A channel outside the bus is dropped.
 	void addPlane(int channel, const float* src, f_cnt_t frames, float gain = 1.f, const float* gains = nullptr) noexcept;
 	//! Render thread: where the master of the period being written goes.
 	void setMasterPlacement(Placement placement) noexcept { m_sides[m_write].master = placement; }

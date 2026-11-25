@@ -718,6 +718,84 @@ private slots:
 		second->setControllerConnection(nullptr);
 	}
 
+	//! BUG 7 (cluster new-p17-44): a controller buffer the serial prepass has not
+	//! stamped for the current period is answered with null and counted, never
+	//! dereferenced, and the model that would have read it is answered with the
+	//! controller's last published scalar. The period stamps are moved by hand,
+	//! so the test has no clock, no sleep and the same result on every run.
+	void unpreparedControllerBufferRequestIsNullAndReported()
+	{
+		AudioEngine* const engine = Engine::audioEngine();
+		FloatModel gain(0.75f, 0.0f, 1.0f, 0.001f);
+		auto* const lfo = new LfoController(nullptr);
+		gain.setControllerConnection(new ControllerConnection(lfo));
+		gain.setUseControllerValue(true);
+
+		// The control side reads once while the controller's buffer still covers
+		// the period. That publishes m_currentValue, which is what an unprepared
+		// worker read is answered with instead of a buffer.
+		const float publishedBefore = gain.value();
+		QVERIFY(publishedBefore >= 0.0f && publishedBefore <= 1.0f);
+
+		// The next period, without the serial prepass: the controller is
+		// unstamped, which is the state the finding describes.
+		Controller::triggerFrameCounter();
+
+		const std::uint64_t controllerBefore = engine->unpreparedControllerBufferRequests();
+		const std::uint64_t modelBefore = engine->unpreparedAutomatableBufferRequests();
+		bool workerRan = false;
+		bool workerIsRenderThread = true;
+		float workerValue = -1.0f;
+		std::uint64_t missesAfterValue = 0;
+		std::uint64_t missesAfterBuffer = 0;
+		const ValueBuffer* workerControllerBuffer = nullptr;
+		const ValueBuffer* workerModelBuffer = nullptr;
+		std::thread worker([&]
+		{
+			// The shape of a mixer job: realtime, and not the render thread that
+			// owns the serial prepass.
+			const RealtimeScope realtime;
+			workerIsRenderThread = engine->isRenderThread();
+			workerValue = gain.value();
+			missesAfterValue = engine->unpreparedControllerBufferRequests();
+			workerControllerBuffer = gain.controllerConnection()->valueBuffer();
+			missesAfterBuffer = engine->unpreparedControllerBufferRequests();
+			workerModelBuffer = gain.valueBuffer();
+			workerRan = true;
+		});
+		worker.join();
+
+		QVERIFY(workerRan);
+		QVERIFY(!workerIsRenderThread);
+		// No buffer to a caller that has not been prepared for; the scalar the
+		// serial pass published is the fallback, not an uninitialised read.
+		QCOMPARE(workerControllerBuffer, static_cast<const ValueBuffer*>(nullptr));
+		QCOMPARE(workerModelBuffer, static_cast<const ValueBuffer*>(nullptr));
+		QCOMPARE(std::bit_cast<std::uint32_t>(workerValue), std::bit_cast<std::uint32_t>(publishedBefore));
+		// Each request is reported where the engine publishes it, so a missed
+		// preparation is visible instead of silent.
+		QCOMPARE(missesAfterValue, controllerBefore + 1);
+		QCOMPARE(missesAfterBuffer, controllerBefore + 2);
+		QCOMPARE(engine->unpreparedAutomatableBufferRequests(), modelBefore + 1);
+
+		// The serial prepass is what makes the same request answerable: after it
+		// both buffers cover the whole period and nothing is counted.
+		gain.prepareValueBufferForRender();
+		const std::uint64_t controllerAfterPrepass = engine->unpreparedControllerBufferRequests();
+		const ValueBuffer* const preparedControllerBuffer = gain.controllerConnection()->valueBuffer();
+		QVERIFY(preparedControllerBuffer != nullptr);
+		QCOMPARE(preparedControllerBuffer->length(),
+			static_cast<int>(Engine::audioEngine()->framesPerPeriod()));
+		QVERIFY(gain.valueBuffer() != nullptr);
+		QCOMPARE(engine->unpreparedControllerBufferRequests(), controllerAfterPrepass);
+		evidence("BUG7_UNPREPARED_CONTROLLER_BUFFER reported=%llu fallback=%.6f prepared_length=%d",
+			static_cast<unsigned long long>(missesAfterBuffer - controllerBefore),
+			static_cast<double>(workerValue), preparedControllerBuffer->length());
+
+		gain.setControllerConnection(nullptr);
+		delete lfo;
+	}
+
 	//! A repeated old/new pair still uses the immediately previous setter value
 	//! as its ramp start, for both members of a linked ring.
 	void linkedModelsRetainTheImmediatelyPreviousRampStart()

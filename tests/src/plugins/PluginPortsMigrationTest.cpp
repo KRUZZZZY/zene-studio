@@ -3206,6 +3206,14 @@ auto renderGigPeak(lmms::Instrument& instrument, int key, int periods) -> float
 }
 
 
+// The gig allocation probe hooks the POSIX allocator, so the helper and its one
+// caller exist only where that hook does. PLUGIN_PORTS_TEST_NO_POSIX_ALLOCATOR_HOOK
+// lets the Linux build compile the branch mingw64 takes (cluster ci-3eb9bda8aa6785a3-port).
+#if defined(Q_OS_UNIX) && !defined(PLUGIN_PORTS_TEST_NO_POSIX_ALLOCATOR_HOOK)
+#define PLUGIN_PORTS_TEST_HAVE_POSIX_ALLOCATOR_HOOK 1
+#endif
+
+#if defined(PART_C_MIGRATED_gigplayer) && defined(PLUGIN_PORTS_TEST_HAVE_POSIX_ALLOCATOR_HOOK)
 //! Renders one new note per period and counts the heap traffic of the render.
 auto renderGigNotesCountingHeap(lmms::Instrument& instrument, int key, int notes)
 	-> std::pair<std::size_t, std::size_t>
@@ -3251,6 +3259,7 @@ auto renderGigNotesCountingHeap(lmms::Instrument& instrument, int key, int notes
 
 	return {HeapWatch::allocations, HeapWatch::deallocations};
 }
+#endif
 
 
 //! Starts the given number of notes in one period and renders them.
@@ -3517,7 +3526,7 @@ void PluginPortsMigrationTest::gigplayerAudioPathDoesNotAllocate()
 #ifndef PART_C_MIGRATED_gigplayer
 	QSKIP("GigPlayer is unavailable in this configuration");
 #else
-#ifdef Q_OS_UNIX
+#ifdef PLUGIN_PORTS_TEST_HAVE_POSIX_ALLOCATOR_HOOK
 	if (!testHostCanLoadPluginModules())
 	{
 		QSKIP(PluginModuleHostSkipMessage);

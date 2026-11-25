@@ -1,0 +1,166 @@
+ALREADY-FIXED
+
+# cluster ci-aa184f959f204bcd-port - port of "CI regression: build / linux-x86_64"
+
+ci-aa184f959f204bcd-port: ALREADY-FIXED
+
+## What the finding is
+
+The finding only gives the title. The original cluster's report is on this branch at
+`docs/qwen-fixes-2026-10/cluster-ci-aa184f959f204bcd.md:1-30`. It says the hosted `linux-x86_64`
+job failed with `-Werror=unused-result` at `tests/src/core/MountNamespaceTestSupport.h:78` and `:110`.
+Both lines were `(void)::write(...)` calls. Ubuntu's `_FORTIFY_SOURCE` marks `write` as
+`warn_unused_result`, and a `(void)` cast does not silence that. This job ports that fix to the
+branch.
+
+## Evidence that this branch already has the fix
+
+- `tests/src/core/MountNamespaceTestSupport.h:63-68`: the new helper `writeNamespaceHandshakeByte`
+  uses the `::write` result (`sent == 1`) and retries on EINTR.
+- `tests/src/core/MountNamespaceTestSupport.h:84-88`: `mapOwnUidIntoNamespace` checks the uid_map
+  write (`::write(...) == len`) and the handshake result (`notified`).
+- `tests/src/core/MountNamespaceTestSupport.h:118`: `enterOwnMountNamespace` sends the go byte
+  through the checked helper.
+- The commits that landed it: `git log -- tests/src/core/MountNamespaceTestSupport.h` shows
+  03e5a509b7 ("Fixed five hosted source portability causes, added compiler and handshake
+  regressions") and de50c6cc4c.
+- The regression test is on the branch and registered: `tests/unused-result-fortify-check.py`,
+  ctest `UnusedResultFortifyCheck` at `tests/CMakeLists.txt:9622-9627`.
+- A fff search for `(void)::write`, `(void)::read`, `(void) ::write`, `(void)write(` and
+  `(void)::system` outside the vendored trees found them only inside test fixture strings
+  (`tests/unused-result-fortify-check.py:77` and `tests/train-39-portability-check.py:187`).
+  Those strings are the deliberate "must be rejected" samples. No product or test-helper code
+  throws away a `__wur` result.
+
+## Commands and exit codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/ci-aa184f959f204bcd-port.r2/logs)
+
+```
+cmake --build build --target RecordToolsTest -j4 > logs/build-1.log 2>&1; echo EXIT=$?          # EXIT=0
+cd build/tests && ctest -R '^(UnusedResultFortifyCheck|RecordToolsTest)$' --output-on-failure \
+  > logs/test-1.log 2>&1; echo EXIT=$?                                                             # EXIT=8
+#   UnusedResultFortifyCheck: Passed
+#   RecordToolsTest: Failed, 26 passed / 1 failed. The failure is environmental (see Other findings)
+cd build/tests && ctest -R 'Portability|Fortify' --output-on-failure > logs/test-2.log 2>&1; echo EXIT=$?   # EXIT=8
+#   UnusedResultFortifyCheck, Train51/Train43 portability, NAM portability checks: Passed
+#   Train48Portability, Train47Portability, VideoTestClipPortabilityTest: failed or not run (see Other findings)
+python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/feature-check-1.log 2>&1; echo EXIT=$?   # EXIT=0
+#   RESULT: PASS (all 8 gates)
+```
+
+The product code is unchanged, so this job has no regression test of its own and no red/green
+pair. The existing `UnusedResultFortifyCheck` was already proven red without the fix and green
+with it in the original cluster report (`cluster-ci-aa184f959f204bcd.md`, ctest EXIT=8 then EXIT=0).
+On this branch it passes.
+
+## Round 3: red/green proof of the regression test on this branch (logs in /home/kruzzzzy/.config/kads/zene/state/runs/ci-aa184f959f204bcd-port.r3/logs)
+
+The test file `tests/unused-result-fortify-check.py` was added by this branch (`git diff --stat master`
+shows 214 insertions). It was run alone, with no product edits:
+
+```
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-1-green.log 2>&1; echo EXIT=$?   # EXIT=0
+#   100% tests passed out of 1
+# RED: working tree only, MountNamespaceTestSupport.h:66 changed to "(void)::write(fd, &value, 1); sent = 1;"
+#   (diff saved as logs/red-revert.patch)
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-2-red.log 2>&1; echo EXIT=$?     # EXIT=8
+#   1015 - UnusedResultFortifyCheck (Failed)
+#   MountNamespaceTestSupport.h:66:22: error: ignoring return value of 'ssize_t write(int, const void*, size_t)'
+#   declared with attribute 'warn_unused_result' [-Werror=unused-result]
+git checkout -- tests/src/core/MountNamespaceTestSupport.h; echo EXIT=$?                                                 # EXIT=0, git status clean
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-3-green.log 2>&1; echo EXIT=$?   # EXIT=0
+python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/feature-check-1.log 2>&1; echo EXIT=$?     # EXIT=0, RESULT: PASS
+```
+
+The proof manifest records only this regression test and the code references. The
+RecordToolsTest, Train47/Train48 and VideoTestClipPortabilityTest failures from round 2 are
+environment problems. They are listed under Other findings and are not part of the proof.
+
+## Round 4: the regression test is strengthened on this branch (logs in /home/kruzzzzy/.config/kads/zene/state/runs/ci-aa184f959f204bcd-port.r4/logs)
+
+Why round 3 bounced: the proof check measures "a test this branch added or changed" against the
+train base `fa4a5f2e7`, the same base `feature_check.py` prints. `tests/unused-result-fortify-check.py`
+already exists unchanged at that base (`git diff --stat fa4a5f2e7 HEAD -- tests/unused-result-fortify-check.py`
+is empty). Rerunning it unchanged could not satisfy the check.
+
+The real gap: steps 1-3 of the check only prove the header *consumes* every `write` result, which
+is enough to get past `-Werror=unused-result`. A "fix" that consumes the result and then ignores it
+(`if (::write(fd, &value, 1) < 0) { } sent = 1;`) compiles cleanly and passes the old check. It
+then reports a handshake byte as sent when the kernel refused it, and that is exactly the
+dishonesty the original fix removed.
+
+Change, test only: `tests/unused-result-fortify-check.py` gains step 4, `run_handshake_probe`. It
+builds a fixture with the same hardened flags, links it and runs it:
+- it writes byte 7 into a pipe through `writeNamespaceHandshakeByte`, which must return true and
+  deliver exactly 7;
+- it closes the read end with SIGPIPE ignored and writes again, which must return false (EPIPE).
+
+The probe is deterministic. It uses only pipes, with no timing, sleeps or threads. It defines
+`QT_NO_VERSION_TAGGING` so it links without Qt, because it calls no Qt function. The file is 283
+lines. lizard is not installed here; an approximate count of decision points gives
+`run_handshake_probe` 4 and `main` 9. feature_check reports complexity and file-length as PASS
+(no new item).
+
+```
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-1-green.log 2>&1; echo EXIT=$?        # EXIT=0
+# RED-B, header line 66 -> "if (::write(fd, &value, 1) < 0) { } sent = 1;"  (logs/red-consumed-ignored.patch, working tree only)
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-2-red-new.log 2>&1; echo EXIT=$?      # EXIT=8
+#   FAIL writeNamespaceHandshakeByte misreports a write (probe exit 13): a write with no reader was reported as sent
+python3 build/original-check.py --build-dir build --compiler /usr/bin/c++ > logs/test-3-red-original.log 2>&1; echo EXIT=$?   # EXIT=0
+#   the HEAD (pre-change) script, temporarily copied into the worktree, misses this form: RESULT: every write result ... used
+# RED-A, header line 66 -> "(void)::write(fd, &value, 1); sent = 1;"
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-4-red-void.log 2>&1; echo EXIT=$?     # EXIT=8
+#   MountNamespaceTestSupport.h:66:22: error: ignoring return value of 'ssize_t write(...)' [-Werror=unused-result]
+git checkout -- tests/src/core/MountNamespaceTestSupport.h; echo EXIT=$?                                                      # EXIT=0
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-5-green.log 2>&1; echo EXIT=$?       # EXIT=0
+cd build/tests && ctest -R '^UnusedResultFortifyCheck$' --output-on-failure > logs/test-6-green.log 2>&1; echo EXIT=$?       # EXIT=0 (rerun by the lead)
+python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/feature-check-1.log 2>&1; echo EXIT=$?          # EXIT=0, RESULT: PASS
+```
+
+The verdict stays ALREADY-FIXED: no product file changed in this round, and the header on the branch
+passes all four steps (`logs/test-1-green-verbose.log` shows the four PASS lines).
+
+## Self-check
+
+- Verdict backed by evidence: yes. The header lines above were read this session, and
+  `UnusedResultFortifyCheck` passed in `logs/test-1.log`.
+- Regression test: the existing one covers this, so no new test was needed. No product file
+  changed, which means there is no fix patch to revert.
+- Gates: feature_check EXIT=0, RESULT: PASS.
+- Realtime, undo and control commands: not touched.
+- Registration: no new product file was added, and no inherited file was changed.
+- Fails without the fix and passes with it: this job did not change the product, so there is
+  nothing to revert. Round 3 reran the red/green proof on this branch: green EXIT=0, red EXIT=8 with
+  `(void)::write` restored at line 66, green EXIT=0 again (logs above). The original cluster report also recorded it for
+  `UnusedResultFortifyCheck`: ctest EXIT=8 with the header reverted, EXIT=0 with the fix. On
+  this branch it passes (`logs/test-1.log`, "#1015 UnusedResultFortifyCheck: Passed").
+- Deterministic: yes, and the round-4 step 4 is too: it uses only pipes, with no timing, sleeps or threads. It is one compiler invocation over fixed probe source, with injected flags
+  (`-D_FORTIFY_SOURCE=3 -Werror=unused-result`). There is no timing, no sleep and no process
+  under test.
+- At the cause and complete: all three `::write` calls in the header use their results (lines 66,
+  86 and 118 via the helper). The `(void)`-cast scan found no other first-party site.
+- Collateral damage: none. This commit only adds this report.
+- ALREADY-FIXED code reference: `tests/src/core/MountNamespaceTestSupport.h:63-68`, `:84-88` and
+  `:118`, plus `tests/CMakeLists.txt:9622`.
+- Sibling commands (app.*, arrangement.*): the check lists them from the train branch's existing
+  diff against its base (575 changed files). This job changed no command file, so none of them is
+  affected.
+
+## Other findings
+
+These are not fixed here and are not caused by this cluster:
+
+- `RecordToolsTest::theRemainingRecordTime` (`tests/src/core/RecordToolsTestParts1.h:296`) fails
+  with "cannot measure the volume holding '/home/kruzzzzy/Documents/Zene Studio'". That directory
+  does not exist on this box (`ls` reports "No such file or directory"). The test depends on the
+  default project directory being there.
+- `Train48Portability` fails with `SfzPlayerTest.moc: No such file or directory`. The
+  `SfzPlayerTest` target has not been built in this lane tree, so its moc was never generated.
+- `Train47Portability` fails because it tries to configure a CMake tree, and this lane's guard
+  refuses that ("configuring is the parent's job").
+- `VideoTestClipPortabilityTest` was not run because its executable is not built in this tree.
+
+Delegation (round 4): Sonnet wrote step 4 of the check and ran the red/green sequence; I reviewed the diff, checked every log and reran the final green and the gates.
+Delegation (round 3): Haiku ran the green/red/green ctest sequence, made the temporary header edit and restored it.
+Delegation (round 2): Haiku ran the RecordToolsTest build and both ctest runs and summarised the logs. I
+read the header, the registration and the failing assertion myself. No Sonnet or DeepSeek task was
+needed, because there was nothing to change.

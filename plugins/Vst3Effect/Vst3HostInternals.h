@@ -69,6 +69,11 @@ struct HostedPlugin::Impl
 	IPtr<IComponentHandler> handler;
 	//! Called when the plug-in reports kLatencyChanged (set by the effect that hosts it).
 	std::function<void()> onLatencyChanged;
+	/*! The latency latency() reports instead of the plug-in's own, or -1 for the plug-in's own
+	 * (setReportedLatencyForTest). Never guarded out: this struct is built by one translation unit and
+	 * read by another (the instrument module allocates it, its tests call into it), so a member that
+	 * existed only in test builds would give the two halves different layouts. */
+	std::int32_t testLatency = -1;
 	//! The handler `handler` holds, to clear its callback at teardown (non-owning).
 	Vst3ComponentHandler* handlerImpl = nullptr;
 	bool singleComponent = false;

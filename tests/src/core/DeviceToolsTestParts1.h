@@ -459,3 +459,57 @@ void DeviceToolsTest::crossoversAboveNyquistStillSumFlatAtLowOutputRate() {
 		QVERIFY2(std::abs(rms - 1.0) < 0.02, qPrintable(QString::number(hz) + QStringLiteral(" Hz: ") + QString::number(rms)));
 	}
 }
+void DeviceToolsTest::bandsSumFlatThroughEveryCrossover() {
+	// cluster 5258: the band above a crossover carries the phase of a Linkwitz-Riley high-pass, so a
+	// lower band is aligned with ONE all-pass section per crossover above it - that section IS the
+	// low-pass plus high-pass sum there (two sections of Q = 1/sqrt(2) added together are a single
+	// second-order all-pass, RackSplit.cpp's addStage). Two sections would double that phase and
+	// unbalance the sum, none would leave the higher bands' phase uncancelled. Both a missing and a
+	// doubled section move the summed level away from the input's, which is what this walks.
+	//
+	// The Nyquist test above probes only frequencies below its two crossovers; here the crossovers
+	// sit inside the probed range, so each all-pass's phase swing is measured.
+	struct Case
+	{
+		int bands;
+		std::vector<float> crossovers;
+	};
+	const Case cases[] = {{3, {300.f, 3000.f}}, {4, {200.f, 900.f, 4000.f}}, {6, {150.f, 500.f, 1500.f, 4000.f, 10000.f}}};
+	constexpr int frames = 8820;
+	for (const Case& probe : cases)
+	{
+		RackSplit split;
+		split.mode = RackSplitMode::Bands;
+		split.crossoverCount = static_cast<int>(probe.crossovers.size());
+		for (std::size_t k = 0; k < probe.crossovers.size(); ++k) { split.crossovers[k] = probe.crossovers[k]; }
+		// A geometric sweep from 40 Hz to 14 kHz, so every crossover's phase swing is probed. Each
+		// probe sits on the 10 Hz grid: the half-block it is measured over is 4410 samples, exactly a
+		// whole number of cycles of any multiple of 10 Hz at 44.1 kHz, so the level is measured
+		// without the leak a partial cycle would put into it.
+		double last = 0.0;
+		for (int step = 0; step < 40; ++step)
+		{
+			const double hz = std::round(40.0 * std::pow(14000.0 / 40.0, step / 39.0) / 10.0) * 10.0;
+			if (hz == last) { continue; }
+			last = hz;
+			std::vector<float> sum(static_cast<std::size_t>(frames) * 2, 0.f);
+			for (int position = 0; position < probe.bands; ++position)
+			{
+				RackSplitFilter filter;
+				filter.configure(split, position, probe.bands, kRate);
+				QVERIFY2(filter.active(), qPrintable(QStringLiteral("%1 bands, band %2 is silent").arg(probe.bands).arg(position)));
+				std::vector<float> block(static_cast<std::size_t>(frames) * 2);
+				for (int f = 0; f < frames; ++f) { block[2 * f] = block[2 * f + 1] = static_cast<float>(std::sin(kTwoPi * hz * f / kRate)); }
+				filter.process(block.data(), frames);
+				for (std::size_t i = 0; i < block.size(); ++i) { sum[i] += block[i]; }
+			}
+			// RMS of the second half (steady state): the all-passes rotate the sum's phase, which moves
+			// the sine's crest between samples, so the sampled peak would not measure its level.
+			double energy = 0.0;
+			for (int f = frames / 2; f < frames; ++f) { energy += static_cast<double>(sum[2 * f]) * sum[2 * f]; }
+			const double rms = std::sqrt(energy / (frames - frames / 2)) * std::sqrt(2.0);
+			QVERIFY2(std::abs(rms - 1.0) < 0.005,
+				qPrintable(QStringLiteral("%1 bands, %2 Hz: the bands sum to %3, not 1").arg(probe.bands).arg(hz).arg(rms)));
+		}
+	}
+}

@@ -1,6 +1,7 @@
 /*
- * DispersionNonFiniteTest.cpp - regression for cluster new-p16-64:
- * a non-finite Dispersion control must not reach the audio output
+ * DispersionNonFiniteTest.cpp - regressions for the Dispersion effect:
+ * cluster new-p16-64 (a non-finite control must not reach the audio output)
+ * and cluster new-p11-91 (a sample-rate change must reach the coefficients)
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -42,6 +43,19 @@
 //! test binary (the MultitapEchoBoundsTest / Lb302NotePathTest pattern). The
 //! test is deterministic: no timing, no threads, no loader and no audio device.
 //!
+//! The second finding in this file (cluster new-p11-91) says that the effect
+//! keeps the output sample rate from the moment it was constructed: the
+//! constructor stores `outputSampleRate()` once and `processImpl()` derives the
+//! Nyquist clamp, the all-pass coefficients and the DC-removal time constant
+//! from that stored value only. The engine does announce a rate change -
+//! `AudioEngine::setAudioDevice()` and `restoreAudioDevice()` emit
+//! `sampleRateChanged()` after `stopProcessing()`, and `initDevices()` emits it
+//! before processing starts - but nothing in the effect listened, so a device
+//! swap while the effect stayed loaded left every coefficient at the old rate.
+//! The regression below constructs the effect at one rate, changes the device
+//! rate while it stays loaded, and requires its render to equal the render of
+//! an effect constructed at the new rate.
+//!
 //! The project parser now rejects non-finite project values: LocaleHelper::toFloat
 //! returns 0.0f with ok=false for nan, inf and overflow, so an XML fixture can no
 //! longer inject a NaN control. The tests therefore inject NaN through the model,
@@ -66,6 +80,7 @@
 #undef private
 
 #include "Engine.h"
+#include "AudioDevice.h"
 #include "AudioEngine.h"
 
 namespace
@@ -104,6 +119,35 @@ std::unique_ptr<lmms::DispersionEffect> loadedEffectFromAttributes(const QString
 	QDomDocument doc;
 	doc.setContent(QStringLiteral("<dispersion amount=\"4\" %1/>").arg(attributes));
 	effect->m_dispersionControls.loadSettings(doc.documentElement());
+	return effect;
+}
+
+//! The rate change a device swap performs: pin the device's rate, then deliver
+//! the signal the engine emits after stopProcessing() (AudioEngine::setAudioDevice,
+//! src/core/AudioEngine.cpp). No thread, no clock: the slot runs inline.
+void setEngineRate(lmms::AudioEngine* engine, lmms::sample_rate_t rate)
+{
+	engine->audioDev()->setSampleRateForTesting(rate);
+	emit engine->sampleRateChanged();
+}
+
+//! Restores the device rate after a slot. Declared before the effects so the
+//! effects are destroyed first and this restore reaches no live slot.
+struct RestoreEngineRate
+{
+	lmms::AudioEngine* engine;
+	lmms::sample_rate_t rate;
+	~RestoreEngineRate() { setEngineRate(engine, rate); }
+};
+
+//! An effect whose output depends on the sample rate on both paths the rate
+//! feeds: the all-pass coefficients (frequency against the rate) and the
+//! DC-removal time constant (44100 / rate). Both are recomputed every period
+//! from the stored rate, so a stale rate changes the render.
+std::unique_ptr<lmms::DispersionEffect> rateSensitiveEffect()
+{
+	auto effect = loadedEffect(QStringLiteral("<freq value=\"12000\"/>"));
+	effect->m_dispersionControls.m_dcModel.setValue(true);
 	return effect;
 }
 
@@ -154,6 +198,8 @@ private slots:
 	void attributeFormNonFiniteFeedbackRendersLikeTheDefault();
 	void finiteFrequencyStillDrivesTheFilter();
 	void nullBufferWithFramesIsNotRead();
+	void rateChangeReachesTheFilterAndDcCoefficients();
+	void sampleRateTracksTheEngineAfterAChange();
 };
 
 void DispersionNonFiniteTest::initTestCase()
@@ -295,6 +341,67 @@ void DispersionNonFiniteTest::nullBufferWithFramesIsNotRead()
 	QVERIFY2(nullView.empty(), "a view with null data must report empty()");
 	effect->processImpl(nullView);
 	QVERIFY(nullView.empty());
+}
+
+void DispersionNonFiniteTest::rateChangeReachesTheFilterAndDcCoefficients()
+{
+	// Cluster new-p11-91: create the effect at 44.1 kHz, then change the output
+	// rate to 48 kHz while it stays loaded. Its coefficients must be the ones
+	// an effect constructed at 48 kHz uses, not the ones it was born with.
+	auto* const engine = lmms::Engine::audioEngine();
+	QVERIFY2(engine->audioDev() != nullptr, "the engine has no audio device");
+	const RestoreEngineRate restore{engine, engine->outputSampleRate()};
+
+	setEngineRate(engine, 44100);
+	// Rendered at 44.1 kHz before the change: the coefficients the unfixed
+	// effect would keep using.
+	const auto atTheOldRate = rateSensitiveEffect();
+	const auto oldRateRender = renderImpulse(*atTheOldRate);
+	// The effect under test; constructed at 44.1 kHz and loaded across the
+	// change below, untouched until then.
+	const auto reconfigured = rateSensitiveEffect();
+	QVERIFY2(reconfigured->m_dispersionControls.m_dcModel.value(),
+		"the DC-removal path is not enabled; the scenario is not reproduced");
+	QCOMPARE(reconfigured->m_sampleRate, 44100.f);
+
+	setEngineRate(engine, 48000);
+	// Constructed at the new rate: the coefficients the fix must produce.
+	const auto atTheNewRate = rateSensitiveEffect();
+	QCOMPARE(atTheNewRate->m_sampleRate, 48000.f);
+
+	const auto newRateRender = renderImpulse(*atTheNewRate);
+	const auto reconfiguredRender = renderImpulse(*reconfigured);
+
+	// Guards against a vacuous test: if the rate never reached the coefficients
+	// these two reference renders would be identical and the check below would
+	// pass on the unfixed code as well.
+	QVERIFY2(largestDifference(newRateRender, oldRateRender) > FilterEffectThreshold,
+		"the sample rate does not reach the coefficients; the regression would be vacuous");
+	QVERIFY2(largestDifference(newRateRender, reconfiguredRender) <= RenderTolerance,
+		"the effect kept the coefficients of the rate it was constructed at");
+}
+
+void DispersionNonFiniteTest::sampleRateTracksTheEngineAfterAChange()
+{
+	// The stored rate itself must follow the engine, including on an effect
+	// that has already rendered a period at the old rate, and the coefficients
+	// derived from it must stay finite after the change.
+	auto* const engine = lmms::Engine::audioEngine();
+	QVERIFY2(engine->audioDev() != nullptr, "the engine has no audio device");
+	const RestoreEngineRate restore{engine, engine->outputSampleRate()};
+
+	setEngineRate(engine, 44100);
+	const auto effect = rateSensitiveEffect();
+	QCOMPARE(effect->m_sampleRate, 44100.f);
+	QCOMPARE(nonFiniteSampleCount(renderImpulse(*effect)), 0);
+
+	setEngineRate(engine, 48000);
+	QCOMPARE(effect->m_sampleRate, 48000.f);
+
+	setEngineRate(engine, 96000);
+	QCOMPARE(effect->m_sampleRate, 96000.f);
+
+	QCOMPARE(nonFiniteSampleCount(renderImpulse(*effect)), 0);
 }
 
 QTEST_MAIN( DispersionNonFiniteTest )

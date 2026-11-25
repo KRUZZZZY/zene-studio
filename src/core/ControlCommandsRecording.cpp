@@ -96,8 +96,42 @@ ControlResult journalBegin(const QJsonObject& args)
 				"lag bound is expressed against it)"));
 	}
 
+	// A side file that is already there is recovery state this call would
+	// destroy: it is the only record of what a crashed capture had reached the
+	// disk, recovery reports min(frames_on_disk, frames in the take's file), and
+	// writing a fresh journal at framesOnDisk 0 over it drops the offer to zero.
+	// So a side file is REFUSED, not replaced - whether it reads or not, because
+	// a side file that cannot be read still names material a crash left behind
+	// and overwriting it would look like a clean start. The one exception is a
+	// side file that is NOT an interrupted capture: the `restored` tombstone
+	// record.recovery_restore / record.recovery_place leave behind, whose own
+	// recorded INVERSE is this command putting the offer back (the paired
+	// command's undo path), so refusing it would break undo of a recovery.
+	const QString journalPath = journalPathFor(take);
 	TakeJournal previous;
-	const bool hadJournal = read(journalPathFor(take), &previous);
+	if (QFileInfo::exists(journalPath))
+	{
+		if (!read(journalPath, &previous))
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("the recording journal %1 exists but cannot be read: it is "
+					"truncated or damaged, and it is the only record of what a crashed capture "
+					"reached. It is left untouched - inspect it, or remove it by hand, then "
+					"begin again").arg(journalPath));
+		}
+		if (isRecoverable(previous))
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("'%1' is already journalled for an interrupted capture (state "
+					"'%2', %3 recoverable frames): beginning a new capture here would erase that "
+					"offer, so the journal %4 is left as it is. Retire it first - "
+					"record.journal_finish for a capture that had stopped cleanly, or "
+					"record.recovery_discard to keep the take's WAV and drop the offer - then "
+					"begin again").arg(take, previous.state)
+					.arg(recoverableFrames(previous))
+					.arg(journalPath));
+		}
+	}
 
 	TakeJournal journal;
 	journal.takePath = take;
@@ -110,30 +144,22 @@ ControlResult journalBegin(const QJsonObject& args)
 	journal.startTicks = args.contains(QStringLiteral("start_ticks"))
 		? static_cast<qint64>(args.value(QStringLiteral("start_ticks")).toDouble())
 		: -1;
-	if (!write(journalPathFor(take), journal))
+	if (!write(journalPath, journal))
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("could not write the recording journal %1")
-				.arg(journalPathFor(take)));
+			QStringLiteral("could not write the recording journal %1").arg(journalPath));
 	}
 
 	QJsonObject before;
 	before.insert(QStringLiteral("take"), take);
-	before.insert(QStringLiteral("journal_present"), hadJournal);
-	if (hadJournal) { before.insert(QStringLiteral("state"), previous.state); }
 
 	QJsonObject result = takeJson(journal);
-	// A journal that already existed is restored by writing it back; one that did
-	// not is taken back by discarding the file this call created.
-	QJsonObject previousArgs;
-	previousArgs.insert(QStringLiteral("take"), take);
-	previousArgs.insert(QStringLiteral("sample_rate"), previous.sampleRate);
-	previousArgs.insert(QStringLiteral("channels"), previous.channels);
+	// The journal this call wrote did not exist as a capture before it, so the
+	// one honest inverse is the paired command that discards it: control.undo
+	// removes the side file this call created.
 	result.insert(QStringLiteral("__transaction"),
-		commandTransaction(before,
-			hadJournal ? QStringLiteral("record.journal_begin")
-				: QStringLiteral("record.recovery_discard"),
-			hadJournal ? previousArgs : QJsonObject{{QStringLiteral("take"), take}}));
+		commandTransaction(before, QStringLiteral("record.recovery_discard"),
+			QJsonObject{{QStringLiteral("take"), take}}));
 	return ControlResult::success(result);
 }
 
@@ -237,10 +263,13 @@ void registerJournalBegin(ControlRegistry& registry)
 		"(<take>.rec-journal) that makes a recording recoverable if this process dies before "
 		"the capture stops cleanly. `take` must be absolute (a relative path names a different "
 		"file in the next process). Write the journal, then arm the recorder against the same "
-		"path, then keep it current with record.journal_update. Reversible: the recorded "
-		"inverse is the paired command (record.recovery_discard when no journal existed, "
-		"record.journal_begin with the previous contents when one did), which control.undo "
-		"dispatches.");
+		"path, then keep it current with record.journal_update. REFUSED when a journal is "
+		"already there and still protects an interrupted capture (or exists but cannot be "
+		"read): starting over it would erase that recovery offer, so retire it first with "
+		"record.journal_finish (a clean stop) or record.recovery_discard (keep the take's WAV, "
+		"drop the offer). Reversible: the recorded inverse is the paired command "
+		"record.recovery_discard, which control.undo dispatches to remove the journal this "
+		"call created.");
 	cmd.argsSchema = journalArgsSchema(true);
 	cmd.resultSchema = recoveryResultSchema();
 	cmd.mutating = true;

@@ -2806,6 +2806,7 @@ tests/exprtk.hpp
 tests/src/compile/MsFriendLookupProbe.cpp
 tests/src/core/AafImportTest.cpp
 tests/src/core/AbletonLinkAllocatorTest.cpp
+tests/src/core/AbletonLinkContextStopTest.cpp
 tests/src/core/AbletonLinkEsp32RunnerTest.cpp
 tests/src/core/AbletonLinkInteropTest.cpp
 tests/src/core/AbletonLinkSessionTest.cpp
@@ -2863,6 +2864,7 @@ tests/src/core/AutomationModesTest.cpp
 tests/src/core/AutomationPreFirstValueTest.cpp
 tests/src/core/AutomationPrepassProofTest.cpp
 tests/src/core/AutomationRenderAllocationTest.cpp
+tests/src/core/AutomationRenderLockTest.cpp
 tests/src/core/AutomationThinTest.cpp
 tests/src/core/AutomationWriteToEndTest.cpp
 tests/src/core/BandLimitedWaveTest.cpp
@@ -3037,6 +3039,7 @@ tests/src/core/InstrumentLowLatencyMonitorTest.cpp
 tests/src/core/InstrumentNoteOffProbe.h
 tests/src/core/InstrumentRoutingTest.cpp
 tests/src/core/InstrumentRoutingTestParts1.h
+tests/src/core/JournalBeginGuardTest.cpp
 tests/src/core/JournallingObjectRestoreTest.cpp
 tests/src/core/LadspaManagerTest.cpp
 tests/src/core/LadspaPortCountFixture.cpp
@@ -3050,6 +3053,7 @@ tests/src/core/LinkAudioCodecTest.cpp
 tests/src/core/LinkAudioStreamTest.cpp
 tests/src/core/LinkAudioStreamTestParts1.h
 tests/src/core/LinkAudioStreamTestParts2.h
+tests/src/core/LinkAudioStreamTestParts3.h
 tests/src/core/LinkAudioStreamTestSupport.h
 tests/src/core/LinkPhaseLockTest.cpp
 tests/src/core/LinkRealtimeProbe.h
@@ -3432,6 +3436,7 @@ tests/src/gui/DesignTokensTest.cpp
 tests/src/gui/DevicePanelTest.cpp
 tests/src/gui/DrumRackPanelTest.cpp
 tests/src/gui/EffectDeviceMenuTest.cpp
+tests/src/gui/EffectEditorTeardownTest.cpp
 tests/src/gui/EffectHostingMenuTest.cpp
 tests/src/gui/EffectPickerOrganiserTest.cpp
 tests/src/gui/EffectRackAddTest.cpp
@@ -3612,6 +3617,7 @@ tests/src/plugins/ClapEffectIntegrationTest.cpp
 tests/src/plugins/ClapHostTest.cpp
 tests/src/plugins/ClapInstrumentViewTest.cpp
 tests/src/plugins/ClapLoaderErrorTest.cpp
+tests/src/plugins/ClapNoteQueueTest.cpp
 tests/src/plugins/ClapTestInstrumentUnitTest.cpp
 tests/src/plugins/CompressorVisualizerTest.cpp
 tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp
@@ -3714,12 +3720,14 @@ tests/src/tracks/HeadlessGuiGuardTest.cpp
 tests/src/tracks/InstrumentTrackRenderPathTest.cpp
 tests/src/tracks/SampleClipMuteCursorTest.cpp
 tests/src/tracks/SampleClipRubberBandTest.cpp
+tests/src/tracks/SampleClipSourceSwapTest.cpp
 tests/src/tracks/SampleClipStretchTest.cpp
 tests/src/tracks/SampleClipTransientRepeatSafetyTest.cpp
 tests/src/tracks/SampleClipTransientRepeatTest.cpp
 tests/src/tracks/SampleClipWarpModesTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
+tests/src/tracks/SamplePatternPassWindowTest.cpp
 tests/src/tracks/TakeLaneCompPlaybackTest.cpp
 tests/src/wasm/WasmAbiConformanceTest.cpp
 tests/src/wasm/WasmSandboxHostFuelTest.cpp

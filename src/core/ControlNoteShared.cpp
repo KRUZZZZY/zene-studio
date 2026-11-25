@@ -26,7 +26,9 @@
 
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "Engine.h"
 #include "MidiClip.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -73,6 +75,15 @@ void checkpointNoteEdit(MidiClip* clip, bool changes)
 	// undoes nothing would sit on top of the edit behind it and spend the next
 	// undo (the rule in ControlNoteShared.h).
 	if (clip != nullptr && changes) { clip->addJournalCheckPoint(); }
+}
+
+void markProjectEdited(bool changed)
+{
+	// The undo step and the dirty flag answer the same question, so they are decided
+	// in the same place: a note edit that moved something is unsaved work the user has
+	// to be asked about before the project goes away (rule in ControlNoteShared.h).
+	if (!changed) { return; }
+	if (Song* song = Engine::getSong()) { song->setModified(); }
 }
 
 } // namespace control

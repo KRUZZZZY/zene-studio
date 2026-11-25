@@ -28,8 +28,10 @@
 
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include <QString>
 
@@ -90,8 +92,19 @@ inline constexpr int kMaxNoteEventsPerBlock = 256;
 
 //! Bound on the queue between the MIDI route and the audio thread. A power of
 //! two: the ring masks its index. A full queue drops the event and counts it
-//! (NoteCounters::dropped) instead of growing or blocking.
+//! (NoteCounters::dropped) instead of growing or blocking - except a release,
+//! which NoteQueue defers instead (see NoteQueue::push).
 inline constexpr std::size_t kNoteQueueCapacity = 1024;
+
+//! CLAP_EVENT_NOTE_OFF / CLAP_EVENT_NOTE_CHOKE, named here so the queue can tell
+//! a release without clap.h (ClapHostNotes.cpp asserts they match).
+inline constexpr std::uint8_t kNoteEventOff = 1;
+inline constexpr std::uint8_t kNoteEventChoke = 2;
+
+//! frameOffset of a release the queue deferred: its own frame was not kept, so it
+//! goes to the last frame of the block it is delivered in (ClapHost.cpp sliceNotes
+//! bounds it), after every note that block carries.
+inline constexpr std::int32_t kDeferredReleaseFrame = std::numeric_limits<std::int32_t>::max();
 
 //! What the note path has actually done, in relaxed atomics: the audio path
 //! increments, `plugin.host_notes` reads. Unsigned and process-lifetime, like
@@ -117,7 +130,9 @@ struct NoteCounters
  * lane uses (plugins/Vst3Effect/Vst3MidiQueue.h): every operation is one
  * compare-exchange, one plain store and one release store. It allocates
  * nothing, never grows, never blocks and never spins unboundedly - a full
- * queue refuses the event, and the caller counts it.
+ * queue refuses the event, and the caller counts it. A release is the one
+ * exception: it is deferred, not refused (push()), at the cost of a few atomic
+ * read-modify-writes on that overflow path only.
  */
 class NoteQueue
 {
@@ -134,8 +149,108 @@ public:
 		}
 	}
 
-	//! @returns false when the queue is full (the event is dropped)
+	/*!
+	 * @returns false when the event is dropped: the ring is full, or a deferred
+	 * release is still outstanding and the event is not a release.
+	 *
+	 * A note-off or choke is never dropped: one the full ring refuses is kept
+	 * per channel and key and pop() hands it out once everything queued before
+	 * it is out (BUG new-p12-348: a dropped release left the voice sounding).
+	 * Until then every other event is refused, so nothing queued after the
+	 * lost release can overtake it and the ring drains within a few blocks;
+	 * later releases join the deferred set for the same reason.
+	 */
 	auto push(const NoteEventIn& event) -> bool
+	{
+		const bool release = isRelease(event);
+		if (m_outstandingReleases.load(std::memory_order_acquire) != 0)
+		{
+			return release && deferRelease(event);
+		}
+		return enqueue(event) || (release && deferRelease(event));
+	}
+
+	//! Consumer only. @returns false when the queue is empty
+	auto pop(NoteEventIn* event) -> bool
+	{
+		return dequeue(event) || popDeferredRelease(event);
+	}
+
+	//! Main thread only, and only while the audio thread cannot be popping
+	//! (prepare() calls it): forget everything queued.
+	void reset()
+	{
+		for (std::size_t i = 0; i < m_cells.size(); ++i)
+		{
+			m_cells[i].sequence.store(static_cast<std::uint32_t>(i),
+				std::memory_order_relaxed);
+		}
+		m_enqueue.store(0, std::memory_order_relaxed);
+		m_dequeue.store(0, std::memory_order_relaxed);
+		for (auto& word : m_deferred) { word.store(0, std::memory_order_relaxed); }
+		m_outstandingReleases.store(0, std::memory_order_relaxed);
+		m_handedOut = 0;
+	}
+
+private:
+	static constexpr std::uint32_t kMask =
+		static_cast<std::uint32_t>(kNoteQueueCapacity) - 1;
+	//! one deferred-release flag per (kind, channel, key): off and choke, 16 x 128
+	static constexpr std::size_t kKeysPerKind = 16 * 128;
+	static constexpr std::size_t kDeferredWords = 2 * kKeysPerKind / 32;
+	static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
+
+	static auto isRelease(const NoteEventIn& event) -> bool
+	{
+		return event.type == kNoteEventOff || event.type == kNoteEventChoke;
+	}
+
+	//! Any producer: remember a release the ring could not take. Coalesces a
+	//! second release of the same key and kind (one release ends the voice).
+	auto deferRelease(const NoteEventIn& event) -> bool
+	{
+		if (event.channel > 15 || event.key < 0 || event.key > 127) { return false; }
+		const auto index = (event.type == kNoteEventChoke ? kKeysPerKind : 0) +
+			static_cast<std::size_t>(event.channel) * 128 + static_cast<std::size_t>(event.key);
+		const auto mask = std::uint32_t{1} << (index % 32);
+		// Counted before the flag is set, so the consumer cannot settle the count
+		// to zero while this release is between the two steps.
+		m_outstandingReleases.fetch_add(1, std::memory_order_acq_rel);
+		if ((m_deferred[index / 32].fetch_or(mask, std::memory_order_acq_rel) & mask) != 0)
+		{
+			m_outstandingReleases.fetch_sub(1, std::memory_order_acq_rel);
+		}
+		return true;
+	}
+
+	//! Consumer only, with the ring empty: hand out one deferred release, at the
+	//! end of the block so it sorts after every note popped before it. With none
+	//! left, settle the ones handed out so producers are accepted again - in a
+	//! pop that returns false, so nothing pushed after that is in this block.
+	auto popDeferredRelease(NoteEventIn* event) -> bool
+	{
+		if (m_outstandingReleases.load(std::memory_order_acquire) == 0) { return false; }
+		for (std::size_t w = 0; w < kDeferredWords; ++w)
+		{
+			const auto bits = m_deferred[w].load(std::memory_order_acquire);
+			if (bits == 0) { continue; }
+			const auto bit = static_cast<std::size_t>(std::countr_zero(bits));
+			m_deferred[w].fetch_and(~(std::uint32_t{1} << bit), std::memory_order_acq_rel);
+			++m_handedOut;
+			const auto index = w * 32 + bit;
+			*event = NoteEventIn{};
+			event->type = index >= kKeysPerKind ? kNoteEventChoke : kNoteEventOff;
+			event->channel = static_cast<std::uint8_t>((index % kKeysPerKind) / 128);
+			event->key = static_cast<std::int16_t>(index % 128);
+			event->frameOffset = kDeferredReleaseFrame;
+			return true;
+		}
+		m_outstandingReleases.fetch_sub(m_handedOut, std::memory_order_acq_rel);
+		m_handedOut = 0;
+		return false;
+	}
+
+	auto enqueue(const NoteEventIn& event) -> bool
 	{
 		auto position = m_enqueue.load(std::memory_order_relaxed);
 		while (true)
@@ -165,8 +280,7 @@ public:
 		}
 	}
 
-	//! @returns false when the queue is empty
-	auto pop(NoteEventIn* event) -> bool
+	auto dequeue(NoteEventIn* event) -> bool
 	{
 		auto position = m_dequeue.load(std::memory_order_relaxed);
 		while (true)
@@ -197,23 +311,6 @@ public:
 		}
 	}
 
-	//! Main thread only, and only while the audio thread cannot be popping
-	//! (prepare() calls it): forget everything queued.
-	void reset()
-	{
-		for (std::size_t i = 0; i < m_cells.size(); ++i)
-		{
-			m_cells[i].sequence.store(static_cast<std::uint32_t>(i),
-				std::memory_order_relaxed);
-		}
-		m_enqueue.store(0, std::memory_order_relaxed);
-		m_dequeue.store(0, std::memory_order_relaxed);
-	}
-
-private:
-	static constexpr std::uint32_t kMask =
-		static_cast<std::uint32_t>(kNoteQueueCapacity) - 1;
-
 	struct Cell
 	{
 		std::atomic<std::uint32_t> sequence{0};
@@ -223,6 +320,12 @@ private:
 	std::array<Cell, kNoteQueueCapacity> m_cells;
 	std::atomic<std::uint32_t> m_enqueue{0};
 	std::atomic<std::uint32_t> m_dequeue{0};
+	//! releases a full ring refused, one flag per kind, channel and key
+	std::array<std::atomic<std::uint32_t>, kDeferredWords> m_deferred{};
+	//! deferred releases not yet settled by the consumer; non-zero refuses non-releases
+	std::atomic<std::uint32_t> m_outstandingReleases{0};
+	//! consumer only: deferred releases popped since the last settle
+	std::uint32_t m_handedOut = 0;
 };
 
 } // namespace lmms::clap

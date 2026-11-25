@@ -44,6 +44,9 @@
 namespace lmms::clap
 {
 
+// NoteQueue tells a release (it defers rather than drops one) without clap.h.
+static_assert(kNoteEventOff == CLAP_EVENT_NOTE_OFF && kNoteEventChoke == CLAP_EVENT_NOTE_CHOKE);
+
 auto HostedPlugin::noteInputPorts() const -> const std::vector<NotePortDescriptor>&
 {
 	return m_impl->notePorts;

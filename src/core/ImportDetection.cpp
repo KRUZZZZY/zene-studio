@@ -82,6 +82,21 @@ QVector<ScaleCandidate> buildCandidates()
 	return candidates;
 }
 
+std::optional<SampleDecoder::BoundedResult> decodeForAnalysis(const QString& path, double bound, AnalysisDecode decode)
+{
+	// Import preflight can estimate from a prefix before allocating the sample buffer.
+	if (decode == AnalysisDecode::PrefixOnly)
+	{
+		auto prefix = SampleDecoder::decodeLimited(path, bound);
+		if (prefix && prefix->totalFrames <= 0) { prefix->totalFrames = static_cast<qint64>(prefix->window.data.size()); }
+		return prefix;
+	}
+	auto whole = SampleDecoder::decode(path);
+	if (!whole) { return std::nullopt; }
+	const auto frames = static_cast<qint64>(whole->data.size());
+	return SampleDecoder::BoundedResult{std::move(*whole), frames};
+}
+
 } // namespace
 
 
@@ -109,7 +124,7 @@ bool scaleNameIsKnown(const QString& name)
 }
 
 
-ImportDetectionResult analyseAudioFile(const QString& path, double maxSeconds)
+ImportDetectionResult analyseAudioFile(const QString& path, double maxSeconds, AnalysisDecode decode)
 {
 	ImportDetectionResult result;
 	result.path = path;
@@ -122,17 +137,16 @@ ImportDetectionResult analyseAudioFile(const QString& path, double maxSeconds)
 		return result;
 	}
 
-	// The engine's OWN decoder: the same libsndfile path (plus DrumSynth and Ogg
-	// Vorbis) an import goes through, so a file the importer takes is a file this
-	// can analyse, and a file it refuses is refused here with the same shape.
-	const std::optional<SampleDecoder::Result> decoded = SampleDecoder::decode(path);
-	if (!decoded || decoded->data.empty())
+	const double bound = std::clamp(std::isnan(maxSeconds) ? DefaultAnalysisSeconds : maxSeconds, 1.0,
+		MaxAnalysisSeconds);
+	const auto decoded = decodeForAnalysis(path, bound, decode);
+	if (!decoded || decoded->window.data.empty())
 	{
 		result.error = QStringLiteral("no decoder in this build could read `%1`").arg(path);
 		return result;
 	}
 
-	const int sampleRate = decoded->sampleRate;
+	const int sampleRate = decoded->window.sampleRate;
 	if (sampleRate <= 0)
 	{
 		result.error = QStringLiteral("`%1` reports no sample rate").arg(path);
@@ -141,18 +155,15 @@ ImportDetectionResult analyseAudioFile(const QString& path, double maxSeconds)
 
 	// Mono: the arithmetic takes one channel, and 0.5 * (L + R) is what an
 	// import's own audition path would hand a listener's single ear.
-	const std::vector<SampleFrame>& frames = decoded->data;
-	// NaN passes std::clamp untouched (and would let the key read the whole file): it takes the default.
-	const double bound = std::clamp(std::isnan(maxSeconds) ? DefaultAnalysisSeconds : maxSeconds, 1.0,
-		MaxAnalysisSeconds);
+	const std::vector<SampleFrame>& frames = decoded->window.data;
 	// Only the bounded prefix is mixed: the estimators below read no further, and a copy of
 	// the whole file would scale with its length rather than with the bound.
 	const std::size_t analysed = std::min(frames.size(), static_cast<std::size_t>(bound * sampleRate));
 	const std::vector<float> mono = monoMix(frames.data(), analysed);
 
 	result.sampleRate = sampleRate;
-	result.frames = static_cast<qint64>(frames.size());
-	result.durationSeconds = static_cast<double>(frames.size()) / sampleRate;
+	result.frames = decoded->totalFrames;
+	result.durationSeconds = static_cast<double>(result.frames) / sampleRate;
 	result.analysedSeconds = std::min(result.durationSeconds, bound);
 
 	result.tempo = estimateTempo(mono.data(), mono.size(), sampleRate, bound);

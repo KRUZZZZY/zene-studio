@@ -69,9 +69,11 @@ namespace link
 {
 
 constexpr int AudioChannels = 2;
-//! Frames per datagram: 16 + 128 * 2 * 4 = 1040 bytes, under a 1500-byte LAN MTU.
+//! Frames per datagram: 20 + 128 * 2 * 4 = 1044 bytes, under a 1500-byte LAN MTU.
 constexpr std::size_t AudioMaxPacketFrames = 128;
-constexpr std::size_t AudioHeaderBytes = 16;
+//! The header this build sends (version 1); a legacy version 0 header of an older peer is 16 bytes.
+constexpr std::size_t AudioHeaderBytes = 20;
+constexpr std::size_t AudioLegacyHeaderBytes = 16;
 constexpr std::size_t AudioMaxPacketBytes = AudioHeaderBytes + AudioMaxPacketFrames * AudioChannels * 4;
 //! Each ring's capacity, in frames (a power of two): about 1.4 s at 48 kHz.
 constexpr std::size_t AudioRingFrames = 65536;
@@ -81,20 +83,28 @@ constexpr int MaxAudioLatencyMs = 200;
 constexpr int DefaultAudioLatencyMs = 20;
 constexpr const char* DefaultAudioBindAddress = "127.0.0.1";
 
-//! The datagram header (16 bytes, little endian): magic "ZLA1", sequence, rate, frames, channels, 0.
+/*! The datagram header (little endian). Version 1 is 20 bytes: magic "ZLA1", sequence, rate, frames, channels,
+ *  the version (1, byte 15), then the frame position. Version 0 is the legacy 16-byte header of an older peer
+ *  (the same 16 bytes with byte 15 = 0, no frame position). */
 struct AudioPacketHeader
 {
 	std::uint32_t sequence = 0;
 	std::uint32_t sampleRate = 0;
 	std::uint16_t frames = 0;
+	//! The stream frame index (wrapping) of the packet's first frame: the sender's input to encode, the decoder's output.
+	std::uint32_t framePosition = 0;
+	//! Decoder output: true for a version 1 header (framePosition is on the wire), false for a legacy header.
+	bool hasFramePosition = false;
 };
 
-//! Encode \a header + \a frames interleaved stereo floats into \a out; returns the byte count, 0 if it does not fit
-//! or the sample rate is zero (zero is "not known yet", never a packet).
+//! Encode \a header + \a frames interleaved stereo floats into \a out as a version 1 packet (header.framePosition is
+//! written, hasFramePosition is ignored); returns the byte count, 0 if it does not fit or the sample rate is zero
+//! (zero is "not known yet", never a packet).
 LMMS_EXPORT std::size_t encodeAudioPacket(const AudioPacketHeader& header, const float* interleaved,
 	std::uint8_t* out, std::size_t capacity);
 //! Decode a datagram; false for anything that is not a well-formed packet of ours (wrong magic/size/channels,
-//! or a zero sample rate).
+//! an unknown header version, or a zero sample rate). A version 1 header sets framePosition and hasFramePosition;
+//! a legacy version 0 header is still decoded, with hasFramePosition false.
 //! A non-finite sample (NaN, infinity) in an otherwise valid packet is decoded as 0.f: it never reaches the mix.
 LMMS_EXPORT bool decodeAudioPacket(const std::uint8_t* data, std::size_t size, AudioPacketHeader& header,
 	float* interleavedOut, std::size_t outCapacityFloats);
@@ -153,7 +163,7 @@ struct AudioStreamReport
 	std::uint64_t packetsReceived = 0;
 	std::uint64_t framesSent = 0;
 	std::uint64_t framesReceived = 0;
-	std::uint64_t underruns = 0;       //!< periods the RX ring could not fill (silence output)
+	std::uint64_t underruns = 0;       //!< periods the RX ring could not fill (silence output, partial frames dropped)
 	std::uint64_t trims = 0;           //!< times the RX ring was cut back to the target (clock drift / burst)
 	std::uint64_t txOverruns = 0;      //!< periods the TX ring had no room for (I/O thread behind)
 	std::uint64_t rxOverruns = 0;      //!< frames dropped because the RX ring was full
@@ -253,6 +263,7 @@ private:
 	void acceptPacket(const AudioPacketHeader& header, const float* samples);
 	bool acceptSequence(const AudioPacketHeader& header) noexcept;
 	void insertGapSilence(std::size_t frames) noexcept;
+	std::size_t gapSilenceFrames(const AudioPacketHeader& header, std::uint32_t distance) const noexcept;
 	void onRateChanged(std::uint32_t rate) noexcept;
 	std::uint32_t txRateForNextFrames() noexcept;
 	void acknowledgeRxRate() noexcept;
@@ -282,6 +293,9 @@ private:
 
 	// audio-thread private state
 	std::uint64_t m_seenEpoch = 0;
+	/*! The RX side plays once the jitter target is buffered. A period the ring cannot fill is
+	 *  an underrun: the partial frames it holds were queued before the gap, so they are
+	 *  discarded with it - the re-prime starts on fresh audio, never on stale frames. */
 	bool m_primed = false;
 	std::uint64_t m_txRateEpoch = 0;         //!< bumped when the engine's sample rate changes
 	std::uint64_t m_rxRateEpoch = 0;         //!< bumped when the engine's sample rate changes
@@ -306,8 +320,11 @@ private:
 	std::atomic<std::uint64_t> m_rxFlushedEpoch{0};
 	// I/O-thread private
 	std::uint32_t m_nextSequence = 0;    //!< next sequence to send
+	std::uint32_t m_nextFramePosition = 0;   //!< frame index of the next packet's first frame
 	bool m_haveRx = false;
 	std::uint32_t m_expectedRx = 0;
+	std::uint32_t m_expectedRxFrame = 0; //!< frame position the next in-sequence packet should carry
+	bool m_rxPositioned = false;         //!< the last packet carried a frame position (not a legacy peer)
 	std::uint64_t m_seenTxEpoch = 0;     //!< the TX epoch the I/O thread has already flushed
 	std::uint64_t m_seenRxEpoch = 0;     //!< the RX epoch the I/O thread has already drained
 

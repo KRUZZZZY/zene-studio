@@ -155,11 +155,15 @@ void foldInto(SampleFrame* out, const ChannelSurround& s, const FrameGain& fader
 	}
 }
 
-//! @a s's side channels onto the outputs after the pair at @a start, at @a fader.
-void placeSides(HardwareOutputBus& bus, const ChannelSurround& s, int start, const FrameGain& fader, f_cnt_t frames)
+//! @a s's side channels onto the outputs after the pair at @a start, at @a fader times @a scale.
+void placeSides(HardwareOutputBus& bus, const ChannelSurround& s, int start, const FrameGain& fader, f_cnt_t frames,
+	float scale = 1.f)
 {
+	// The fader's sample-exact buffer, when it has one this period, is per frame; the scale is one number
+	// that follows it (the engine's master gain), so the two are handed over separately and multiplied.
 	const float* gains = fader.buffer != nullptr ? fader.buffer->values() : nullptr;
-	for (int c = 2; c < channelCount(s.format()); ++c) { bus.addPlane(start + c, s.plane(c), frames, fader.value, gains); }
+	const float gain = (fader.buffer != nullptr ? 1.f : fader.value) * scale;
+	for (int c = 2; c < channelCount(s.format()); ++c) { bus.addPlane(start + c, s.plane(c), frames, gain, gains); }
 }
 
 //! How much a side speaker takes of the channel's pan, a balance on each left/right pair.
@@ -390,7 +394,11 @@ void masterOutput(Mixer& mixer, SampleFrame* out, f_cnt_t frames)
 	const audioio::Destination main = master.m_hardwareIo.effectiveOutput(true);
 	if (masterPlaysWide(main, channelCount(s.format())))
 	{
-		placeSides(Engine::audioEngine()->hardwareOutputs(), s, main.start, fader, n);
+		// The side speakers are the same master signal as the pair, which carries the engine's master gain:
+		// renderStageMix() applies it to @a out after this mix (AudioEngine.cpp), so apply it here too, as
+		// tapSides() does for the export.
+		AudioEngine* engine = Engine::audioEngine();
+		placeSides(engine->hardwareOutputs(), s, main.start, fader, n, engine->masterGain());
 		return;
 	}
 	foldInto(out, s, fader, n);

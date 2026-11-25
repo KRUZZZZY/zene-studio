@@ -224,6 +224,7 @@ private slots:
 	void testAudioGain();
 	void testAudioSilenceWhenGainIsZero();
 	void testChannelPartition();
+	void testNullChannelPointersReadSilenceAndWriteScratch();
 	void testMidiControllersReachMappedParameters();
 	void testMappedControllersKeepTheirFrame();
 	void testParameterChangesAreSlicedPerChunk();
@@ -393,6 +394,78 @@ void Vst3HostTest::testChannelPartition()
 	process(m_plugin, inputs, outputs, TestFrames);
 	QVERIFY(std::abs(rms(outputs[0]) - 0.5) < 1e-6);
 	QVERIFY(std::abs(rms(outputs[1]) - 0.25) < 1e-6);
+}
+
+/*! luna patrol BUG 7 (cluster new-p16-262): a caller may hand the host a null channel array, or a
+ *  null entry beside a valid channel, with a positive channel count. The bus mapping must treat a
+ *  channel it was not given as absent - null inputs read the host's silence buffer, null outputs
+ *  write the host's scratch buffer - and never dereference null. The fixture is re-prepared here
+ *  so the check starts from a known layout; an ordinary stereo call is the positive control, so a
+ *  mapping that refused every request would fail it. */
+void Vst3HostTest::testNullChannelPointersReadSilenceAndWriteScratch()
+{
+	QString error;
+	QVERIFY2(m_plugin.prepare(TestSampleRate, TestBlockSize, &error), qPrintable(error));
+	QVERIFY(m_plugin.isPrepared());
+	m_plugin.setParamNormalized(GainParamId, 1.0f);
+
+	const auto& layout = m_plugin.busLayout();
+	QCOMPARE(layout.inputs, 2);
+	QCOMPARE(layout.outputs, 2);
+
+	std::vector<std::vector<float>> inputs(layout.inputs, std::vector<float>(TestFrames, 0.5f));
+	std::vector<std::vector<float>> outputs(layout.outputs, std::vector<float>(TestFrames, 0.0f));
+	std::vector<const float*> inputPointers{inputs[0].data(), inputs[1].data()};
+	std::vector<float*> outputPointers{outputs[0].data(), outputs[1].data()};
+
+	// positive control: the ordinary stereo call passes audio through at gain 1.
+	m_plugin.process(inputPointers.data(), outputPointers.data(), 2, 2, TestFrames);
+	QVERIFY2(std::abs(rms(outputs[0]) - 0.5) < 1e-6, qPrintable(QString::number(rms(outputs[0]))));
+	QVERIFY2(std::abs(rms(outputs[1]) - 0.5) < 1e-6, qPrintable(QString::number(rms(outputs[1]))));
+
+	// 1. a null input array with a positive count: every channel reads silence.
+	std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
+	std::fill(outputs[1].begin(), outputs[1].end(), 0.0f);
+	m_plugin.process(nullptr, outputPointers.data(), 2, 2, TestFrames);
+	QCOMPARE(rms(outputs[0]), 0.0);
+	QCOMPARE(rms(outputs[1]), 0.0);
+
+	// 2. one null input entry beside a valid channel: that channel is silent, the other is not.
+	std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
+	std::fill(outputs[1].begin(), outputs[1].end(), 0.0f);
+	inputPointers[1] = nullptr;
+	m_plugin.process(inputPointers.data(), outputPointers.data(), 2, 2, TestFrames);
+	inputPointers[1] = inputs[1].data();
+	QVERIFY2(std::abs(rms(outputs[0]) - 0.5) < 1e-6, qPrintable(QString::number(rms(outputs[0]))));
+	QCOMPARE(rms(outputs[1]), 0.0);
+
+	// 3. a null output array: the plug-in renders into the host's scratch buffer, so the request
+	//    completes, the caller's buffers are left untouched, and the next call still works.
+	std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
+	std::fill(outputs[1].begin(), outputs[1].end(), 0.0f);
+	m_plugin.process(inputPointers.data(), nullptr, 2, 2, TestFrames);
+	QCOMPARE(rms(outputs[0]), 0.0);
+	QCOMPARE(rms(outputs[1]), 0.0);
+	m_plugin.process(inputPointers.data(), outputPointers.data(), 2, 2, TestFrames);
+	QVERIFY2(std::abs(rms(outputs[0]) - 0.5) < 1e-6, qPrintable(QString::number(rms(outputs[0]))));
+
+	// 4. one null output entry: the channel that was provided still receives its audio.
+	std::fill(outputs[0].begin(), outputs[0].end(), 0.0f);
+	outputPointers[1] = nullptr;
+	m_plugin.process(inputPointers.data(), outputPointers.data(), 2, 2, TestFrames);
+	outputPointers[1] = outputs[1].data();
+	QVERIFY2(std::abs(rms(outputs[0]) - 0.5) < 1e-6, qPrintable(QString::number(rms(outputs[0]))));
+
+	// 5. a request longer than the prepared block, with a null output entry: the chunked path
+	//    points into the same fallbacks and the provided channel is rendered whole.
+	constexpr int LongFrames = TestBlockSize + 128;
+	std::vector<std::vector<float>> longInputs(layout.inputs, std::vector<float>(LongFrames, 0.5f));
+	std::vector<std::vector<float>> longOutputs(layout.outputs, std::vector<float>(LongFrames, 0.0f));
+	std::vector<const float*> longInputPointers{longInputs[0].data(), longInputs[1].data()};
+	std::vector<float*> longOutputPointers{longOutputs[0].data(), nullptr};
+	m_plugin.process(longInputPointers.data(), longOutputPointers.data(), 2, 2, LongFrames);
+	QVERIFY2(std::abs(rms(longOutputs[0]) - 0.5) < 1e-6, qPrintable(QString::number(rms(longOutputs[0]))));
+	QCOMPARE(rms(longOutputs[1]), 0.0);
 }
 
 void Vst3HostTest::process(HostedPlugin& plugin, const std::vector<std::vector<float>>& inputs,

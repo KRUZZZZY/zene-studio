@@ -8,6 +8,11 @@
  * slots still hold the old tracks. Kept apart from InstrumentLayersCommandsTest,
  * which is at the file-length ratchet.
  *
+ * And the load of a track's settings - the layers, the MIDI parts and the
+ * output-bus routes - publishes each change under the audio engine's
+ * model-change guard, the boundary a whole render period holds (cluster
+ * new-p14-124).
+ *
  * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
@@ -43,7 +48,9 @@
 #include <QDomElement>
 
 #include "AudioBusHandle.h"
+#include "AudioEngine.h"
 #include "ControlInstrumentCommands.h"
+#include "Engine.h"
 #include "InstrumentLayers.h"
 #include "InstrumentMidiParts.h"
 #include "InstrumentTrack.h"
@@ -188,6 +195,81 @@ private slots:
 		track->layers().zones().setChangedHook({});
 		QVERIFY(removedLayer);
 		QVERIFY(removePublishedTogether);
+	}
+
+	//! Cluster new-p14-124: InstrumentTrack::loadTrackSpecificSettings() loads the layers, the MIDI parts
+	//! and the output-bus routes AFTER it releases the track's own processing lock, and the playback paths
+	//! read them. That lock is not the boundary for this state - the render pass may take it with tryLock() -
+	//! so the question this slot answers is whether the loaders publish under the guard that IS the boundary:
+	//! the audio engine's model-change guard, the mutex a whole render period holds. Both loaders are driven
+	//! directly, with no caller guard of their own, and each zone publication is asked whether the guard was
+	//! held.
+	void settingsLoadPublishesUnderTheModelChangeGuard()
+	{
+		if (m_device.isEmpty()) { QSKIP("this build exposes no loadable instrument"); }
+		const QString fresh = revtest::addInstrumentTrack();
+		InstrumentTrack* track = trackOf(fresh);
+		QVERIFY(track != nullptr);
+		const ControlResult added = revtest::run(QStringLiteral("rack.layer_add"),
+			{{QStringLiteral("target"), fresh}, {QStringLiteral("device"), m_device}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		track->midiParts().zones().assign(manyParts(2));
+
+		QDomDocument doc;
+		QDomElement root = doc.createElement(QStringLiteral("trackcontainer"));
+		doc.appendChild(root);
+		const QDomElement saved = track->saveState(doc, root);
+		// The track-specific settings live in their own element inside it (Track::saveTrack), which is the
+		// element loadTrackSpecificSettings() reads - the same one the project load passes down.
+		const QDomElement settings = saved.firstChildElement(QStringLiteral("instrumenttrack"));
+		QVERIFY2(!settings.isNull(), "the track saved no settings element");
+		QVERIFY2(!settings.firstChildElement(QStringLiteral("layers")).isNull(), "the track saved no layers to load");
+		QVERIFY2(!settings.firstChildElement(QStringLiteral("midiparts")).isNull(), "the track saved no parts to load");
+
+		AudioEngine* engine = Engine::audioEngine();
+		QVERIFY(engine != nullptr);
+		QVERIFY2(!engine->isChangeInModelHeld(), "a guard was held before the load - the probe would be blind");
+
+		// The loaders on their own: no outer guard, exactly what the call site after unlock() has.
+		int layerPublishes = 0;
+		int layerUnguarded = 0;
+		int partPublishes = 0;
+		int partUnguarded = 0;
+		track->layers().zones().setChangedHook([&]
+		{
+			++layerPublishes;
+			if (!engine->isChangeInModelHeld()) { ++layerUnguarded; }
+		});
+		track->midiParts().zones().setChangedHook([&]
+		{
+			++partPublishes;
+			if (!engine->isChangeInModelHeld()) { ++partUnguarded; }
+		});
+		track->layers().loadSettings(settings);
+		track->midiParts().loadSettings(settings);
+		track->layers().zones().setChangedHook({});
+		track->midiParts().zones().setChangedHook({});
+		QVERIFY2(layerPublishes > 0, "the layer load published nothing - this slot would be vacuous");
+		QVERIFY2(partPublishes > 0, "the MIDI-part load published nothing - this slot would be vacuous");
+		QCOMPARE(layerUnguarded, 0);
+		QCOMPARE(partUnguarded, 0);
+		QVERIFY2(!engine->isChangeInModelHeld(), "the loader left the model-change guard taken");
+
+		// And the path a project open takes: restoreState -> loadTrack -> loadTrackSpecificSettings, whose
+		// unlock() precedes the same load. The guard is held there too, so the mutation after it is inside
+		// the audio boundary.
+		int reloadPublishes = 0;
+		int reloadUnguarded = 0;
+		track->layers().zones().setChangedHook([&]
+		{
+			++reloadPublishes;
+			if (!engine->isChangeInModelHeld()) { ++reloadUnguarded; }
+		});
+		track->restoreState(saved);
+		track->layers().zones().setChangedHook({});
+		QVERIFY2(reloadPublishes > 0, "the track-settings load published nothing");
+		QCOMPARE(reloadUnguarded, 0);
+		QVERIFY2(track->layers().layerCount() == 1, "the reload did not restore the layer");
 	}
 
 	//! A layer's level is a finite gain (cluster new-p22-60). NaN passes every < and > range check, so a NaN

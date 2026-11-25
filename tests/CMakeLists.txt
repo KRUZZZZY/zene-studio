@@ -121,6 +121,9 @@ set(LMMS_TESTS
 	# on the ramp Song::buildAutomationRamps publishes, deterministically across
 	# a start/stop/return and through a whole-project save/reload.
 	src/core/AutomationPreFirstValueTest.cpp
+	# cluster new-p12-248: the per-block ramp publish, the per-tick read and a whole render period
+	# take an automation clip's lock without waiting, so a control-thread edit never stalls playback.
+	src/core/AutomationRenderLockTest.cpp
 	# Sample-accurate automation (feature-list row 9, board task #646): renders
 	# real blocks through Song::processNextBuffer() and measures the per-sample
 	# buffer the audio path reads against the clip's own curve, frame by frame -
@@ -1389,6 +1392,8 @@ set(LMMS_TESTS
 	src/gui/TrackViewDeferredLifetimeTest.cpp
 	# m0 blocker (trackview-uaf follow-up): a rack's queued removal of a view that is already gone does nothing.
 	src/gui/RackDeferredLifetimeTest.cpp
+	# Q050-367: a device's own editor is closed and detached before the device is removed or its chain cleared.
+	src/gui/EffectEditorTeardownTest.cpp
 	# BUGS_FOUND 10: removing a linked control frees its detached layout item.
 	src/gui/LinkedModelGroupViewLifetimeTest.cpp
 	# 0.5.0 theme 6: sends on faders - the banner names the return, every fader labelled, "No send" faders dimmed in place.
@@ -1744,10 +1749,14 @@ set(LMMS_TESTS
 	src/tracks/SampleClipTransientRepeatSafetyTest.cpp
 	src/tracks/SampleClipWarpTest.cpp
 	src/tracks/SampleClipWindowTest.cpp
+	# cluster new-p9-402: replacing a playing clip's source retires its stale play handles.
+	src/tracks/SampleClipSourceSwapTest.cpp
 	# cluster new-p12-223: muting a track keeps the sample cursor in step - the resample
 	# path, the pitch-preserving path, and the muted pass's allocation budget. Its own
 	# target because Gate 7 measures SampleClipWindowTest.cpp at 494 of its 500 lines.
 	src/tracks/SampleClipMuteCursorTest.cpp
+	# cluster 3503: a pattern-store pass past the end of the clip window schedules nothing and latches nothing.
+	src/tracks/SamplePatternPassWindowTest.cpp
 	# Soundpipe lifecycle methods must report SP_OK on successful setup and teardown.
 	src/plugins/ReverbSCBaseTest.cpp
 	# The undo half of session.arrangement_record_land: the pass is ONE undo step, whatever it lands.
@@ -1846,6 +1855,10 @@ IF(LMMS_HAVE_ABLETON_LINK)
 		# specialisation (the header is asio's, so the test needs ableton_link's
 		# include directories and ASIO_STANDALONE definitions).
 		src/core/AbletonLinkWorkDispatcherTest.cpp
+		# Link's asio Context stopped from a handler running on its own worker
+		# (new-p10-26): no self-join, and the worker is still joined afterwards.
+		# It opens no socket, so it may run beside the other tests.
+		src/core/AbletonLinkContextStopTest.cpp
 	)
 ENDIF()
 
@@ -2167,6 +2180,15 @@ IF(LMMS_HAVE_OSS)
 	LIST(APPEND LMMS_TESTS src/core/AudioOssDeviceConfigTest.cpp)
 ENDIF()
 
+# Cluster 2073: record.journal_begin over a take that already had an interrupted
+# capture's journal replaced it with a fresh one at framesOnDisk 0, which drops
+# recovery's offer to zero recoverable frames. The guard has one case per path -
+# no sidecar, an interrupted sidecar, an unreadable sidecar, a retired one - plus
+# the undo inverse that must keep working. Registered LAST for the same reason as
+# the tests above: the mechanical negative control (qwen/negctl.py) reads the
+# test NAMES out of `ctest -N`, and only the high-numbered ones are visible.
+list(APPEND LMMS_TESTS src/core/JournalBeginGuardTest.cpp)
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
@@ -2326,7 +2348,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/Vestige
 			${CMAKE_BINARY_DIR}/plugins/Vestige)
-		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_NAME=vestige)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_NAME=vestige
+			MIDI_HANDOFF_QUEUE_HEADER="${CMAKE_SOURCE_DIR}/include/MidiHandoffQueue.h")
 		target_link_libraries(${LMMS_TEST_NAME} PRIVATE vstbase)
 		add_dependencies(${LMMS_TEST_NAME} vestige)
 		# The vstbase module resolves the LMMS core symbols from its host process,
@@ -3389,6 +3413,9 @@ else()
 	target_compile_options(RemotePluginShmFifoNoSysIpcAppleMacroProbe PRIVATE -U__unix__)
 endif()
 add_dependencies(RemotePluginShmFifoTest RemotePluginShmFifoNoSysIpcAppleMacroProbe)
+add_test(NAME RemotePluginShmFifoAppleMacroProbeCompile
+	COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+		--target RemotePluginShmFifoNoSysIpcAppleMacroProbe --config $<CONFIG>)
 
 # Tell the test whether each target compiles RemotePluginBase.cpp through the
 # static branch of lmms_export.h (cluster ci-v041-5).
@@ -3909,6 +3936,9 @@ set_tests_properties(SampleAccurateAutomationTest PROPERTIES
 # Qt platform for the same reason.
 set_tests_properties(AutomationPreFirstValueTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# AutomationRenderLockTest (cluster new-p12-248) builds a full Engine and drives render periods itself.
+set_tests_properties(AutomationRenderLockTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # UndoBoundsTest constructs a full Engine, drives the control surface and starts
 # a QThread-paced window test, so it needs the same headless Qt platform.
@@ -4140,6 +4170,7 @@ set_tests_properties(AutomationClipDisconnectTest PROPERTIES ENVIRONMENT "QT_QPA
 set_tests_properties(VcaStripLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(TrackViewDeferredLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(RackDeferredLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(EffectEditorTeardownTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LinkedModelGroupViewLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorFlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSendsOnFadersTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -5649,6 +5680,19 @@ if(TARGET lmms_clap)
 	target_compile_features(ClapBusMapTest PRIVATE cxx_std_20)
 	target_link_libraries(ClapBusMapTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
 
+	# The note queue is header-only: no plug-in and no extra source is needed.
+	add_executable(ClapNoteQueueTest
+		src/plugins/ClapNoteQueueTest.cpp
+	)
+	add_test(NAME ClapNoteQueueTest COMMAND ClapNoteQueueTest)
+	target_include_directories(ClapNoteQueueTest PRIVATE
+		${CMAKE_BINARY_DIR}
+		${CMAKE_SOURCE_DIR}/include
+		${LMMS_CLAP_EFFECT_DIR}
+	)
+	target_compile_features(ClapNoteQueueTest PRIVATE cxx_std_20)
+	target_link_libraries(ClapNoteQueueTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+
 	add_executable(ClapHostTest
 		src/plugins/ClapHostTest.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapBusMap.cpp
@@ -6531,6 +6575,18 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(NamPortabilityRegistrationCheck PROPERTIES TIMEOUT 120)
 endif()
 
+# Vendored Eigen emits -Wdeprecated-enum-enum-conversion on aarch64 and -DUSE_WERROR makes it an
+# error (linux-arm64 CI, NamModelLoaderTest). Fail when any target that compiles NamModel.cpp
+# lacks -Wno-error=deprecated-enum-enum-conversion, in the CMake sources and in this build.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME NamEigenOptionsCoverageCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/nam-eigen-options-coverage-check.py
+			--source-root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR})
+	set_tests_properties(NamEigenOptionsCoverageCheck PROPERTIES TIMEOUT 120)
+endif()
+
 # Train 51: reproduce the four hosted test-source compiler failures on Linux.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
 	add_test(NAME Train51Portability COMMAND ${PYTHON3_EXECUTABLE}
@@ -6546,6 +6602,17 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
 		--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR}
 		--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc> --qt-major ${QT_VERSION_MAJOR})
 	set_tests_properties(Train48Portability PROPERTIES TIMEOUT 300)
+endif()
+
+# Cluster ci-00e6f05f41fa4f1a: the Windows-arm64 runner is clang/mingw, which
+# defines _WIN32 but not _MSC_VER. SfzDistoBuffersTest's aligned operators must
+# follow the Windows CRT there, not posix_memalign. The probe compiles the
+# platform blocks extracted from the real source, natively and with _WIN32.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME WindowsArm64AlignedNewCheck COMMAND ${PYTHON3_EXECUTABLE}
+		${CMAKE_CURRENT_SOURCE_DIR}/windows-arm64-aligned-new-check.py
+		--source-root ${CMAKE_SOURCE_DIR})
+	set_tests_properties(WindowsArm64AlignedNewCheck PROPERTIES TIMEOUT 120)
 endif()
 
 # Train 47: exercise the Qt5 JSON and Windows fixture compiler contracts.
@@ -6576,6 +6643,19 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(Qt5QStringListAssignmentCheck PROPERTIES TIMEOUT 600)
 endif()
 
+# Cluster ci-8764ffa3b495466c: the sends-on-faders regression used Qt 6's inherited
+# QStringList(size, value) constructor, which Qt 5.15 does not have. The check derives the
+# faders/volume comparison from the test source and compiles it against Qt 5 (and Qt 6 when
+# that tree is installed), with the Qt 6-only spelling as its failing control.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5QStringListSizeConstructorCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QStringListSizeConstructorCheck.py
+			--root ${CMAKE_SOURCE_DIR}
+			--cxx ${CMAKE_CXX_COMPILER})
+	set_tests_properties(Qt5QStringListSizeConstructorCheck PROPERTIES TIMEOUT 120)
+endif()
+
 if(PYTHON3_EXECUTABLE)
 	add_test(NAME Qt5WorkerThreadCheck
 		COMMAND ${PYTHON3_EXECUTABLE}
@@ -6584,6 +6664,21 @@ if(PYTHON3_EXECUTABLE)
 			--build-dir ${CMAKE_BINARY_DIR}
 			--moc $<TARGET_FILE:Qt${QT_VERSION_MAJOR}::moc>)
 	set_tests_properties(Qt5WorkerThreadCheck PROPERTIES TIMEOUT 300)
+endif()
+
+# Cluster ci-539b88713935565b-port: RemotePluginAudioPortsShmCompileCheck compiles the test
+# with SYNC_WITH_SHM_FIFO but without -Werror=unused-function and is not a ctest, so removing
+# the #ifndef SYNC_WITH_SHM_FIFO guard around countCriticals stayed green on Linux while the
+# hosted mingw64 job (no <sys/ipc.h>) failed. This check reuses that target's compile command
+# plus -Werror=unused-function and fails on any diagnostic.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
+	add_test(NAME RemotePluginShmUnusedHelperCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/remote-plugin-shm-unused-helper-check.py
+			--root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR}
+			--cxx ${CMAKE_CXX_COMPILER})
+	set_tests_properties(RemotePluginShmUnusedHelperCheck PROPERTIES TIMEOUT 300)
 endif()
 
 if(PYTHON3_EXECUTABLE)
@@ -7101,13 +7196,20 @@ endif()
 # `Base::template do_pop_any(...)` failed FilePool.cpp and Synth.cpp). GCC accepts
 # it, so the check scans every tracked C/C++ source and, on a compiler that
 # enforces the rule, also compiles the real atomic_queue header with both affected
-# queue templates instantiated. Its fixtures prove the scanner can fail.
+# queue templates instantiated. clang++ is passed as an additional compiler when
+# found, so the real-header Clang compile runs on GCC hosts too. Its fixtures
+# prove the scanner can fail.
 if(PYTHON3_EXECUTABLE)
+	find_program(ZENE_TEMPLATE_KW_CLANGXX NAMES clang++)
+	set(ZENE_TEMPLATE_KW_COMPILER_ARGS --compiler ${CMAKE_CXX_COMPILER})
+	if(ZENE_TEMPLATE_KW_CLANGXX AND NOT ZENE_TEMPLATE_KW_CLANGXX STREQUAL CMAKE_CXX_COMPILER)
+		list(APPEND ZENE_TEMPLATE_KW_COMPILER_ARGS --compiler ${ZENE_TEMPLATE_KW_CLANGXX})
+	endif()
 	add_test(NAME ClangTemplateKeywordCheck
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/clang-template-keyword-check.py
 			--root ${CMAKE_SOURCE_DIR}
-			--compiler ${CMAKE_CXX_COMPILER})
+			${ZENE_TEMPLATE_KW_COMPILER_ARGS})
 	set_tests_properties(ClangTemplateKeywordCheck PROPERTIES TIMEOUT 120)
 endif()
 
@@ -8684,6 +8786,11 @@ set_tests_properties(ControlSampleOperatorTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControlSampleBakeGuardTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Cluster 2073: the journal guard drives the record.* commands on a real Engine
+# (the group is engine-gated) and writes real WAVs and side files, so it wants a
+# real Qt platform plugin even though nothing opens a window.
+set_tests_properties(JournalBeginGuardTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Q050-106: real Engine, real clip checkpoints and a real project save/load.
 set_tests_properties(ControlSampleStereoTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -8727,6 +8834,9 @@ IF(LMMS_HAVE_ABLETON_LINK)
 	target_include_directories(AbletonLinkEsp32RunnerTest PRIVATE
 		"${CMAKE_CURRENT_SOURCE_DIR}/src/core/esp32-freertos-host")
 	target_link_libraries(AbletonLinkWorkDispatcherTest PRIVATE ableton_link)
+	# Context.hpp is Link's own header: the test needs ableton_link's include
+	# directories and ASIO_STANDALONE definitions, like the dispatcher test.
+	target_link_libraries(AbletonLinkContextStopTest PRIVATE ableton_link)
 ENDIF()
 # The browser.* group: BrowserCatalogTest drives libsndfile and the config
 # manager's working directory, ControlBrowserCommandsTest constructs a full
@@ -9513,6 +9623,21 @@ target_compile_definitions(PluginPortsMigrationTest PRIVATE
 )
 add_dependencies(PluginPortsMigrationTest ladspa_channel_count_fixture)
 
+# PluginPortsMigrationTest's gig allocation probe needs the POSIX allocator hook,
+# so mingw64 (no Q_OS_UNIX) compiles its caller out; an unguarded helper is then
+# -Werror=unused-function and stops the hosted build (cluster ci-3eb9bda8aa6785a3-port).
+# Compile the real translation unit without the hook on every host. Built with the
+# tests: no link, no test registration.
+add_library(PluginPortsMigrationNoPosixHookCompileCheck OBJECT src/plugins/PluginPortsMigrationTest.cpp)
+target_include_directories(PluginPortsMigrationNoPosixHookCompileCheck PRIVATE
+	$<TARGET_PROPERTY:PluginPortsMigrationTest,INCLUDE_DIRECTORIES>)
+target_link_libraries(PluginPortsMigrationNoPosixHookCompileCheck PRIVATE
+	${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+target_compile_features(PluginPortsMigrationNoPosixHookCompileCheck PRIVATE cxx_std_20)
+target_compile_definitions(PluginPortsMigrationNoPosixHookCompileCheck PRIVATE
+	$<TARGET_PROPERTY:PluginPortsMigrationTest,COMPILE_DEFINITIONS>
+	PLUGIN_PORTS_TEST_NO_POSIX_ALLOCATOR_HOOK)
+
 # The NAM engine's local CTest registrations live with its headless harness.
 # Mirror those cases here so ctest launched from build/tests discovers them.
 get_property(NAM_LOADER_TEST_CASES GLOBAL PROPERTY ZENE_NAM_LOADER_TEST_CASES)
@@ -9677,6 +9802,25 @@ if(PYTHON3_EXECUTABLE)
 	set_tests_properties(Qt5QListApiCheck PROPERTIES TIMEOUT 300)
 endif()
 
+# Qt 5 QStringList count+value portability (cluster ci-b71ed146fd535ea5, 2026-11-16).
+# The hosted linux-x86_64 job builds with Qt 5.15, where QStringList's only two-argument
+# constructor is the inherited iterator pair, so
+# `QStringList(channels, QStringLiteral("volume"))` in MixerSendsOnFadersTest.cpp would
+# stop the build with "deduced conflicting types for parameter 'InputIterator'"
+# ('int' and 'QString'). Qt 6 aliases QStringList to QList<QString>, whose size+value
+# constructor exists, so every Qt 6 host compiles the same line. The check scans
+# first-party sources (red on the Qt 6 hosts too) and, where pkg-config finds a Qt 5
+# tree, recompiles the watched translation unit from this build's compile_commands.json
+# against those headers - the hosted job's own input.
+if(PYTHON3_EXECUTABLE)
+	add_test(NAME Qt5QStringListSizeCheck
+		COMMAND ${PYTHON3_EXECUTABLE}
+			${CMAKE_CURRENT_SOURCE_DIR}/Qt5QStringListSizeCheck.py
+			--root ${CMAKE_SOURCE_DIR}
+			--build-dir ${CMAKE_BINARY_DIR})
+	set_tests_properties(Qt5QStringListSizeCheck PROPERTIES TIMEOUT 300)
+endif()
+
 
 
 # Linux namespace tests must retry interrupted writes and reject failed/short handshakes.
@@ -9720,6 +9864,13 @@ if(PYTHON3_EXECUTABLE)
 		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/Qt5QJsonValueIntegerCheck.py
 			--root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR} --cxx ${CMAKE_CXX_COMPILER})
 	set_tests_properties(Qt5QJsonValueIntegerCheck PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
+	# cluster ci-e58078851126eac9-port: the same hosted Qt 5 failure, asserted from both sides -
+	# the two source_bytes reads in ScriptClockTest must stay on jsonInteger(value, -1), and the real
+	# translation unit is recompiled against Qt 5 through this build's compile_commands.json probe.
+	add_test(NAME ScriptClockQt5JsonIntegerPortCheck
+		COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/ScriptClockQt5JsonIntegerPortCheck.py
+			--root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR} --cxx ${CMAKE_CXX_COMPILER})
+	set_tests_properties(ScriptClockQt5JsonIntegerPortCheck PROPERTIES TIMEOUT 300 SKIP_RETURN_CODE 77)
 	execute_process(COMMAND pkg-config --exists Qt5Core RESULT_VARIABLE ZENE_HAS_QT5_CORE
 		OUTPUT_QUIET ERROR_QUIET)
 	if(ZENE_HAS_QT5_CORE EQUAL 0)
@@ -9747,7 +9898,7 @@ endif()
 
 # Reproduce strict hosted compiler contracts against this build's actual sources.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND PYTHON3_EXECUTABLE)
-	foreach(mode linux nam darwin-signature darwin-tu render wav-write-error)
+	foreach(mode linux nam darwin-signature darwin-tu render wav-write-error midi-out-timing-no-alsa)
 		add_test(NAME Train41-${mode} COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/train-41-portability-check.py
 			--source-root ${CMAKE_SOURCE_DIR} --build-dir ${CMAKE_BINARY_DIR}

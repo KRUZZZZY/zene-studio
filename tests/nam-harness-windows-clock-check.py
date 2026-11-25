@@ -19,7 +19,7 @@ The contract: nam_harness.cpp must not reference a platform clock itself. It cal
 lmms::nam::threadCpuTimeUs() from HarnessClock.h; plugins/NeuralAmp/tests/CMakeLists.txt
 selects HarnessClockPosix.cpp (clock_gettime) or HarnessClockWindows.cpp (GetThreadTimes).
 
-This check has four deterministic halves, each reading sources or running compiled code:
+This check has six deterministic halves, each reading sources or running compiled code:
 
   1. Two symbol fixtures prove the detector: a translation unit that calls clock_gettime
      must be SEEN, one that does not must stay unseen.
@@ -32,6 +32,12 @@ This check has four deterministic halves, each reading sources or running compil
   4. HarnessClockWindows.cpp is compiled against a model of the Microsoft declarations it
      uses (the hosted Windows job compiles it natively) and run with a stub GetThreadTimes:
      kernel+user 100 ns ticks must become microseconds, and a failed call must yield 0.
+  5. NeuralAmpWavInputTest.cpp #includes nam_harness.cpp: recompiled and inspected like half 2.
+  6. Its CMake wiring. Native: the configured tree compiles HarnessClockPosix.cpp (never the
+     Windows file) into NeuralAmpWavInputTest.dir. Windows, static (this host cannot configure
+     WIN32): plugins/NeuralAmp/tests/CMakeLists.txt picks the Windows file under IF(WIN32), the
+     POSIX one under ELSE(), publishes it as ZENE_NAM_HARNESS_CLOCK_SOURCE; tests/CMakeLists.txt
+     reads that into add_executable(NeuralAmpWavInputTest ...).
 
 Usage: nam-harness-windows-clock-check.py --source-root <tree> --build-dir <build>
 Exit codes: 0 = clean, 1 = finding, 2 = usage/environment error.
@@ -48,6 +54,9 @@ import sys
 import tempfile
 
 HARNESS = "plugins/NeuralAmp/tests/nam_harness.cpp"
+WAV_TEST = "tests/src/core/NeuralAmpWavInputTest.cpp"
+NAM_TESTS_CMAKE = "plugins/NeuralAmp/tests/CMakeLists.txt"
+TESTS_CMAKE = "tests/CMakeLists.txt"
 WINDOWS_CLOCK = "plugins/NeuralAmp/tests/HarnessClockWindows.cpp"
 POSIX_CLOCK = "plugins/NeuralAmp/tests/HarnessClockPosix.cpp"
 TEST_NAME = "NamHarnessWindowsClockCheck"
@@ -281,29 +290,29 @@ def self_test(cxx):
 	return True
 
 
-def check_harness_symbols(entry, scratch):
-	"""Recompile the real harness TU and refuse any POSIX clock in its undefined symbols."""
-	output = os.path.join(scratch, "nam_harness.o")
+def check_harness_symbols(entry, scratch, relative):
+	"""Recompile a TU that carries the harness and refuse any POSIX clock in its undefined symbols."""
+	output = os.path.join(scratch, os.path.basename(relative) + ".o")
 	command = object_command(entry, output)
 	if command is None:
-		print("FAIL: the recorded command for " + HARNESS + " is empty")
+		print("FAIL: the recorded command for " + relative + " is empty")
 		return 2
 	result, detail = compile_object(command, entry["directory"])
 	if result.returncode != 0:
-		print("FAIL: the real " + HARNESS + " did not compile:\n" + detail)
+		print("FAIL: the real " + relative + " did not compile:\n" + detail)
 		return 1
 	names, error = undefined_symbols(output)
 	if names is None:
-		print("FAIL: nm could not read the real " + HARNESS + ": " + error)
+		print("FAIL: nm could not read the real " + relative + ": " + error)
 		return 2
 	found = clock_symbols(names)
 	if found:
-		print("FAIL: " + HARNESS + " itself references a POSIX clock: " + " ".join(found))
+		print("FAIL: " + relative + " itself references a POSIX clock: " + " ".join(found))
 		print("      The Windows jobs cannot link that (MSYS2 clangarm64's <pthread_time.h>")
 		print("      calls clock_gettime64 and the link line has no libwinpthread); use")
 		print("      lmms::nam::threadCpuTimeUs() from HarnessClock.h instead.")
 		return 1
-	print("PASS: " + HARNESS + " references no POSIX clock symbol")
+	print("PASS: " + relative + " references no POSIX clock symbol")
 	return 0
 
 
@@ -373,6 +382,64 @@ def check_windows_clock(cxx, root, scratch):
 		cxx, tests_dir, scratch, "HarnessClockWindows", [fake, tests_dir], WINDOWS_PROBE)
 
 
+PROP = r"zene_nam_harness_clock_source"
+SET_SOURCE = r"set\(neuralamp_harness_clock_source[^)]*/"
+STATIC_RULES = (
+	(NAM_TESTS_CMAKE, r"\bif\(win32\)(?:(?!else\(\)).)*?" + SET_SOURCE + r"harnessclockwindows\.cpp\)",
+		"the IF(WIN32) branch must SET(NEURALAMP_HARNESS_CLOCK_SOURCE .../HarnessClockWindows.cpp)"),
+	(NAM_TESTS_CMAKE, r"\belse\(\)(?:(?!endif\().)*?" + SET_SOURCE + r"harnessclockposix\.cpp\)",
+		"the ELSE() branch must SET(NEURALAMP_HARNESS_CLOCK_SOURCE .../HarnessClockPosix.cpp)"),
+	(NAM_TESTS_CMAKE, r"set_property\(global property " + PROP + r" \$\{neuralamp_harness_clock_source\}\)",
+		"must SET_PROPERTY(GLOBAL PROPERTY ZENE_NAM_HARNESS_CLOCK_SOURCE ${NEURALAMP_HARNESS_CLOCK_SOURCE})"),
+	(TESTS_CMAKE, r"get_property\(nam_harness_clock_source global property " + PROP + r"\)",
+		"must get_property(NAM_HARNESS_CLOCK_SOURCE GLOBAL PROPERTY ZENE_NAM_HARNESS_CLOCK_SOURCE)"),
+	(TESTS_CMAKE, r"\badd_executable\(neuralampwavinputtest[^)]*\$\{nam_harness_clock_source\}[^)]*\)",
+		"add_executable(NeuralAmpWavInputTest ...) must list ${NAM_HARNESS_CLOCK_SOURCE} as a source"),
+)
+
+
+def cmake_text(path):
+	"""A CMake file as one lower-case line without comments or quotes (what STATIC_RULES match)."""
+	if not os.path.isfile(path):
+		return None
+	with open(path, encoding="utf-8") as stream:
+		text = re.sub(r"#[^\n]*", "", stream.read()).lower()
+	return re.sub(r"\s*([()])\s*", r"\1", re.sub(r"[\s\"]+", " ", text))
+
+
+def output_of(entry):
+	"""The object file a recorded compile line writes (`-o x` or `-ox`)."""
+	args = split_command(entry)
+	found = [v for f, v in zip(args, args[1:]) if f == "-o"] + [a[2:] for a in args if a[:2] == "-o" and a != "-o"]
+	return found[0] if found else ""
+
+
+def native_wiring_problems(build, root):
+	"""The configured tree must give NeuralAmpWavInputTest its platform clock and not the other."""
+	# Configured on Linux here (the CTest only registers there): POSIX expected; WIN32 would flip.
+	expected, forbidden, unit = POSIX_CLOCK, WINDOWS_CLOCK, "NeuralAmpWavInputTest.dir"
+	with open(os.path.join(build, "compile_commands.json"), encoding="utf-8") as stream:
+		compiled = {os.path.relpath(source_of(e), root) for e in json.load(stream) if unit in output_of(e)}
+	return (["compile_commands.json has no " + expected + " compiled into " + unit]
+		if os.path.normpath(expected) not in compiled else []) + (
+		["compile_commands.json compiles " + forbidden + " into " + unit]
+		if os.path.normpath(forbidden) in compiled else [])
+
+
+def check_wav_test_clock_wiring(build, root):
+	"""NeuralAmpWavInputTest must get a platform clock source on both the native and Windows paths."""
+	problems = native_wiring_problems(build, root)
+	texts = {}
+	for relative, pattern, message in STATIC_RULES:
+		text = texts.setdefault(relative, cmake_text(os.path.join(root, relative)))
+		if text is None or not re.search(pattern, text):
+			problems.append(relative + ": " + (message if text else "missing"))
+	print("\n".join("FAIL: " + problem for problem in problems) or
+		"PASS: NeuralAmpWavInputTest gets " + os.path.basename(POSIX_CLOCK) + " natively and " +
+		"the Windows branch selects " + os.path.basename(WINDOWS_CLOCK))
+	return 1 if problems else 0
+
+
 def check_registration(build):
 	"""The configured tree must actually register this CTest."""
 	generated = os.path.join(build, "tests", "CTestTestfile.cmake")
@@ -406,20 +473,26 @@ def main():
 	if cxx is None:
 		print("FAIL: the recorded command for " + HARNESS + " names no compiler")
 		return 2
+	wav_entry, problem = find_entry(build, root, WAV_TEST)
+	if wav_entry is None:
+		print("FAIL: " + problem)
+		return 2
 	if not self_test(cxx):
 		return 1
 
 	with tempfile.TemporaryDirectory(prefix="nam-clock-check-") as scratch:
-		status = check_harness_symbols(entry, scratch)
-		if status != 0:
-			return status
-		status = check_posix_clock(cxx, root, scratch)
-		if status != 0:
-			return status
-		status = check_windows_clock(cxx, root, scratch)
-		if status != 0:
-			return status
-	return check_registration(build)
+		steps = (
+			lambda: check_harness_symbols(entry, scratch, HARNESS),
+			lambda: check_posix_clock(cxx, root, scratch),
+			lambda: check_windows_clock(cxx, root, scratch),
+			lambda: check_harness_symbols(wav_entry, scratch, WAV_TEST),
+			lambda: check_wav_test_clock_wiring(build, root),
+			lambda: check_registration(build))
+		for step in steps:
+			status = step()
+			if status != 0:
+				return status
+	return 0
 
 
 if __name__ == "__main__":

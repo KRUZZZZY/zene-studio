@@ -79,6 +79,8 @@ void Vst3EffectControls::poll()
 	{
 		m_effect->reprepare();
 	}
+	// kLatencyChanged may arrive on the plug-in's own thread; this is the control thread that acts on it.
+	m_effect->refreshLatencyIfChanged();
 
 	if (m_syncing) { return; }
 	m_syncing = true;
