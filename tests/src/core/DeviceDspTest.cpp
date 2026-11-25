@@ -377,6 +377,9 @@ private slots:
 	//! Full scale maps to the signed 16-bit limits without wrapping, including the first float above +1.0.
 	void ossConversionFullScaleStaysInRange();
 
+	//! An infinite sample must not reach the 16-bit cast as an out-of-range float: it saturates to full scale.
+	void ossConversionInfiniteSamplesStayInRange();
+
 	//! A sample-rate drop must keep an existing LFO frequency at or below the new Nyquist limit.
 	void quadratureLfoDoesNotExceedNyquistAfterSampleRateDrop();
 

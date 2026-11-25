@@ -74,6 +74,13 @@ void DeviceDspTest::ossConversionFullScaleStaysInRange() {
 	QCOMPARE(audio::oss::toPcmSample(std::nextafter(1.0f, 2.0f)), std::int16_t{32767});
 	QCOMPARE(audio::oss::toPcmSample(std::nextafter(-1.0f, -2.0f)), std::int16_t{-32767});
 }
+void DeviceDspTest::ossConversionInfiniteSamplesStayInRange() {
+	const auto infinity = std::numeric_limits<float>::infinity();
+	QCOMPARE(audio::oss::toPcmSample(infinity), std::int16_t{32767});
+	QCOMPARE(audio::oss::toPcmSample(-infinity), std::int16_t{-32767});
+	QCOMPARE(audio::oss::toPcmSample(std::numeric_limits<float>::quiet_NaN()), std::int16_t{0});
+	QCOMPARE(audio::oss::toPcmSample(-std::numeric_limits<float>::quiet_NaN()), std::int16_t{0});
+}
 void DeviceDspTest::quadratureLfoDoesNotExceedNyquistAfterSampleRateDrop() {
 	QuadratureLfo lfo(48000);
 	lfo.setFrequency(20000.0);
