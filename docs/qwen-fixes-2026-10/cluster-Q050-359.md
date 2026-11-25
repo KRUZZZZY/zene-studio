@@ -136,10 +136,14 @@ one `connect` with a lambda (C++11, no Qt-6-only overload), and `QString::fromUt
 call, no identifier from the reserved list (`small`, `near`, `far`, `interface`, `min`, `max`). The test drives the widget
 tree through actions and the picker, not through Qt-6-only APIs.
 
-**Gates.** `feature_check.py` exits 1 in this lane with
-`bunny-guard: 'git -C .../gate-baselines/tree checkout -q --detach 9913d36d...' is not allowed in a Bunny lane` before it
-prints a table: its baseline checkout is denied, so the two ratchets get no comparison (round 1's reviewer saw the same).
-`complexity-gate.sh --check` also cannot run here (`lizard is not installed`, exit 2). Every gate that can run passes:
+**Gates.** `feature_check.py` exits 1 in this lane, and only there: its six SIMPLE gates run and pass, then
+`base_listings()` raises
+`bunny-guard: 'git -C .../gate-baselines/tree checkout -q --detach 9913d36d5397025d1b7092097f50f6d50c652dc4' is not allowed
+in a Bunny lane (AGENTS.md rules 1, 2, 11, 12)` before it can print a table (`CalledProcessError: ... exit status 97`),
+because the cached baseline for that merge-base is absent and creating it needs the denied checkout. So the two ratchets
+get no comparison (round 1's reviewer saw the same). `complexity-gate.sh --check` cannot run here either
+(`complexity-gate: lizard is not installed`, exit 2); `file-length-gate.sh --check` runs and reports no regression in my
+files (exit 0). Every gate that can run passes:
 fork-sources 0, all-sources-reproduce 0 (REPRODUCES), no-upstream-regression 0, check-namespace 0, no-tautology 0,
 doc-figures 0, file-length 0 with no regression in my files.
 
