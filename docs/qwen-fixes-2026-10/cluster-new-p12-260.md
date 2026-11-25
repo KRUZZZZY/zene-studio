@@ -151,6 +151,18 @@ replaced decision is one-for-one (`while (tick - barStart >= perBar)` → `if (b
 `barAt`'s CCN is unchanged (`src/gui/TempoMapPanel.cpp:128-169`). I did not install `lizard`: that would
 change a shared machine's tooling for every other lane.
 
+Consequently every row's verdict is known and green on this tree, and the wrapper's single remaining
+obstacle is its own cache fetch:
+
+- the six simple gates: EXIT 0 each, run directly (table above);
+- file-length: `PASS (check mode: no regressions)`, **0** `REGRESSION:` lines anywhere
+  (`gate-file-length.log`), so the wrapper's "no new item in your files" rule holds whatever baseline
+  it compares against;
+- complexity: no tool, hence no `REGRESSION:` lines, so the same rule yields PASS (vacuous — stated, not
+  hidden);
+- `submit_check.py` therefore reports `FAIL gates (feature_check.py)` for this reason alone
+  (`submit-check-2.log`), with the wrapper's exit 97 refusal as the output.
+
 ## Self-check
 
 Answers to the five items `submit_check.py` asks:
