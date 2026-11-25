@@ -1792,6 +1792,9 @@ endif()
 list(APPEND LMMS_TESTS src/core/SampleDecoderLimitTest.cpp)
 # cluster new-p14-272: a file whose header promises more frames than it holds is refused, not padded with silence.
 list(APPEND LMMS_TESTS src/core/SampleDecoderShortReadTest.cpp)
+# cluster new-p17-125: detectNotes() only analysed complete analysis windows, so a clip shorter
+# than one window detected no notes at all; it now ends with a window bounded by the buffer.
+list(APPEND LMMS_TESTS src/core/PitchTrackShortClipTest.cpp)
 
 # Offline stem separation tests (on by default, owner decision 14; see doc/STEM-SPLIT.md).
 IF(LMMS_HAVE_STEM_SPLIT)
