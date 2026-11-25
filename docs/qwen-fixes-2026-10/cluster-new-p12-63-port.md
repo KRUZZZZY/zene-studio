@@ -112,12 +112,27 @@ Family run (`logs/test-4-family.log`, EXIT 0): `ControlRecordingRoutesTest`, `Mu
   no schema changed. Old projects and saved data are untouched: the change writes a new file where
   it used to overwrite one. The 1000-candidate bound is the existing one, not a new limit, so no
   other caller is newly rejected.
-- **Sibling commands in the touched file** (`record.*`): `record.retro_capture_arm` and
-  `record.retro_capture_status` are mode/status reads with no path; `record.retro_capture_to_take`
-  is this fix; `record.arm_track`/`record.disarm_track`/`record.disarm_all` already reserve through
-  `takePathArg`/`releaseDefaultTake` and are covered by their own tests; `record.get_state`,
-  `record.remaining`, `record.input_*` name no take file. `track.set_arm` (the other path into the
-  same allocator) was checked and already reserves. No sibling was left inconsistent.
+- **Sibling commands in the touched file** (`record.*`), each checked against
+  `src/core/ControlCommands*Record*.cpp`:
+  - `record.retro_capture_arm`, `record.retro_capture_status` — mode state and a status read, no
+    path. Unaffected.
+  - `record.retro_capture_to_take` — this fix.
+  - `record.arm_track`, `record.disarm_track`, `record.disarm_all` — the arm default already goes
+    through `takePathArg()`/`releaseDefaultTake()` (new-p17-24, `ControlRecordingSupport.cpp:320-345`)
+    and has its own regression tests; disarm retires the journal and keeps the take. Consistent.
+  - `record.get_state`, `record.remaining`, `record.input_get_state`, `record.input_set` —
+    route/device reads and the input select; they name no take file.
+  - `record.journal_begin`, `record.journal_finish`, `record.journal_update` — they take the `take`
+    path from the caller and never invent one; a retrospective take writes no journal (it is not a
+    live capture), so nothing here reuses a default name.
+  - `record.midi_capture_commit`, `record.midi_capture_status` — the MIDI half produces a clip, not
+    a WAV take file; its capacity and window model is untouched.
+  - `record.recovery_discard`, `record.recovery_get_state`, `record.recovery_place`,
+    `record.recovery_restore` — they work on the path the journal already recorded
+    (`control::defaultRecoveryDir()` is a directory default only, never a take name), so they cannot
+    collide with a new default take.
+  - `track.set_arm` (the other path into the same allocator) already reserves; the two
+    `TakeRecorder::defaultTakePath()` callers were checked above. No sibling was left inconsistent.
 - **Realtime.** `retroToTake` runs on the UI/control thread like every handler; the audio-thread
   entries (`RetroAudioCapture::push`, the recorder taps) are not touched by this diff, and
   `RecordingRealtimeTest` passes.
