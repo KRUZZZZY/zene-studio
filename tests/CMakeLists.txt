@@ -2761,6 +2761,9 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# instrument parameter through plugin.param_set, and without the modules the
 	# song's track holds a parameterless DummyInstrument.
 	if(LMMS_TEST_NAME STREQUAL "ScriptEngineTest" OR LMMS_TEST_NAME STREQUAL "PluginScanCacheTest"
+	# Q050-359: ScriptBindingsTest replaces one real instrument with another (a Lua view must not outlive
+	# the instrument it names, and loadInstrument refuses rather than installing a stand-in).
+	OR LMMS_TEST_NAME STREQUAL "ScriptBindingsTest"
 		OR LMMS_TEST_NAME STREQUAL "PluginScanWorkerTest"
 		OR LMMS_TEST_NAME STREQUAL "ControlDeviceCatalogueTest"
 		OR LMMS_TEST_NAME STREQUAL "ReceiverEffectTest"
@@ -2944,6 +2947,16 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		set_target_properties(${LMMS_TEST_NAME} PROPERTIES ENABLE_EXPORTS ON)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
 			LMMS_TEST_PLUGIN_DIR="${CMAKE_BINARY_DIR}/plugins")
+	endif()
+
+	# Q050-359: ScriptBindingsTest replaces one real instrument with another, so the two in-tree modules it
+	# names have to be built before it runs.
+	if(LMMS_TEST_NAME STREQUAL "ScriptBindingsTest")
+		foreach(module tripleoscillator kicker)
+			if(TARGET ${module})
+				add_dependencies(${LMMS_TEST_NAME} ${module})
+			endif()
+		endforeach()
 	endif()
 
 	# SfzPlayerTest exercises sfizz's state saver directly, including its Abseil dependencies.
