@@ -5680,6 +5680,19 @@ if(TARGET lmms_clap)
 	target_compile_features(ClapBusMapTest PRIVATE cxx_std_20)
 	target_link_libraries(ClapBusMapTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
 
+	# The note queue is header-only: no plug-in and no extra source is needed.
+	add_executable(ClapNoteQueueTest
+		src/plugins/ClapNoteQueueTest.cpp
+	)
+	add_test(NAME ClapNoteQueueTest COMMAND ClapNoteQueueTest)
+	target_include_directories(ClapNoteQueueTest PRIVATE
+		${CMAKE_BINARY_DIR}
+		${CMAKE_SOURCE_DIR}/include
+		${LMMS_CLAP_EFFECT_DIR}
+	)
+	target_compile_features(ClapNoteQueueTest PRIVATE cxx_std_20)
+	target_link_libraries(ClapNoteQueueTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
+
 	add_executable(ClapHostTest
 		src/plugins/ClapHostTest.cpp
 		${LMMS_CLAP_EFFECT_DIR}/ClapBusMap.cpp
