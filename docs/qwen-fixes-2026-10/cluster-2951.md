@@ -23,7 +23,12 @@ Known limit, unchanged by this fix: `setSampleFile` resets a clip's warp markers
 `python3 .../feature_check.py <worktree> > gates-1.log` EXIT=1: it did not run. The script's own `git -C .../gate-baselines/tree checkout -q --detach 9913d36d...` was refused by bunny-guard ("not allowed in a Bunny lane"), so no PASS/FAIL table exists. I did not work around it. Not verified: complexity/file-length gates. The new functions are small (clipSamples CCN 3, restoreClips CCN 5, both well under 10); the file is ~325 lines.
 
 ## Self-check
-(see below, filled after submit_check)
+submit_check.py EXIT=1 (submit-1.log): PASS commits, clean tree, report, tests changed; FAIL gates (feature_check.py) only because bunny-guard refused the script's internal `git checkout --detach` (see Gates). I cannot repair that from inside the lane.
+- Fails without the fix, passes with it: red EXIT=8 (fix reverted, test-revert.log) and green EXIT=0 (test-green.log, test-reapply.log).
+- Deterministic: no sleeps or timing in the new test; it uses the test's fake render child (the existing `render` argv seam) and fixed clip positions. The render file name carries a millisecond stamp (existing renderTarget), and the test never compares against it except as "the other file", so a name clash cannot flip the verdict.
+- Complete: callers of the changed code checked: `pointClips`/`apply` are used only by refreshSubproject (undo and redo); `addSubproject`'s undo removes the track so needs no restore. Redo applies the new render to all clips as the refresh did.
+- No collateral damage: nothing saved or loaded changes; only the undo closure of project.subproject_refresh. No command added, no audio-thread code.
+- Not applicable: verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE.
 
 Delegation: Haiku ran the RED build+test, and the GREEN / revert / reapply build+test runs (with the patch apply/revert) and reported exit codes; I verified them against the logs and the diff.
 
