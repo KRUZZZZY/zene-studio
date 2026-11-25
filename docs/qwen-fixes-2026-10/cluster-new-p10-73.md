@@ -187,7 +187,23 @@ this branch's base (`9913d36d53`), so neither is mine to fix again.
 passes; complexity cannot be measured because `lizard` is absent and installing it needs
 `--break-system-packages`, which I did not do. `feature_check.py` itself cannot print its
 table in this session because the guard denies the `git checkout --detach` its baseline cache
-needs; its exact output is quoted under Gates and in `gates-1.log`.
+needs; its exact output is quoted under Gates and in `gates-1.log`, and
+`submit_check.py` records it as its one FAIL (`submit-1.log`):
+
+```
+PRE-SUBMIT CHECK for new-p10-73
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-new-p10-73.md
+  PASS  tests added or changed - claim-only closure: independent QA must verify its cited code/contract
+  FAIL  gates (feature_check.py)
+```
+
+I did not work around it by writing the tool's `gate-baselines/9913d36d53….json` by hand or by
+switching its baseline tree with a path checkout: the complexity half of that cache would be
+empty here (`lizard` is missing), and an empty baseline turns every inherited over-target
+function in a changed file into a false "new" item for the next lane cut from this commit —
+a weakened gate for someone else, which is worse than a red row I can explain.
 
 **7. Audio thread, undo, commands.** No product change, no control command added or changed,
 no undo entry touched, nothing on the audio path. `vca.get_state` and `vca.list` remain
