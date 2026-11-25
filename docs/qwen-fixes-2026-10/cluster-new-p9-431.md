@@ -209,13 +209,15 @@ no baseline was edited.
 
 ## Self-check
 
-1. **The regression tests FAIL with the product change reverted and PASS with it.** Measured this session:
+1. "The regression test FAILS with your product change reverted and PASSES with it (exit codes)."
+   Measured this session:
    revert (`fix.patch`, exit 0) + rebuild (build-10-red-reverted.log, exit 0) + ctest = **RED_EXIT=8** with
    all three tests failing on their band assertions (test-11-red-reverted.log); restore (exit 0) + rebuild
    (build-11-green-restored.log, exit 0) + ctest = **GREEN_EXIT=0** (test-12-green-restored.log).
    The control case fails a second time in the intermediate state (round-1 product code, i.e. pinned bounds
    with the live indexed bank): `test-3-round1-product.log`, ratio 0.708.
-2. **The tests are deterministic.** No sleeps, no wall-clock timing, no second thread, no race: the device is
+2. "The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected values it
+   uses)." No sleeps, no wall-clock timing, no second thread, no race: the device is
    stopped in `initTestCase` and every period is rendered by the test itself
    (`AudioEngine::renderNextPeriod()`), with `AudioEngineWorkerThread::setDeterministicProcessing(true)`. The
    values are injected: the WAV fixtures the test writes (constants at chosen levels), the drag payloads it
@@ -223,7 +225,8 @@ no baseline was edited.
    sets through the plug-in's own invokables. The one event-loop seam is
    `QTimer::singleShot(0, ...)` answering the modal `FileDialog` from *inside* the dialog's own `exec()` -
    event ordering, not a delay, and the test asserts the answer happened (`QVERIFY2(answered, ...)`).
-3. **At the cause and complete.** Every writer of the state the render path read is a publication point
+3. "The fix is at the cause and complete: every caller and sibling of what you changed was checked and stays
+   consistent." Every writer of the state the render path read is a publication point
    (`updateFile`, `updateSlices`, `loadSettings`, the constructor, `clearSlices`, and the waveform's three
    edits - each proven to publish by the GUI tests above); every non-render reader still reads the editing
    state; `PlaybackSlot` reuse clears the pinned publication (`SlicerT.cpp:310`) so a reused slot cannot
@@ -233,7 +236,9 @@ no baseline was edited.
    Header and definition changed together and every target that includes the header was rebuilt (`zene`,
    `slicert`, `SlicerTPlayheadTest`, `SlicerTSampleSwapGuiTest`, `SlicerTZoomTest`, `SlicerTWaveformTest`,
    `SlicerTSliceControlsTest`).
-4. **No collateral damage.** `saveSettings` is untouched, so a saved project's SlicerT element is what it
+4. "No collateral damage: old projects and saved data still load as before, and any limit or check you added
+   does not hit other callers that legitimately exceed it." `saveSettings` is untouched, so a saved
+   project's SlicerT element is what it
    was; `loadSettings` sets the same members as before and only publishes afterwards, so old projects (file
    source, base64 source, or no `totalSlices`) load exactly as before. No limit or check was added anywhere.
    No control command is added or changed (no `ControlCommands*` file is touched, so
@@ -242,8 +247,9 @@ no baseline was edited.
    modified - the new test lives under `tests/src/gui` and no product file under `src/gui` changed - which is
    why no screenshot or state-sequence artifact is attached. Existing coverage stays green (family run,
    9/9).
-5. **Verdict is FIXED**, not ALREADY-FIXED or FALSE-POSITIVE: the pre-fix race is quoted with file:line
-   above and was reproduced in this session (test-11-red-reverted.log).
+5. "If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that
+   shows it." Not applicable: the verdict is **FIXED**, and the pre-fix race is quoted with file:line above
+   and was reproduced in this session (test-11-red-reverted.log).
 6. **Sibling commands** (`app.*`, `arrangement.fit_tracks`, `arrangement.get_state`): this change adds no
    command and no command file; `plugin.slice_get`/`plugin.slice_set` (the SlicerT commands) reach the
    per-slice control atomics, which the control-coherence fix reads through `liveSliceFor` but does not
