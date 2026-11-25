@@ -49,6 +49,9 @@ and requires 0 dB reduction and output equal to input within 1e-6. No timing, no
 `git checkout --detach` on the baseline tree was refused by bunny-guard (exit 97). I did not work around it. Checked by hand instead:
 the new function is a straight-line body (CCN 1); the new test file is 127 lines; the new test file and this report are in tests/fork-sources.txt (file ends with a newline);
 DeEsser.h was already in fork-sources.txt; tests/CMakeLists.txt was already in tests/upstream-modifications.txt.
+The registration this missed - tests/src/plugins/DeEsserBypassTest.cpp in tests/all-sources.txt - was added by the QA
+review (`qa-fix(new-p14-85)`); the manifest now reproduces from its own recipe (`bash tests/all-sources-reproduce.sh`
+EXIT 0) and `bash tests/fork-sources-gate.sh` EXIT 0.
 Local TSan does not run on this box; the race argument above is by design.
 
 ## Self-check
