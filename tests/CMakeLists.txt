@@ -1757,6 +1757,9 @@ set(LMMS_TESTS
 	src/tracks/SampleClipMuteCursorTest.cpp
 	# cluster 3503: a pattern-store pass past the end of the clip window schedules nothing and latches nothing.
 	src/tracks/SamplePatternPassWindowTest.cpp
+	# cluster new-p12-222: a callback longer than the window's remainder renders only the window -
+	# the plain, looped and first-period-offset paths. Its own target for the same Gate 7 reason.
+	src/tracks/SampleClipWindowRemainderTest.cpp
 	# Soundpipe lifecycle methods must report SP_OK on successful setup and teardown.
 	src/plugins/ReverbSCBaseTest.cpp
 	# The undo half of session.arrangement_record_land: the pass is ONE undo step, whatever it lands.
