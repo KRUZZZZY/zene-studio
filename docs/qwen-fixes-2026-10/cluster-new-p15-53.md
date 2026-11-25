@@ -67,14 +67,17 @@ export path.
 
 ## Regression test
 
-`tests/src/core/DawProjectInterchangeRoundTripTest.cpp:2614-2652`,
+`tests/src/core/DawProjectInterchangeRoundTripTest.cpp:2614-2663`,
 `aReadBackThatGivesBackNothingIsNotReportedAsSuccess`, in the existing test file
 for the area. It arms the shared read fault, calls `writeDawProject` with a
 report, and asserts: the call fails, the error says the container cannot be read
 back, `report.bytes == 0` and `report.sha256` is empty (no partial identity), the
 container really is on disk and reads back as its two entries once the fault is
 cleared (the write itself succeeded), and the same write with `report == nullptr`
-still succeeds (the read-back only exists to fill a report).
+still succeeds (the read-back only exists to fill a report). Finally it drives
+`dawproject.export` with the fault armed and asserts a typed `Refused` whose
+message says the container cannot be read back, so the shipped command path is
+covered and not only the function.
 
 ## Commands and their exit codes (logs in `new-p15-53.r1/logs`)
 
@@ -97,6 +100,8 @@ still succeeds (the read-back only exists to fill a report).
 | whole family | `cd build/tests && ctest -R '^(DawProjectInterchangeRoundTripTest\|DawProjectDeflateImportTest\|ProjectContainerTest)$' --output-on-failure` (`test-7-family.log`) | 0 (3/3) |
 | 4b re-run from the commits (`git diff 916a609f27 8635a276c9 -- src/core/DawProjectWrite.cpp include/DawProjectInterchange.h`) | `git apply -R logs/fix.patch && cmake --build build --target zene DawProjectInterchangeRoundTripTest -j4` (`build-7-red-commit.log`) then `ctest -R '^DawProjectInterchangeRoundTripTest$'` (`test-8-red-commit.log`) | build 0, test 8 |
 | 4b re-run from the commits | `git apply logs/fix.patch && cmake --build ... -j4` (`build-8-green-commit.log`) then `ctest ...` (`test-9-green-commit.log`) | build 0, test 0 |
+| 4b, final test (includes the export-command case): `git apply -R logs/fix.patch`, `cmake --build build --target zene DawProjectInterchangeRoundTripTest -j4` (`build-10-red-final.log`) then `ctest -R '^DawProjectInterchangeRoundTripTest$'` (`test-11-red-final.log`) | apply 0, build 0, test 8 (65 passed, 1 failed) |
+| 4b, final test restored: `git apply logs/fix.patch`, build (`build-11-green-final.log`) then `ctest` (`test-12-green-final.log`) | apply 0, build 0, test 0 |
 
 The RED failure is the finding itself: log `test-2-red.log` has
 `QWARN ... QIODevice::read (QFile, ".../read-back-fault.dawproject"): device not open`

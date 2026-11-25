@@ -2649,6 +2649,17 @@ void aReadBackThatGivesBackNothingIsNotReportedAsSuccess()
 	const bool okWithoutReport = writeDawProject(withoutReport, authoredModel(), nullptr, &error);
 	qunsetenv("ZENE_TEST_CONTAINER_READ_FAULT");
 	QVERIFY2(okWithoutReport, qPrintable(error));
+
+	// And the caller that ships this: dawproject.export reports the same failure
+	// as a typed refusal instead of a success carrying a partial identity.
+	const QString exported = path(m_directory, QStringLiteral("read-back-fault-export.dawproject"));
+	qputenv("ZENE_TEST_CONTAINER_READ_FAULT", "1");
+	const ControlResult refusal = run(QStringLiteral("dawproject.export"),
+		{{QStringLiteral("path"), exported}, {QStringLiteral("overwrite"), true}});
+	qunsetenv("ZENE_TEST_CONTAINER_READ_FAULT");
+	QCOMPARE(refusal.errorKind, ControlErrorKind::Refused);
+	QVERIFY2(refusal.errorMessage.contains(QStringLiteral("cannot be read back")),
+		qPrintable(refusal.errorMessage));
 }
 
 //! Luna cluster 4133: a successful write handed back an EMPTY loss report even
