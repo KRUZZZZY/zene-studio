@@ -96,6 +96,30 @@ The test-8 failures with the fix reverted:
 - Registration: Mixer.cpp has an `upstream-modifications.txt` line ending in a newline. The other changed files were already in `fork-sources.txt`. No new files.
 - Not verified: lizard CCN, the feature_check wrapper table (blocked as described above), and TSan (not available locally).
 
+Answers to the `submit_check.py` questions (`submit-1.log`):
+- **Fails with the product change reverted, passes with it:**
+  - Reverted: `git apply -R fix.patch` EXIT 0, then build-7 EXIT 0, then `ctest -R ControlRecordingRoutesTest` EXIT 8 (test-8.log). Both new functions FAIL.
+  - Reapplied: `git apply fix.patch` EXIT 0, then build-8 EXIT 0, then the same ctest EXIT 0 (test-10.log, `100% tests passed out of 1`).
+- **Deterministic:**
+  - Neither test uses wall-clock time or sleeps.
+  - `aTapOnADeletedChannelGoesBackToTheInput` stops the audio device (`AudioDevice::stopProcessing()`, restarted by a scope guard) and drives each period itself with `Mixer::masterMix()`. That is the seam the existing `aTapChangeDoesNotFeedOneRouteFromTwoSourcesInAPeriod` uses. The pending/active publication therefore happens exactly at the `beginPeriod()` call the test triggers.
+  - `undoingOntoADeletedChannelTapsTheInput` reads only the pending table (`recordertaps::get`), which only the test's own thread writes.
+- **At the cause and complete:**
+  - The reset sits in `Mixer::deleteChannel`, the single function every deletion path goes through: GUI, `mixer.remove_channel`, the `mixer.add_channel` undo, and `Mixer::clear`.
+  - The other writer of taps, `recordertaps::set`, is used by `record.route_source` and its undo/redo lambdas (`ControlCommandsRecordTools.cpp:253-254`). It now refuses a channel that no longer exists.
+  - The readers `channelAt`, `master`, `audioTapped`, `beginPeriod` and `tapJson` need no change.
+- **No collateral damage:**
+  - Taps are not saved in projects, and no load or save code changed (`git show --stat 2a8787d3d3`: RecorderTaps.h/.cpp, Mixer.cpp, ControlCommandsMixer.cpp, the test, and upstream-modifications.txt).
+  - No limit was added.
+  - `set()` with a live channel, the master or the input behaves exactly as before. With no mixer it keeps the tap, as before.
+  - The `mixer.remove_channel` reply gains a key only when routes were reset.
+  - The existing `ControlRecordingRoutesTest` functions all pass (test-10.log), and the RecordTools results match the unfixed tree (test-9 vs test-11).
+- **ALREADY-FIXED / FALSE-POSITIVE:** not applicable (the verdict is FIXED).
+- **`FAIL gates (feature_check.py)`: BLOCKED by the environment, not by this change.**
+  - `feature_check.py` exits 1 because the lane's session guard refuses its baseline step: `bunny-guard: 'git -C /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/gate-baselines/tree checkout -q --detach 9913d36d5397025d1b7092097f50f6d50c652dc4' is not allowed in a Bunny lane` (gates-1.log). That step has no cached result for base 9913d36d5.
+  - I did not work around the guard or fabricate a baseline.
+  - Every gate the wrapper runs was run directly. All exit 0 except complexity, which can't run because lizard is not installed; see the Gates section.
+
 Delegation:
 - Haiku (1st start): read-only search for `MixerChannel::id()` persistence and the `deleteChannel` callers and their undo.
 - Sonnet: wrote the two regression tests to my design, ran RED, then implemented my fix design and ran GREEN (build-1..6, test-1..7).
