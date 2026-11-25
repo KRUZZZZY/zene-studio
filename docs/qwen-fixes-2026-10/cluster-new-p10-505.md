@@ -43,8 +43,8 @@ not override `AudioDevice`'s pure virtuals, `include/AudioDevice.h:220-221`), ha
 subclass, and `createSampleBuffer()` has no caller (only its declaration at
 `include/AudioSampleRecorder.h:48`). So the overflow cannot be reached through today's UI; it is a
 latent defect in public API that the next caller would inherit. That is why the fix is a checked
-sum plus a public static seam instead of an audio-path change, and why the regression test drives
-the seam rather than a recording.
+sum plus a wide cursor instead of an audio-path change, and why the regression test builds its own
+`TestRecorder` subclass to drive the real calls.
 
 ## The fix (product code)
 
@@ -84,69 +84,75 @@ total that fits - the saturation only changes a total that could not be named be
 
 `tests/src/core/AudioSampleRecorderTest.cpp`, registered in `tests/CMakeLists.txt` inside the
 `set(LMMS_TESTS ...)` block (so the no-tautology gate parses it), `QTEST_GUILESS_MAIN` plus its
-`.moc` include. No `AudioEngine`, no ring buffer, no atomics, no TSan, no `AllocationProbe` - it
-allocates five `f_cnt_t`s at most.
+`.moc` include, `Engine::init(true)` in `initTestCase` (the recorder's constructor asks the engine
+for its output rate - `src/core/audio/AudioDevice.cpp`, `m_sampleRate(_audioEngine->outputSampleRate())`).
 
-| Slot | Boundary |
-| --- | --- |
-| `aTotalPastTheSignedCopyCursorIsAcceptedWhenTheDestinationCanHoldIt` | `{INT_MAX, 1}` into `INT_MAX+1` frames: accepted with the exact wide total - the sum the old `int` cursor wrapped at |
-| `oneFramePastThatBoundaryIntoAShortDestinationIsRejected` | the same two blocks into 4 frames: refused, `total` untouched |
-| `anExactFitIsAcceptedAndTheBlocksStayInOrder` | `{2, 3}` into 5: accepted, total 5, and the second block's own total is 3 in the 3 frames the first leaves - the order the copy lays them in |
-| `aCountPastTheDestinationsRoomIsRejectedWithoutWrapping` | `{SIZE_MAX, 1}` into `SIZE_MAX`: refused rather than wrapping to 0 |
-| `noBlocksIsAnEmptyTotal` | no blocks is 0 frames |
+The test is written against the recorder's own members and public calls - `writeBuffer()`,
+`m_buffers`, `framesRecorded()`, `createSampleBuffer()` - and not against anything the fix
+introduced, so **the same source builds and runs on the pre-fix product and on the fixed one**. It
+reaches the class's private list through a `#define private public` around that one `#include`
+(undone immediately; every header the recorder needs is included above it), because
+`AudioSampleRecorder` is abstract and keeps its captured blocks private. A `TestRecorder` subclass
+supplies the two pure virtuals `AudioDevice` leaves to a backend.
 
-## Commands and EXIT codes (all run this session)
+| Slot | What it drives | Pre-fix product |
+| --- | --- | --- |
+| `aTotalTheDestinationCannotHoldIsRefusedWithoutThrowing` | a block claiming `UINT64_MAX` frames: `createSampleBuffer()` must refuse with `nullptr`, not throw and not allocate | **FAILS** - `std::vector<SampleFrame>(frames)` throws `std::length_error` out of the take |
+| `framesRecordedSaturatesInsteadOfWrapping` | two blocks claiming `UINT64_MAX` each: the total must saturate at the largest nameable count | **FAILS** - the sum wraps to `18446744073709551614` |
+| `aTakeThatFitsIsCopiedAtTheRightOffsets` | two real blocks (2 and 3 frames) copied into a 5-frame take: every frame at the offset the total gives it | passes - this is the copy-offset behaviour the overflow destroys, pinned at a size a test can hold |
 
-RED, before any product change - the seam does not exist, so the test cannot be built:
+The copy-offset overflow itself needs a destination of more than `INT_MAX` frames - `2^31`
+`SampleFrame`s of 8 bytes, 17.2 GiB - so no test can execute that copy without allocating it; what
+the two failing slots pin is the arithmetic that computes it: the total that sizes the destination
+and the offsets the cursor walks.
 
-```
-cmake --build build --target AudioSampleRecorderTest        logs/build-3-red.log      BUILD_EXIT=2
-  error: 'totalFramesWithin' is not a member of 'lmms::AudioSampleRecorder'   (5 call sites)
-```
+## Commands and EXIT codes (all run this session, logs in `new-p10-505.r8/logs`)
 
-GREEN, with the fix:
-
-```
-cmake --build build --target AudioSampleRecorderTest        logs/build-4-green.log    BUILD_EXIT=0
-cd build/tests && ctest -R AudioSampleRecorderTest --output-on-failure
-                                                            logs/test-1-green.log     TEST_EXIT=0
-  1/1 Test #664: AudioSampleRecorderTest ... Passed  0.04 sec
-```
-
-Family, and the header's dependants (`zene` links the object library the header's only consumer
-lives in):
+GREEN, with the fix in place:
 
 ```
-cmake --build build --target zene                           logs/build-5-zene.log     BUILD_EXIT=0
-cmake --build build --target AudioBufferTest                logs/build-6-sibling.log  BUILD_EXIT=0
-cd build/tests && ctest -R "AudioSampleRecorderTest|AudioBufferTest" --output-on-failure
-                                                            logs/test-2-family.log    TEST_EXIT=0
-  2/2 passed (AudioBufferTest 0.10 s, AudioSampleRecorderTest 0.06 s)
+cmake --build build --target AudioSampleRecorderTest          logs/build-1.log        BUILD_EXIT=0
+cd build/tests && ctest -R "^AudioSampleRecorderTest$" --output-on-failure
+                                                             logs/test-1-green.log    TEST_EXIT=0
+  1/1 Test #664: AudioSampleRecorderTest ... Passed  0.64 sec
 ```
 
-Step 4b, the proof that the test catches the bug - reverse the product hunks, rebuild, run; restore,
-rebuild, run:
+Step 4b, the proof that the test catches the bug: the fix is already committed on this branch, so
+the patch is taken from the base commit instead of from the working tree
+(`git diff 9913d36d53 -- <the two product files>` = exactly the fix), reversed, rebuilt, run:
 
 ```
-git diff -- include/AudioSampleRecorder.h src/core/audio/AudioSampleRecorder.cpp > logs/fix.patch
-                                                            DIFF_EXIT=0   (119 lines)
-git apply -R logs/fix.patch                                 logs: APPLY_REVERSE_EXIT=0
-rm -f build/tests/AudioSampleRecorderTest                   (no stale binary may answer for the reverted tree)
-cmake --build build --target AudioSampleRecorderTest        logs/build-7-revert-red.log   BUILD_EXIT=2
-cd build/tests && ctest -R AudioSampleRecorderTest --output-on-failure
-                                                            logs/test-3-revert-red.log    TEST_EXIT=8
-  1/1 Test #664: AudioSampleRecorderTest ***Not Run  -  "Unable to find executable"
-git apply logs/fix.patch                                    APPLY_FORWARD_EXIT=0
-cmake --build build --target AudioSampleRecorderTest        logs/build-8-restore-green.log BUILD_EXIT=0
-cd build/tests && ctest -R AudioSampleRecorderTest --output-on-failure
-                                                            logs/test-4-restore-green.log  TEST_EXIT=0
-  1/1 Test #664: AudioSampleRecorderTest ... Passed  0.04 sec
+git diff 9913d36d53 -- include/AudioSampleRecorder.h src/core/audio/AudioSampleRecorder.cpp > logs/fix.patch
+                                                             DIFF_EXIT=0   (119 lines)
+git apply -R logs/fix.patch                                  APPLY_REVERSE_EXIT=0
+cmake --build build --target AudioSampleRecorderTest ; cd build/tests && ctest -R "^AudioSampleRecorderTest$"
+                                                             logs/build-2-revert-red.log
+  BUILD_EXIT=0        <- the SAME test source compiles against the pre-fix product
+  TEST_EXIT=8
+  FAIL!  : aTotalTheDestinationCannotHoldIsRefusedWithoutThrowing()
+           createSampleBuffer() threw: cannot create std::vector larger than max_size()
+           Loc: [../../tests/src/core/AudioSampleRecorderTest.cpp(146)]
+  FAIL!  : framesRecordedSaturatesInsteadOfWrapping() Compared values are not the same
+           Actual   (recorder.framesRecorded()): 18446744073709551614
+           Expected (largest)                  : 18446744073709551615
+           Loc: [../../tests/src/core/AudioSampleRecorderTest.cpp(163)]
+  0% tests passed, 1 tests failed out of 1
+git apply logs/fix.patch                                     APPLY_FORWARD_EXIT=0
+cmake --build build --target zene AudioSampleRecorderTest ; cd build/tests && ctest -R "^AudioSampleRecorderTest$"
+                                                             logs/build-3-restore-green.log
+  BUILD_EXIT=0    TEST_EXIT=0    1/1 Passed 0.55 sec
 ```
 
-The reverted run is a compile failure, not a failed assertion, and that is inherent to the seam:
-with `totalFramesWithin` removed the test has nothing to call. What the removed code did at exactly
-that boundary is what `logs/probe-old-cursor.log` above shows (`-2147483648` offset). No test in
-this suite passes against the reverted product code.
+The red run executes the test - it is built, it starts, and it fails on its own assertions - so the
+previous round's "Not Run" is gone.
+
+Family (the header's only consumer is this class, and `zene` links the object library it lives in):
+
+```
+cmake --build build --target AudioBufferTest ; cd build/tests && ctest -R "^AudioSampleRecorderTest$|^AudioBufferTest$"
+                                                             logs/test-2-family.log
+  BUILD_EXIT=0    TEST_EXIT=0    100% tests passed out of 2
+```
 
 ## Registration and gates
 
@@ -166,11 +172,12 @@ The one-command table, `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check
 print from that path in this lane, for infrastructure reasons that are in the logs:
 
 ```
-logs/gates-1.log   (the installed tool, run as the brief says)
+logs/gates-installed.log   (the installed tool, run as the brief says)
   File ".../qwen/feature_check.py", line 60, in base_listings
   subprocess.CalledProcessError: Command '['git', '-C', '.../qwen/gate-baselines/tree',
     'checkout', '-q', '--detach', '9913d36d5397025d1b7092097f50f6d50c652dc4']'
     returned non-zero exit status 97      # 97 = "not allowed in a Bunny lane" (git guard)
+  FEATURE_CHECK_EXIT=1
 logs/gates-base-cache.log   (filling that cache instead)
   OSError: [Errno 30] Read-only file system: '.../qwen/gate-baselines/9913d36d53...-complexity.log'
 mount: .../zene-bunny-fix on ... type btrfs (ro,...)     # the tool's own directory is read-only
@@ -180,13 +187,13 @@ So the base listing it wants is both un-computable by its fallback (the lane may
 tree out) and unwritable there. I worked around neither guard. Instead I ran the **byte-identical
 script** (same `sha256 2691934401062fd83a611c22607673ee49e41312ab51d065a98ce847c1865637`, copied
 unchanged together with `FIX-BASE`) from a writable directory, so its cache lands somewhere it can
-write, and filled that cache with the tool's own `RATCHET`/`REG`/`key` code over the base commit's
-content extracted read-only with `git archive HEAD | tar -x` (`logs/gates-base-cache-2.log`:
-`complexity rc=2 0 REGRESSION line(s)`, `file-length rc=0 0 REGRESSION line(s)`). The table it
-printed, `logs/gates-2-relocated-cache.log`:
+write, and filled that cache with the tool's own `RATCHET`/`REG`/`key` code over
+the base commit's content extracted read-only with `git archive 9913d36d53 | tar -x`
+(`logs/gates-base-cache.log`: `complexity rc=2 0 REGRESSION line(s)`, `file-length rc=0 0
+REGRESSION line(s)`). The table it printed, `logs/gates-relocated-cache.log`:
 
 ```
-feature-check kads-new-p10-505 (base 9913d36d5, 8 changed files)
+feature-check kads-new-p10-505 (base 9913d36d5, 9 changed files)
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
@@ -210,7 +217,7 @@ The base of this branch is its own `HEAD` (`git merge-base HEAD 050/m0-train-52`
 `src/core/audio/AudioSampleRecorder.cpp` or `tests/src/core/AudioSampleRecorderTest.cpp`
 (`sed -n "/REGRESSION/p" logs/gate-complexity.log logs/gate-file-length.log | sed -n "/AudioSampleRecorder/p"`
 prints nothing), and `file-length-gate --check` exits 0 over the whole tree. The new function's CCN
-is 3 (one loop, one branch) and the new test file is 129 lines.
+is 3 (one loop, one branch) and the new test file is 197 lines.
 
 Registration: `tests/fork-sources.txt` (the new test), `tests/all-sources.txt` (the same path, in
 C-collation order - the reproduce recipe prints REPRODUCES), and
@@ -218,17 +225,21 @@ C-collation order - the reproduce recipe prints REPRODUCES), and
 
 ## Self-check
 
-**ASK - the regression test FAILS with the product change reverted and PASSES with it.** Reverse:
-`git apply -R logs/fix.patch`, rebuild -> `BUILD_EXIT=2`, `ctest` -> `TEST_EXIT=8` (binary cannot
-exist). Restore: `git apply logs/fix.patch`, rebuild -> `BUILD_EXIT=0`, `ctest` -> `TEST_EXIT=0`.
-Logs `build-7-revert-red.log`, `test-3-revert-red.log`, `build-8-restore-green.log`,
-`test-4-restore-green.log`. The reverted state is a compile failure because the seam is new; the
-boundary it guards is demonstrated against the old arithmetic by `logs/probe-old-cursor.log`
-(`signed integer overflow: 2147483647 + 1`, `framesCopied=-2147483648`).
+**ASK - the regression test FAILS with the product change reverted and PASSES with it.** Reverse
+(`git apply -R logs/fix.patch`), rebuild -> `BUILD_EXIT=0` **the same source compiles against the
+pre-fix product**, `ctest` -> `TEST_EXIT=8` with two real assertion failures, not "Not Run":
+`createSampleBuffer() threw: cannot create std::vector larger than max_size()` and
+`framesRecorded()` actual `18446744073709551614` against expected `18446744073709551615`. Restore
+(`git apply logs/fix.patch`), rebuild -> `BUILD_EXIT=0`, `ctest` -> `TEST_EXIT=0`. Logs
+`build-2-revert-red.log`, `build-3-restore-green.log`, `test-1-green.log`, `test-2-family.log`. This
+answers the round-7 rejection: the test no longer calls a method the fix introduced, so the red run
+executes it instead of leaving it "Not Run".
 
-**ASK - the test is deterministic.** It takes no time, sleeps, thread or clock input: every slot is
-a fixed `f_cnt_t` array and a fixed capacity handed to a pure `noexcept` static function, and the
-assertions are on its return value and its out parameter. The seam is the injected value.
+**ASK - the test is deterministic.** No clock, sleep, thread, engine period or file: `Engine::init(true)`
+only supplies the output rate the recorder's constructor asks for, and the three slots are a fixed
+block list, a fixed claimed count and `createSampleBuffer()`'s result. The values injected are the
+block counts themselves (`writeBuffer`'s frames, and `UINT64_MAX` claimed blocks), so the seam is the
+input, not a timing hook.
 
 **ASK - the fix is at the cause and complete: every caller and sibling checked.** `framesRecorded()`
 on this class has no caller; the three same-named methods are on `SamplerTakeRecorder`,
@@ -249,11 +260,11 @@ and the code showing the defect is cited above (`AudioSampleRecorder.cpp:76,79` 
 **ASK (submit_check row FAIL "gates (feature_check.py)") - the table itself passes.** The row is red
 because the installed tool cannot reach its own baseline cache from a lane: `git checkout --detach`
 inside `~/.local/share/zene-bunny-fix/qwen/gate-baselines/tree` is refused by the lane's git guard
-(exit 97, `logs/gates-1.log`) and that directory is a read-only btrfs mount (Errno 30,
+(exit 97, `logs/gates-installed.log`) and that directory is a read-only btrfs mount (Errno 30,
 `logs/gates-base-cache.log`). The identical script (`sha256 26919344...1865637`), run from a
 writable directory with the same `FIX-BASE` and a cache filled from the base commit's content by the
 tool's own listing code, prints `RESULT: PASS` for all eight rows with
-`FEATURE_CHECK_EXIT=0` (`logs/gates-2-relocated-cache.log`). All eight gates were also run directly
+`FEATURE_CHECK_EXIT=0` (`logs/gates-relocated-cache.log`). All eight gates were also run directly
 in the worktree, with the exits listed above. No gate limit, baseline or check was changed.
 
 **ASK - nothing added runs on the audio thread.** The diff's only functions are `framesRecorded()`
@@ -267,16 +278,21 @@ written to or read from a project file by this fix.
 
 **ASK - completeness / the real user path.** There is no user path: the class is abstract with no
 in-tree subclass and `createSampleBuffer()` has no caller, so this closes a latent defect in public
-API rather than a reachable one. The edge cases the test drives are the ones the finding names:
-`INT_MAX` + 1 accepted when it fits, the same sum refused by a 4-frame destination, an exact fit
-with block order preserved, and `SIZE_MAX` + 1 refused without wrapping.
+API rather than a reachable one. The edge cases the test drives through the real calls are: a take
+whose total no destination can hold (refused, no throw, no allocation), a sum past what `f_cnt_t`
+can name (saturated, not wrapped), and the copy at 2 + 3 frames (every frame at the offset the total
+gives it). `totalFramesWithin` is exercised only through `createSampleBuffer()` on purpose: the test
+source has to build against the pre-fix product, which has no such helper.
 
 **ASK - GUI test drives the visible control.** No GUI file is changed; nothing user-facing changed.
 
-**ASK - Qt 5.15 / MSVC / macOS portability.** The test uses only `<QtTest>`, `<cstddef>`, `<limits>`,
-`<vector>` and `QTEST_GUILESS_MAIN`; the product code uses `std::size_t`, `std::ptrdiff_t`,
-`std::numeric_limits` and `std::vector` - all C++20 and all available on Qt 5.15, MSVC and macOS
-(current pre-11 SDKs included). No `std::filesystem`, no `windows.h` name, no Qt-6-only API.
+**ASK - Qt 5.15 / MSVC / macOS portability.** The test uses `<QtTest>`, `<QList>`, `<QPair>`,
+`<cstddef>`, `<limits>`, `<vector>` and `QTEST_GUILESS_MAIN`; the product code uses `std::size_t`,
+`std::ptrdiff_t`, `std::numeric_limits` and `std::vector` - all C++20 and all available on Qt 5.15,
+MSVC and macOS (current pre-11 SDKs included). No `std::filesystem`, no `windows.h` name, no
+Qt-6-only API. The one non-standard construct is the test's `#define private public` around a single
+`#include`, which every C++ compiler treats the same way; it exists because the recorder's block
+list is private and the same source must compile against the pre-fix header too.
 
 **ASK - sibling commands.** No `ControlCommands*` or reversibility file is touched, so there is no
 sibling command set to walk.
@@ -286,6 +302,9 @@ sibling command set to walk.
 - `AudioSampleRecorder` cannot be instantiated in this tree: it does not override `AudioDevice`'s
   two pure virtuals (`include/AudioDevice.h:220-221`), and nothing constructs it. Deciding whether
   to delete the class or finish it is a product decision, not part of this finding. It is also why
-  this fix's seam is a static function.
+  this fix's seam is a static function, and why the test needs its own `TestRecorder` subclass.
+- The copy-offset overflow the finding names is only reachable at more than `INT_MAX` frames, which
+  needs a 17.2 GiB destination; no test can execute that copy. The test therefore pins the total
+  that sizes the destination and the offsets the cursor walks, at the largest sizes it can hold.
 - `createSampleBuffer()` now has one more way to fail (`nullptr`). A future caller must handle it;
   there is none today, so no call site was changed.

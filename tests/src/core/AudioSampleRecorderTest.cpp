@@ -1,6 +1,6 @@
 /*
- * AudioSampleRecorderTest.cpp - the wide, checked frame total createSampleBuffer() sizes its
- *                             destination with (cluster new-p10-505)
+ * AudioSampleRecorderTest.cpp - the take's frame total decides the destination, and the copy
+ *                             lays the blocks out from it (cluster new-p10-505)
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -23,24 +23,86 @@
  *
  */
 
+/*! THE BUG (cluster new-p10-505): createSampleBuffer() sized its destination from an unchecked
+ *  sum of the captured blocks and then walked it with `auto framesCopied = 0;` - a signed `int`
+ *  offset - so a take past INT_MAX frames (about 12.4 hours at 48 kHz) indexed the destination
+ *  with an overflowed offset. framesRecorded() added those same counts unchecked.
+ *
+ *  This test is written against the recorder's OWN members, not against any helper the fix
+ *  introduced, so the SAME SOURCE builds and runs on the pre-fix product and on the fixed one:
+ *  reverting the product hunks makes two of these slots fail with their own assertions instead
+ *  of failing to build.
+ *   - the total the destination cannot hold: the pre-fix product throws std::length_error out of
+ *     `std::vector<SampleFrame>(frames)` (an uncaught exception inside a DAW's stop path); the
+ *     fixed product refuses the take with nullptr before it allocates anything;
+ *   - framesRecorded() past what f_cnt_t can name: the pre-fix product wraps to a SMALLER count;
+ *     the fixed product saturates;
+ *   - the same copy loop at a size a test can afford: two blocks land at the offsets the total
+ *     gives them, frame for frame, which is the behaviour the overflow destroys.
+ *
+ *  The copy-offset overflow itself needs a destination of more than INT_MAX frames - 2^31
+ *  SampleFrames of 8 bytes, 17.2 GiB - so no test can execute that copy without allocating it;
+ *  what is pinned here is the arithmetic that computes it (the total and the offsets) at every
+ *  size a test can hold.
+ */
+
 #include <QtTest>
 
+#include <QList>
+#include <QPair>
+
 #include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <memory>
 #include <vector>
 
+#include "AudioDevice.h"
+#include "AudioEngine.h"
+#include "Engine.h"
+#include "SampleBuffer.h"
+#include "SampleFrame.h"
+
+/* White-box, and deliberately so: the recorder keeps its captured blocks in a private list and
+ * the class is abstract (it leaves AudioDevice's two pure virtuals to a backend), so a test that
+ * drives the REAL createSampleBuffer() has to open the access specifier. Both the pre-fix and the
+ * fixed header declare the same members under `private:`, so this one source compiles against
+ * both. The redefinition is undone immediately and every header the recorder needs is included
+ * above it, so it reaches nothing but that class body. */
+#define private public
 #include "AudioSampleRecorder.h"
+#undef private
 
 using namespace lmms;
 
 namespace
 {
 
-//! The recorded blocks' frame counts, in the order the recorder holds them.
-using FrameCounts = std::vector<f_cnt_t>;
+//! A recorder a test can construct: the two pure virtuals AudioSampleRecorder leaves to a
+//! backend, and no processing.
+class TestRecorder : public AudioSampleRecorder
+{
+public:
+	explicit TestRecorder( AudioEngine* engine ) :
+		AudioSampleRecorder( DEFAULT_CHANNELS, s_opened, engine )
+	{
+	}
 
-//! A value no accepted total may report: it proves a refusal did not write the out parameter.
-constexpr std::size_t Untouched = 12345;
+	//! A block the recorder never captured - the count it claims is the test's, and the
+	//! destructor still frees it with delete[] like every real block.
+	void captureClaiming( const f_cnt_t frames )
+	{
+		m_buffers.push_back( qMakePair( new SampleFrame[1], frames ) );
+	}
+
+private:
+	void startProcessingImpl() override {}
+	void stopProcessingImpl() override {}
+
+	static bool s_opened;
+};
+
+bool TestRecorder::s_opened = false;
 
 } // namespace
 
@@ -50,78 +112,84 @@ class AudioSampleRecorderTest : public QObject
 	Q_OBJECT
 
 private slots:
-	void aTotalPastTheSignedCopyCursorIsAcceptedWhenTheDestinationCanHoldIt();
-	void oneFramePastThatBoundaryIntoAShortDestinationIsRejected();
-	void anExactFitIsAcceptedAndTheBlocksStayInOrder();
-	void aCountPastTheDestinationsRoomIsRejectedWithoutWrapping();
-	void noBlocksIsAnEmptyTotal();
+	void initTestCase()
+	{
+		Engine::init( true );
+		QVERIFY( Engine::audioEngine() != nullptr );
+	}
+
+	void cleanupTestCase()
+	{
+		Engine::destroy();
+	}
+
+	void aTotalTheDestinationCannotHoldIsRefusedWithoutThrowing();
+	void framesRecordedSaturatesInsteadOfWrapping();
+	void aTakeThatFitsIsCopiedAtTheRightOffsets();
 };
 
 
-//! The sum an `int` copy cursor wrapped at: INT_MAX frames of a first block, then one more.
-//! The destination can hold them, so the take is accepted with the exact wide total.
-void AudioSampleRecorderTest::aTotalPastTheSignedCopyCursorIsAcceptedWhenTheDestinationCanHoldIt()
+//! A take whose total no destination vector can hold: no throw, no allocation, nullptr.
+//! Pre-fix: std::vector<SampleFrame>(frames) throws std::length_error out of this call.
+void AudioSampleRecorderTest::aTotalTheDestinationCannotHoldIsRefusedWithoutThrowing()
 {
-	const FrameCounts counts{ static_cast<f_cnt_t>( std::numeric_limits<int>::max() ), 1 };
-	const std::size_t capacity = static_cast<std::size_t>( std::numeric_limits<int>::max() ) + 1;
-	std::size_t total = Untouched;
+	TestRecorder recorder( Engine::audioEngine() );
+	recorder.captureClaiming( std::numeric_limits<f_cnt_t>::max() );
 
-	QVERIFY( AudioSampleRecorder::totalFramesWithin( counts.data(), counts.size(), capacity, total ) );
-	QCOMPARE( total, capacity );
-	QVERIFY( total > static_cast<std::size_t>( std::numeric_limits<int>::max() ) );
+	std::shared_ptr<const SampleBuffer> take;
+	try
+	{
+		take = recorder.createSampleBuffer();
+	}
+	catch( const std::exception& error )
+	{
+		QFAIL( qPrintable( QStringLiteral( "createSampleBuffer() threw: %1" )
+			.arg( QString::fromUtf8( error.what() ) ) ) );
+	}
+
+	QVERIFY2( take == nullptr, "a total the destination cannot hold must be refused, not attempted" );
 }
 
 
-//! The same two blocks into a destination that holds four frames: refused, so the caller
-//! allocates nothing with a total the destination cannot represent.
-void AudioSampleRecorderTest::oneFramePastThatBoundaryIntoAShortDestinationIsRejected()
+//! The sum past what f_cnt_t can name: reported as the largest nameable count, not wrapped.
+//! Pre-fix: the second UINT64_MAX block wraps the running total down to UINT64_MAX - 1.
+void AudioSampleRecorderTest::framesRecordedSaturatesInsteadOfWrapping()
 {
-	const FrameCounts counts{ static_cast<f_cnt_t>( std::numeric_limits<int>::max() ), 1 };
-	std::size_t total = Untouched;
+	TestRecorder recorder( Engine::audioEngine() );
+	const f_cnt_t largest = std::numeric_limits<f_cnt_t>::max();
+	recorder.captureClaiming( largest );
+	recorder.captureClaiming( largest );
 
-	QVERIFY( !AudioSampleRecorder::totalFramesWithin( counts.data(), counts.size(), 4, total ) );
-	QCOMPARE( total, Untouched );
+	QCOMPARE( recorder.framesRecorded(), largest );
 }
 
 
-//! {2, 3} into 5 frames: accepted, and the blocks stay in order - the second block's own
-//! total is the room the first one leaves behind.
-void AudioSampleRecorderTest::anExactFitIsAcceptedAndTheBlocksStayInOrder()
+//! The copy at a size a test can hold: the second block starts exactly one destination offset
+//! past the first, and no frame is dropped, duplicated or reordered.
+void AudioSampleRecorderTest::aTakeThatFitsIsCopiedAtTheRightOffsets()
 {
-	const FrameCounts counts{ 2, 3 };
-	std::size_t total = Untouched;
+	TestRecorder recorder( Engine::audioEngine() );
 
-	QVERIFY( AudioSampleRecorder::totalFramesWithin( counts.data(), counts.size(), 5, total ) );
-	QCOMPARE( total, std::size_t( 5 ) );
+	// Block 1: two frames, left = 1.0, 1.5. Block 2: three frames, left = 2.0, 2.5, 3.0.
+	SampleFrame first[2] = { SampleFrame( 1.0f, -1.0f ), SampleFrame( 1.5f, -1.5f ) };
+	SampleFrame second[3] = { SampleFrame( 2.0f, -2.0f ), SampleFrame( 2.5f, -2.5f ),
+		SampleFrame( 3.0f, -3.0f ) };
+	recorder.writeBuffer( first, 2 );
+	recorder.writeBuffer( second, 3 );
+	QCOMPARE( recorder.framesRecorded(), f_cnt_t( 5 ) );
 
-	// The offset the copy hands the second block is the first block's frames; the room it
-	// leaves in the destination is that block's capacity.
-	std::size_t second = Untouched;
-	QVERIFY( AudioSampleRecorder::totalFramesWithin( counts.data() + 1, 1, 5 - 2, second ) );
-	QCOMPARE( second, std::size_t( 3 ) );
-}
+	const std::shared_ptr<const SampleBuffer> take = recorder.createSampleBuffer();
+	QVERIFY( take != nullptr );
+	QCOMPARE( take->size(), std::size_t( 5 ) );
 
-
-//! A count that alone would fill a size_t destination, plus one more frame: the checked sum
-//! must refuse it rather than wrap to 0, which would size an empty destination and copy into it.
-void AudioSampleRecorderTest::aCountPastTheDestinationsRoomIsRejectedWithoutWrapping()
-{
-	const FrameCounts counts{ std::numeric_limits<std::size_t>::max(), 1 };
-	std::size_t total = Untouched;
-
-	QVERIFY( !AudioSampleRecorder::totalFramesWithin( counts.data(), counts.size(),
-		std::numeric_limits<std::size_t>::max(), total ) );
-	QCOMPARE( total, Untouched );
-}
-
-
-//! No captured block is no frames, not an unset total.
-void AudioSampleRecorderTest::noBlocksIsAnEmptyTotal()
-{
-	std::size_t total = Untouched;
-
-	QVERIFY( AudioSampleRecorder::totalFramesWithin( nullptr, 0, 0, total ) );
-	QCOMPARE( total, std::size_t( 0 ) );
+	const SampleFrame* frames = take->data();
+	QCOMPARE( frames[0].left(), 1.0f );
+	QCOMPARE( frames[1].left(), 1.5f );
+	// Offset 2 - where the int copy cursor placed block 2.
+	QCOMPARE( frames[2].left(), 2.0f );
+	QCOMPARE( frames[3].left(), 2.5f );
+	QCOMPARE( frames[4].left(), 3.0f );
+	QCOMPARE( frames[4].right(), -3.0f );
 }
 
 
