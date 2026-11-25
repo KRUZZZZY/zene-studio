@@ -56,6 +56,7 @@
 #include "Engine.h"
 #include "ProjectIds.h"
 #include "ProjectJournal.h"
+#include "ProjectMarkers.h"
 #include "ProvenanceSection.h"
 #include "Song.h"
 #include "UndoHistory.h"
@@ -124,12 +125,20 @@ bool Song::restoreUndoSnapshot( const QByteArray & compressed, const QString & r
 	// same project stays in its format. A caller that puts back a session captured
 	// in another format (a checkpoint's displaced session) sets it after a restore.
 	const bool containerV2 = m_containerV2Project;
+	// The session's marker loss also survives the restore, for the same reason the
+	// skipped sections above do: the snapshot carries the REDUCED list, so the load
+	// forgets that this session came from a file holding more markers than the cap
+	// (ProjectMarkers::droppedOnLoad) and the next save would write that loss over
+	// the file that still holds them. Every caller restores this same session's own
+	// document, so the fact is still about the session after the restore.
+	const int droppedMarkers = ProjectMarkers::instance().droppedOnLoad();
 
 	m_restoringSnapshot = true;
 	loadProject( path );
 	m_restoringSnapshot = false;
 	const bool restored = m_loadRefusal.isEmpty();
 	if( restored ) { m_notLoadedSections = skippedSections; }
+	ProjectMarkers::instance().holdDroppedOnLoad( droppedMarkers );
 
 	setProjectFileName( fileName );
 	m_oldFileName = oldFileName;

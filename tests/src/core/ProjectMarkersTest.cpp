@@ -460,6 +460,66 @@ private slots:
 		song->clearProject();
 	}
 
+	//! The refusal is a fact about THIS session - it came from a file holding
+	//! more markers than the cap - so an in-place restore of the session's own
+	//! document must not forget it. Every undo step that carries a snapshot
+	//! (UndoHistory, control.undo, a session checkpoint, project.new's rollback)
+	//! reloads exactly that document, and that snapshot holds the REDUCED list:
+	//! a plain load lifts the refusal, and the next save then writes the
+	//! 512-marker list over the file that still has the rest, in silence - the
+	//! loss this whole test file is about. Measured without the fix: the save
+	//! below succeeds after the restore.
+	void anUndoRestoreDoesNotLiftTheOverCapSaveRefusal()
+	{
+		DataFile version(DataFile::Type::SongProject);
+		QString text = QStringLiteral("<?xml version=\"1.0\"?>\n<lmms-project version=\"%1\" type=\"song\" creator=\"Zene Studio\">\n"
+			"<head/><song><trackcontainer type=\"song\"><track type=\"0\" name=\"t\" muted=\"0\"><instrumenttrack/></track></trackcontainer>\n<markers>\n")
+			.arg(version.documentElement().attribute(QStringLiteral("version")));
+		for (int i = 0; i < ProjectMarkers::MaxMarkers + 3; ++i)
+		{
+			text += QStringLiteral("<marker id=\"%1\" tick=\"%2\" name=\"M%1\"/>\n").arg(i + 1).arg(i * 192);
+		}
+		text += QStringLiteral("</markers></song></lmms-project>\n");
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("over-cap.mmp"));
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(text.toUtf8()) == text.toUtf8().size());
+		}
+		const QString before = fileText(path);
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->setLoadOnLaunch(false);
+		song->loadProject(path);
+		QCOMPARE(ProjectMarkers::instance().markers().size(), ProjectMarkers::MaxMarkers);
+
+		// The restore an undo step performs: the session's own document back, in place.
+		const std::shared_ptr<const QByteArray> snapshot = song->captureUndoSnapshot();
+		QVERIFY(snapshot && !snapshot->isEmpty());
+		QVERIFY2(song->restoreUndoSnapshot(*snapshot), "the session's own snapshot did not restore");
+		QCOMPARE(ProjectMarkers::instance().markers().size(), ProjectMarkers::MaxMarkers);
+
+		const QString target = dir.filePath(QStringLiteral("out.mmp"));
+		QVERIFY2(!song->saveProjectFile(target),
+			"an undo restore lifted the refusal, so the next save writes the reduced marker list");
+		QVERIFY2(song->saveRefusal().contains(QStringLiteral("marker"), Qt::CaseInsensitive),
+			qPrintable(QStringLiteral("the refusal does not name the markers: %1").arg(song->saveRefusal())));
+		QVERIFY2(!QFile::exists(target), "the refused save left a file behind");
+		QCOMPARE(fileText(path), before);
+
+		// Cleared, the same session saves again: the refusal is about the loss it
+		// carries, not about markers or snapshots in general.
+		song->clearProject();
+		QVERIFY(ProjectMarkers::instance().add(96, QStringLiteral("Fits"), QString()) > 0);
+		QVERIFY2(song->saveProjectFile(target), qPrintable(song->saveRefusal()));
+		QVERIFY(song->saveRefusal().isEmpty());
+		QVERIFY(QFile::exists(target));
+	}
+
 	//! A marker action is stored so that the CROSSING can run it, so its
 	//! arguments have to satisfy the command it names - refused here, where the
 	//! mistake is, rather than on every crossing of the marker in playback.

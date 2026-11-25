@@ -123,3 +123,27 @@ Also: `dropped = total - offered`, so markers past the cap with an unparseable t
 Delegation (round 3): Haiku ran the GREEN build+ctest, both reverse-patch RED runs and the restore; I read
 test-1/test-2-redA/test-3-redB/test-4-green and `git status` myself and ran feature_check myself (one command).
 No Sonnet or DeepSeek use: no code was written this round.
+
+## QA follow-up (review round 3, by the reviewer)
+
+The refusal was not carried across an IN-PLACE restore of the session's own document.
+`Song::restoreUndoSnapshot` reloads the session from its snapshot, and that snapshot holds the REDUCED
+marker list, so `ProjectMarkers::load` reset `m_droppedOnLoad` to 0 and the next save wrote the 512-marker
+list over the file that still had the rest - silently, and through an ordinary undo: every undo step that
+carries a snapshot (`UndoHistory` with `persist` on, `control.undo`, a session checkpoint, `project.new`'s
+rollback) goes through that restore. Measured before the fix, with the round-3 product code in place:
+`ProjectMarkersTest::anUndoRestoreDoesNotLiftTheOverCapSaveRefusal` failed at `:507` - `saveProjectFile`
+returned true after `captureUndoSnapshot()` + `restoreUndoSnapshot()` of a 515-marker session.
+
+Fixed here in the same design, the way `m_notLoadedSections` is already held across the restore
+(`src/core/SongUndoSnapshot.cpp`): `ProjectMarkers::droppedOnLoad()` is read before the load and put back
+after it with `ProjectMarkers::holdDroppedOnLoad()` (only ever raises the count, so `clearProject()` and a
+load of another project still take it back to 0). Regression:
+`tests/src/core/ProjectMarkersTest.cpp::anUndoRestoreDoesNotLiftTheOverCapSaveRefusal`.
+
+Verified after the fix: `cmake --build build --target zene ProjectMarkersTest` EXIT=0 and
+`ctest -R '^(ProjectMarkersTest|PartialLoadTest|ProjectSectionTest|SessionCheckpointTest|SessionCheckpointBudgetTest|UndoHistoryPersistenceTest|UndoHistoryOptionsTest|ProjectContainerSaveTest)$'`
+EXIT=0, 8/8 passed; with only the two QA hunks reverted the new slot fails at `:507` EXIT=1.
+
+Gate note: `feature_check.py` could not run in the QA sandbox - its baseline checkout of `9913d36d53` is
+refused there (`bunny-guard: ... not allowed in a Bunny lane`), EXIT=1.
