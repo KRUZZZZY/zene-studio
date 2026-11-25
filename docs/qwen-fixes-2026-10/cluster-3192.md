@@ -190,8 +190,8 @@ case is shown by the SIGSEGV in the red run and by the clean green run; the data
 
 ## Other findings
 
-- `include/MpeExpression.h:192-196` still says "The caller stores the result on its note handles with plain
-  assignments" (round-1 wording). Left unchanged: a comment edit there rebuilds nearly the whole tree.
+(The stale `include/MpeExpression.h` "plain assignments" comment, flagged in review, is now fixed at `include/MpeExpression.h:155-157`; comment only.)
+
 - `InstrumentTrack::processInEvent()`, `MidiKeyPressure` branch: `m_notes[event.key()]->setVolume(...)` also reads
   the slot and writes a live handle from the input thread, with no guard. Same class of race, inherited. Not this finding.
 - `InstrumentTrack::retunePlayingNotes()` (`include/InstrumentTrack.h:140-149`) stores `m_frequencyNeedsUpdate` from the
@@ -205,3 +205,5 @@ slots; I read the logs and the diff myself. The first green build it reported as
 that from the log and the final runs were repeated. I wrote the fix, the tests and this report.
 
 Delegation (round 4): Haiku ran the red/green builds and the family run; I read `test-1-red.log` for the failing slot and `test-2-green.log` for the pass, and wrote the test and this report.
+
+Round 4, header comment follow-up (comment only, `include/MpeExpression.h:155-157`): `cmake --build build --target zene` plus the 17-test family targets, EXIT 0 (`build-4-header.log`); the 17-test family regex, EXIT 0, `100% tests passed out of 17` (`test-5-family.log`); `feature_check.py <worktree>`, EXIT 0, `RESULT: PASS` (`gate-2.log`). The red/green proof above is unchanged: the comment edit is not product behaviour and is not in `fix.patch`.

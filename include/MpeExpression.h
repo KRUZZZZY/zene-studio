@@ -152,8 +152,9 @@ private:
  *
  *  Realtime contract: every array is fixed-size and sized in the constructor,
  *  and noteOn()/noteOff()/handleExpressionEvent() allocate nothing and take no
- *  lock. The caller stores the result on its note handles with plain
- *  assignments.
+ *  lock. The caller must not write a live note handle from the input thread:
+ *  InstrumentTrack publishes current() per channel as one packed atomic, and
+ *  the render thread applies it in NotePlayHandle::play (cluster 3192).
  *
  *  Scope note: the model is one master channel excluded, every other channel
  *  a member - which covers MPE's lower zone (master 1, members 2-16) and its
