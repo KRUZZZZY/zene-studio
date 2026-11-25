@@ -1,177 +1,178 @@
-ALREADY-FIXED
+FIXED
 
-# Cluster new-p9-453-port-port: the SF2 audio path took mutexes — already fixed on this line
+# Cluster new-p9-453-port-port: the SF2 player kept the bytes of a SoundFont it had failed to load
 
 ## What the unit asked for
 
-The brief this run was composed from carries the cluster id and an **empty finding body**:
+The brief carries the cluster id and an **empty finding body** (`{"cluster": "new-p9-453-port-port",
+"title": ""}`), and "Where to start" is empty too. The cluster is the third hop of one fix chain,
+and the chain names the code:
 
-```json
-{ "cluster": "new-p9-453-port-port", "title": "" }
+- `bugs/qwen-new-p9-453` — cluster `new-p9-453`, the accepted fix for `BUG-INVENTORY.jsonl`
+  `finding_id 7683`: *"The SF2 audio path takes mutexes"*.
+- `bugs/qwen-new-p9-453-port` — cluster `new-p9-453-port`, the first hand port; its review
+  (`qa/reviews/new-p9-453-port.r1.md`) reads `ACCEPT-FIXED`.
+- this branch — the same port asked again on the newest line (`FIX-BASE` `050/m0-train-53`).
+
+I checked what the accepted branch still carries that this line does not:
+`git diff HEAD f439759d3b -- plugins/Sf2Player include/MidiHandoffQueue.h` leaves exactly two
+non-test behaviours this line does not have (items 2 and 3 below); item 1 is the finding's own
+defect.
+
+1. The mutex finding itself is **already fixed here**: the three mutexes do not exist, the only
+   lock is UI-side (`Sf2Player.cpp:474`, `:492`, callers at `:551`, `:587`, `:659`, `:668`, `:829`),
+   every synth runs with `synth.threadsafe-api = 0` (`:418`), and `RtSafetySweep` — which declares
+   `Sf2Instrument::playImpl`, `playNoteImpl`, `noteOn`, `noteOff`, `serviceSynthHandoff`,
+   `applyControls` and `publishNoteEvent` in `tests/rt-safety-scope.txt` — passes (**EXIT=0**, below).
+2. The `m_synthGeneration` guard from that branch is **dead code on this design**: `adopt()` retires
+   the old synth and clears every slot's `fluidVoices` in the same audio-thread call that swaps
+   `m_synth` (`Sf2Player.cpp:1131-1152`), and the teardown path never dereferences a voice pointer
+   (`:1498-1537`), so there is no stale-pointer window to guard. Not ported.
+3. The **font rollback** (`previousFontData`, qa-fix `dbffc38daf`, not an ancestor of this line) is
+   missing here, and it is a real defect that this branch now fixes and tests.
+
+## The defect
+
+`Sf2Instrument::openFile()` reads the candidate SoundFont into the instrument's own copy
+*`before`* it knows a synth can be built from it (`plugins/Sf2Player/Sf2Player.cpp:623-637`,
+assignment at `:635`). When the load then fails — the file's header passes `fluid_is_soundfont()`
+but FluidSynth cannot parse the chunks, or the candidate synth cannot be created or published —
+both failure branches (`:602-616`) kept the **new, unusable bytes** in `m_fontData` while
+`m_filename`, `m_sourceFile` and `m_presets` still named the font the player is really playing.
+
+The player then lies about its own state: the next `reloadSynth()` feeds those bytes back to
+FluidSynth, `addFontTo()` fails, and `reloadSynth()` takes its "keep the synth that still plays it"
+path (`:818-824`) and silently does nothing. The instrument can no longer be rebuilt, its patch
+dialog synth (`createPatchDialogSynth()`, `:844-864`) fails too, and the divergence only clears
+when another font is loaded successfully.
+
+## The fix (3 product lines)
+
+`plugins/Sf2Player/Sf2Player.cpp`, in `openFile()`: remember the bytes the player is playing
+(`:559`), and put them back on both failure branches (`:605`, `:613`). Success paths, the missing
+file path, and `loadSettings()`/`loadFile()` behaviour are untouched.
+
+```
+git diff --stat
+ plugins/Sf2Player/Sf2Player.cpp             |  7 ++++
+ tests/src/plugins/Sf2PlayerRealtimeTest.cpp | 65 +++++++++++++++++++++++++++++
+ tests/upstream-modifications.txt            |  1 +
 ```
 
-"Where to start" is empty as well (`.../runs/new-p9-453-port-port.r1/brief.md`). The unit is the
-third hop of one fix chain, and the cluster names the bug:
+## The regression test
 
-- `bugs/qwen-new-p9-453` — cluster `new-p9-453`, the accepted fix.
-- `bugs/qwen-new-p9-453-port` — cluster `new-p9-453-port`, the first hand port; its review
-  (`~/.local/share/zene-bunny-fix/qwen/qa/reviews/new-p9-453-port.r1.md`) reads `ACCEPT-FIXED`.
-- this branch — the same port asked again on the newest line (`FIX-BASE` is `050/m0-train-53`,
-  HEAD `3436a808b6` when the work started).
+`tests/src/plugins/Sf2PlayerRealtimeTest.cpp`, case `failedLoadKeepsTheFontForTheNextReload`
+(`:508-570`), in the existing file for the SF2 player area, driven through the shipped module:
 
-The only inventory record for the cluster is `BUG-INVENTORY.jsonl` `finding_id 7683`, cluster
-`new-p9-453`:
+1. loads the real SoundFont (`SF2_TEST_SOUNDFONT`) and lets the render thread adopt the synth;
+2. writes a **truncated copy** of that font (first 4 KiB) and asserts
+   `fluid_is_soundfont()` accepts it — the premise that makes the load fail *after* the read;
+3. calls `openFile()` with it: nothing is published, the playing synth stays;
+4. calls `reloadSynth()` and asserts a **new** synth was published, carries exactly one SoundFont,
+   and still plays a tone above 40 Hz.
 
-> BUG 9: The SF2 audio path takes mutexes
-> where: `plugins/Sf2Player/Sf2Player.cpp:685-688, 716-717, 775-777, 874`
-> what: Note processing and rendering lock `m_playingNotesMutex`, `m_synthMutex` and
->       `m_notesRunningMutex` on the audio path.
-> when: A UI or reload operation holds one of these mutexes while the audio callback needs it;
->       the callback blocks and can miss its deadline.
+Step 4 is the discriminator: with the defect the reload is refused and the old synth stays.
 
-That is the finding I adjudicated. It was real on the revision it was reported against
-(`ec338df42`), and on this line it is already fixed. No product file was changed.
+Deterministic: no timing, sleeps or threads. The inputs are a file the test writes itself, the
+player's own published synth address (`currentSynthAddress`), `fluid_synth_sfcount()` and the
+existing autocorrelation-based `playedFrequency()` helper.
 
-## Evidence: the defect is absent on this line
+## Evidence (this session, this worktree)
 
-**(1) The three mutexes the finding names do not exist in the module.** fff `multi_grep` over
-`plugins/Sf2Player/` for `m_playingNotesMutex`, `m_synthMutex`, `m_notesRunningMutex` returns
-**0 matches**.
+Logs: `~/.config/kads/zene/state/runs/new-p9-453-port-port.r2/logs/`.
 
-**(2) The one lock that is left is UI-side, and no audio-path function reaches it.** A grep of the
-whole module for `std::mutex|QMutex|lock_guard|unique_lock|try_lock` returns exactly these lines
-(plus two comments):
+| # | command | result |
+| --- | --- | --- |
+| 1 | `cmake --build build --target Sf2PlayerRealtimeTest -j4` → `build-1.log` | **EXIT=0** |
+| 2 | `ctest -R '^Sf2PlayerRealtimeTest$' --output-on-failure` (before the fix) → `test-red-1.log` | **EXIT=8**, `14 passed, 1 failed, 0 skipped`; failing case `failedLoadKeepsTheFontForTheNextReload`, `'reloadedSynth != loadedSynth' returned FALSE` at test line 565, with `fluidsynth: error: Failed to load SoundFont "zene-sf2-memory-font"` |
+| 3 | `cmake --build build --target Sf2PlayerRealtimeTest -j4` (with the fix) → `build-2.log` | **EXIT=0** |
+| 4 | `ctest -R '^Sf2PlayerRealtimeTest$' --output-on-failure` (with the fix) → `test-green-2.log` | **EXIT=0**, `100% tests passed out of 1` |
+| 5 | `python3 .../feature_check.py <worktree>` → `gates-1.log` | **EXIT=0**, `RESULT: PASS` (8 gates, incl. `file-length no new item in your files`, `complexity no new item in your files`) |
+| 6 | `ctest -R 'RtSafetySweep\|RtSafetySelfTest'` → `test-rt-1.log` | **EXIT=0**, `100% tests passed out of 2` |
+| 7 | `cmake --build build --target PluginPortsMigrationTest -j4` → `build-sibling-1.log` | **EXIT=0** |
+| 8 | `ctest -R '^PluginPortsMigrationTest$'` → `test-sibling-2.log` | **EXIT=8**: `95 passed, 4 failed, 2 skipped`. Both SF2 cases are **skipped** (`SF2Player is not built in this configuration`), so this target does not compile the file I changed and gives no signal either way; the 4 failures are `malletsVoiceLimitIsPerInstrument`, `malletsVoiceLimitSurvivesDeviceChange`, `nonRealtimeLadspaEffectsAreInvalid`, `slice8PluginsAreLiveAndExact` — Mallets/LADSPA/slice8, see Other findings |
 
-| file:line | what |
-| --- | --- |
-| `plugins/Sf2Player/Sf2Player.h:407-408` | `m_synthHandoffMutex` — "Serialises UI-side producers/consumers of the two queues; the audio thread never takes it." |
-| `plugins/Sf2Player/Sf2Player.cpp:474` | the only `std::lock_guard`, inside `publishSynth()` (`:466-486`) |
-| `plugins/Sf2Player/Sf2Player.cpp:492` | `drainRetiredSynths()` (`:490-494`) |
-
-Their callers are UI-side only: `publishSynth()` from `openFile()` (`:582`) and `reloadSynth()`
-(`:822`); `drainRetiredSynths()` from `openFile()` (`:551`), `updatePatch()` (`:652`) and
-`getCurrentPatchName()` (`:661`). A grep for `wait(|sleep(|msleep|QThread::` in
-`plugins/Sf2Player/Sf2Player.cpp` matches no call, only two comments that mention waiting.
-
-**(3) What replaced the mutexes, on the audio thread:**
-
-| file:line | what |
-| --- | --- |
-| `Sf2Player.cpp:418` | every synth is created with `synth.threadsafe-api = 0`, so no FluidSynth call the render thread makes can take FluidSynth's API mutex |
-| `Sf2Player.cpp:1120-1165` | `serviceSynthHandoff()` adopts a published synth at a period boundary through `m_pendingSynths` (bounded, lock-free `Sf2PointerQueue`, `Sf2Player.h:402`) and retires the old one through `m_retiredSynths` (`Sf2Player.h:404`); the retired synth is deleted by the UI thread (`Sf2Player.cpp:498-506`), never by the audio thread |
-| `Sf2Player.h:435` | `MidiHandoffQueue<NoteEventCapacity, Sf2NoteEvent> m_noteEvents` — the bounded lock-free note hand-off, "neither allocates, grows a container nor waits for a lock" (`Sf2Player.h:430-434`) |
-| `Sf2Player.h:438` | `m_pluginDataSlots` — preallocated per-note plugin data; a note claims a slot for its life (`Sf2Player.cpp:888-894`) |
-
-**(4) The fix is on this line by ancestry, not by my edit.** `git merge-base --is-ancestor <c> HEAD`
-reports these as ancestors of `3436a808b6`:
-
-- `370df75734` fix(sf2): realtime note tracking and lock-free synth hand-off (new-p9-454, new-p9-453)
-- `3c57b7e545` fix(sf2): one settings object per synth, no control call on the render path
-- `d73caeacaf` fix(sf2): a render path that cannot wait, a reload that keeps the font
-- `4510382de8` fix(sf2): one SoundFont instance per synth
-- `4094d8d438` fix(sf2): a teardown note-off the full note event queue refused
-
-The accepted branch's own commits are **not** ancestors (`6072eee267`, `422971ae8b`): the same
-behaviour reached the train through the `new-p9-454` line, which is why this port has nothing left
-to apply.
-
-## Execution evidence (this session, this worktree)
-
-Logs are in `~/.config/kads/zene/state/runs/new-p9-453-port-port.r1/logs/`.
+### Step 4b — the test catches the bug
 
 | command | result |
 | --- | --- |
-| `cmake --build build --target Sf2PlayerRealtimeTest -j4` → `build-1-sf2realtime.log` | **EXIT=0** |
-| `cd build/tests && ctest -R '^Sf2PlayerRealtimeTest$' --output-on-failure` → `test-1-sf2realtime.log` | **EXIT=0**, `1/1 Test #236: Sf2PlayerRealtimeTest ... Passed` |
-| `cd build/tests && ./Sf2PlayerRealtimeTest` → `test-2-sf2realtime-direct.log` | **EXIT=0**, `Totals: 14 passed, 0 failed, 0 skipped, 0 blacklisted` |
-| `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` → `gates-1.log` | **EXIT=0**, `RESULT: PASS` (0 changed files at that point) |
-| `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-453-port-port` → `submit-1.log` | **EXIT=0**, `RESULT: PASS - submit`, no FAIL item |
+| `git diff -- plugins/Sf2Player/Sf2Player.cpp > <logs>/fix.patch` | **EXIT=0** |
+| `git apply -R <logs>/fix.patch` → `patch-reverse-1.log` | **EXIT=0** |
+| `cmake --build build --target Sf2PlayerRealtimeTest -j4` → `build-red-2.log` | **EXIT=0** |
+| `ctest -R '^Sf2PlayerRealtimeTest$' --output-on-failure` → `test-red-2.log` | **EXIT=8** — `failedLoadKeepsTheFontForTheNextReload`, `'reloadedSynth != loadedSynth' returned FALSE (the reload could not rebuild from the font the instrument still plays)` |
+| `git apply <logs>/fix.patch` → `patch-restore-1.log` | **EXIT=0** |
+| `cmake --build build --target Sf2PlayerRealtimeTest -j4` → `build-green-3.log` | **EXIT=0** |
+| `ctest -R '^Sf2PlayerRealtimeTest$' --output-on-failure` → `test-green-3.log` | **EXIT=0**, `100% tests passed out of 1` |
 
-The guard that would fail if this finding came back is already in the tree, and it is what I ran:
-
-- `renderPathAppliesTheState` (`tests/src/plugins/Sf2PlayerRealtimeTest.cpp:230-281`) reads the live
-  synth and asserts `synth.threadsafe-api == 0` (`:250-252`), then arms the allocation counter and
-  asserts one render period allocates **0** times (`:272-280`).
-- `notePathAllocatesNothing` (`:196-220`) asserts the note stage allocates 0 times around
-  `playNote`.
-- `aStartedNoteIsStoppedWhenTheEventQueueIsFull` and `renderSurvivesAPendingReload` cover the
-  exhaustion and reconfiguration paths.
-
-All 14 cases passed with **0 skipped**, so these are real assertions and not skips.
-
-## Test matrix (procedure step 3)
-
-I added no test, because there is no product change to guard: a test written here would pass with
-and without any edit, which the rules call a wrong test. The matrix below is what the existing
-suite already exercises, and I ran all of it:
+## Test matrix
 
 | path | case | result |
 | --- | --- | --- |
-| normal | `playsWithARealSoundFont`, `notePathAllocatesNothing` | PASS |
-| failure / refusal | `aStartedNoteIsStoppedWhenTheEventQueueIsFull` | PASS |
-| exhaustion | `moreNotesThanTheOldPoolGetSlots` | PASS |
-| reconfiguration | `renderSurvivesAPendingReload`, `everySynthHasItsOwnSettings` | PASS |
-| audio-thread constraints | `renderPathAppliesTheState` (threadsafe-api 0, 0 allocations) | PASS |
-| font lifetime | `reloadKeepsTheSoundFontWhenTheFileIsGone`, `everySynthHasItsOwnSoundFont` | PASS |
-| platform build | Linux only here; no product file changed, so hosted CI sees the same code | n/a |
+| normal load | `playsWithARealSoundFont`, `notePathAllocatesNothing` | PASS |
+| failure (read fails early: missing file) | `PluginPortsMigrationTest::sf2FailedLoadPreservesCurrentFontAndSource` | skipped in that configuration (row 8) |
+| failure after read (this fix) | `failedLoadKeepsTheFontForTheNextReload` | RED 8 → GREEN 0 |
+| exhaustion | `moreNotesThanTheOldPoolGetSlots`, `aStartedNoteIsStoppedWhenTheEventQueueIsFull` | PASS |
+| reconfiguration | `renderSurvivesAPendingReload`, `everySynthHasItsOwnSettings`, `reloadKeepsTheSoundFontWhenTheFileIsGone` | PASS |
+| audio-thread constraints | `renderPathAppliesTheState`, `RtSafetySweep`, `RtSafetySelfTest` | PASS (EXIT=0) |
+| supported platforms | no new API, no Qt-6-only call: `QByteArray`, `QFile::encodeName`, `QCOMPARE` — build checked on Linux; hosted CI covers Qt 5/MSVC | unverified here |
 
-## Why the remaining hunks of the accepted branch are not ported here
+## Callers and siblings checked
 
-`git diff HEAD f439759d3b -- plugins/Sf2Player include/MidiHandoffQueue.h` leaves exactly two
-non-test behaviours. I checked both against the code rather than copying them:
+- `m_fontData` is assigned in exactly three places after this change: the save (`:559`), the two
+  restores (`:605`, `:613`), and `loadFont()`'s success path (`:635`). Nothing else can clobber it.
+- `openFile()` callers: `loadSettings()` (`:322`), `loadFile()` (`:350`), the constructor's default
+  font (`:213` via `loadFile`) and the patch dialog (`:1821`). All run on the UI thread.
+- Readers of `m_fontData` are `addFontTo()` (`:643-649`) and `reloadSynth()`'s guard (`:818`);
+  `createPatchDialogSynth()` goes through `addFontTo()`. They now see the bytes of the font the
+  player is playing, which is exactly what they assume.
+- Undo, commands and save formats: untouched. No control command added.
 
-1. **The `m_synthGeneration` guard in `playNoteImpl`/`noteOn`** (the accepted batch's new-p9-451
-   part). That branch needed it because a swap could run while voice pointers were live. Here
-   `adopt()` retires the old synth and clears **every** slot's `fluidVoices` in the same audio-thread
-   call that swaps `m_synth`: `m_retiredSynths.push` then `m_synth = next.synth` then the
-   `for (auto& slot : m_pluginDataSlots) slot.data.fluidVoices.clear()` (`Sf2Player.cpp:1127-1144`).
-   The note teardown path never dereferences a voice pointer — it uses only the slot generation
-   word (`Sf2Player.cpp:1491-1530`). There is no window in which a note can reach a retired synth,
-   so the guard would be dead code here, and unprovable by a failing test.
-2. **The `previousFontData` restore in `openFile()`** (qa-fix `dbffc38daf`, also not an ancestor).
-   On this line `loadFont()` assigns `m_fontData` only on its success path
-   (`Sf2Player.cpp:616-630`, assignment at `:628`), and a later reload refuses to build from an
-   unloadable font and keeps the synth that still plays (`Sf2Player.cpp:810-817`). The residual
-   divergence is recorded under **Other findings** instead of fixed here: it is a font-bytes
-   finding, not the locks finding, and no public path in the test harness can show it failing.
+## Realtime
+
+The change is UI-side only: `openFile()` is never called from the audio thread, and the restore is
+a `shared_ptr` assignment plus a `shared_ptr` copy on the UI thread. Nothing was added to
+`playImpl`, `playNoteImpl`, `noteOn`, `noteOff`, `serviceSynthHandoff`, `applyControls` or
+`renderFrames`; `RtSafetySweep` and `RtSafetySelfTest` pass (**EXIT=0**).
 
 ## Self-check
 
-- **The regression test FAILS with your product change reverted and PASSES with it (exit codes).**
-  There is no product change to revert: `git diff --stat 050/m0-train-53..HEAD` lists this report
-  only. The contract test that guards the finding is `Sf2PlayerRealtimeTest`, which I ran with
-  **EXIT=0** and `Totals: 14 passed, 0 failed, 0 skipped`. I did not stage a red run: without a
-  product edit any such run would be a test that passes for the wrong reason.
-- **The test is deterministic.** No wall-clock timing, sleeps or races. The counts come from a
-  replacement global `operator new` armed around exactly one call (`allocationCount` / `counting`,
-  `Sf2PlayerRealtimeTest.cpp:212-220`), and the state is read back through
-  `currentSynthAddress`, `runningNotesForTest` and `fillNoteEventQueueForTest`
-  (`Sf2PlayerFixture.h:120-172`, `QMetaObject::invokeMethod` with `Qt::DirectConnection`) and
-  FluidSynth's own `fluid_settings_getint`, `fluid_synth_get_gain`, `fluid_synth_get_sfont`.
-- **The fix is at the cause and complete.** The cause — one `fluid_synth_t*` shared between the
-  render thread and the UI side behind three mutexes — is gone. Every audio-thread entry point
-  (`playImpl`, `playNoteImpl`, `noteOn`, `noteOff`, `applyControls`, `renderFrames`,
-  `serviceSynthHandoff`, `applyPendingTeardownNoteOffs`) takes no lock; the only lock left is
-  `m_synthHandoffMutex`, and I listed all three of its call sites and their five callers above, all
-  UI-side. Retirement and deletion are split by `m_retiredSynths` so the audio thread never frees.
-- **No collateral damage.** No product or data file changed, so projects save and load exactly as
-  before; `reloadKeepsTheSoundFontWhenTheFileIsGone` covers a project whose SoundFont file has gone,
-  and `everySynthHasItsOwnSoundFont` covers two instruments on one font.
-- **If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code that shows it.**
-  `plugins/Sf2Player/Sf2Player.cpp:466-494` (the only lock, UI-side), `:1120-1165` (the lock-free
-  adopt path), `:418` (FluidSynth's API mutex switched off),
-  `plugins/Sf2Player/Sf2Player.h:401-408` and `:430-438` (the bounded queues and the preallocated
-  slots), and the passing `renderPathAppliesTheState` case that asserts the contract on a live synth.
+- **The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
+  Reverted: `test-red-2.log` **EXIT=8** (`failedLoadKeepsTheFontForTheNextReload`,
+  `'reloadedSynth != loadedSynth' returned FALSE`). Restored: `test-green-3.log` **EXIT=0**. The
+  same case also failed before the fix was written (`test-red-1.log`, **EXIT=8**).
+- **The test is deterministic.** No wall-clock timing, sleeps or races: it writes its own truncated
+  font, injects nothing, and reads the player's own published synth address
+  (`currentSynthAddress`), `fluid_synth_sfcount()` and the existing autocorrelation helper. The
+  premise (`fluid_is_soundfont` accepts the truncated file) is asserted, so a change in FluidSynth's
+  header check fails loudly instead of turning the test into a false pass.
+- **The fix is at the cause and complete.** The cause is that the bytes were replaced before the
+  load could fail; they are now saved and restored on both failure branches. Every writer and reader
+  of `m_fontData` is listed above, and the sibling `reloadSynth()`/`createPatchDialogSynth()` paths
+  are consistent with it.
+- **No collateral damage.** The success path, the missing-file path and the saved-state path are
+  unchanged, so old projects load exactly as before; the only behaviour that changes is the one the
+  test pins. The whole `Sf2PlayerRealtimeTest` family passes, including
+  `reloadKeepsTheSoundFontWhenTheFileIsGone`. `PluginPortsMigrationTest` — which owns the older
+  missing-file case — skips both SF2 cases in this configuration (`SF2Player is not built`), so it
+  neither exercises nor contradicts this change; its four failures are unrelated (Other findings).
+- **Registration.** `plugins/Sf2Player/Sf2Player.cpp` is an inherited file: a line was added to
+  `tests/upstream-modifications.txt` naming this cluster and the regression, in the same commit
+  (`fork-sources` and `no-upstream-regression` gates PASS).
+- **Proof manifest fits the claim.** A `regression-test` artifact names
+  `tests/src/plugins/Sf2PlayerRealtimeTest.cpp` (changed by this branch) and
+  `failedLoadKeepsTheFontForTheNextReload`, with `red_exit 8` and `green_exit 0`.
 
 ## Other findings
 
-1. **Font bytes are not rolled back after a failed load.** `openFile()` reads the new font into
-   `m_fontData` before it knows a synth can be built (`Sf2Player.cpp:616-630`), and on both failure
-   paths (`:596-609`) it leaves the new bytes in place while `m_filename`, `m_sourceFile` and
-   `m_presets` still name the old font. Playback survives, because `reloadSynth()` refuses an
-   unloadable font and keeps the playing synth (`:810-817`), but `createPatchDialogSynth()` then
-   fails at `:847-853`, so the Patches dialog is empty after a failed load. The accepted branch
-   restored the previous bytes (`dbffc38daf`); that commit is not an ancestor of this line. Not
-   fixed here: it is a different finding, and no public harness path can currently show it failing.
-2. **The accepted branch rewrote `tests/all-sources.txt`** — its commit stat shows `1149 +---` — which
-   looks like a hand regeneration. Noted so the queue does not merge that file from the stale branch.
+1. The generation guard of the accepted branch stays unported: on this design `adopt()` clears the
+   slots on the audio thread (`Sf2Player.cpp:1131-1152`) and nothing dereferences a retired voice, so
+   porting it would add unprovable dead code.
+2. The accepted branch rewrote `tests/all-sources.txt` (its stat shows `1149 +---`), which looks like
+   a hand regeneration; the queue should not merge that file from the stale branch.
+
+3. `PluginPortsMigrationTest` has four failing cases on this tree, none of them SF2 and none reachable
+   from this change: `malletsVoiceLimitIsPerInstrument` (`:2801`), `malletsVoiceLimitSurvivesDeviceChange`
+   (`:2959`), `nonRealtimeLadspaEffectsAreInvalid` (`:1633`, SWH Decimator fixture not loaded) and
+   `slice8PluginsAreLiveAndExact` (`:6101`, malletsstk rendered silence) — `test-sibling-2.log`. That
+   target reports `SF2Player is not built in this configuration`, so it does not compile the file this
+   branch changed. I did not run a base-tree comparison for them; they are listed here, not fixed.

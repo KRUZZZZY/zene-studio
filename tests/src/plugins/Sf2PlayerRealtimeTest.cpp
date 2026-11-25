@@ -127,6 +127,7 @@ private slots:
 	void renderSurvivesAPendingReload();
 	void playsWithARealSoundFont();
 	void reloadKeepsTheSoundFontWhenTheFileIsGone();
+	void failedLoadKeepsTheFontForTheNextReload();
 	void everySynthHasItsOwnSoundFont();
 	void theTuningOffsetMatchesFluidSynthsKeyTuning();
 	void aStartedNoteIsStoppedWhenTheEventQueueIsFull();
@@ -502,6 +503,70 @@ void Sf2PlayerRealtimeTest::reloadKeepsTheSoundFontWhenTheFileIsGone()
 	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "getCurrentPatchName",
 		Qt::DirectConnection, Q_RETURN_ARG(QString, patchName)));
 	QVERIFY2(!patchName.isEmpty(), "the preset list was cleared by the reload");
+}
+
+void Sf2PlayerRealtimeTest::failedLoadKeepsTheFontForTheNextReload()
+{
+	if (!QFile::exists(QString::fromUtf8(SF2_TEST_SOUNDFONT)))
+	{
+		QSKIP("this tree has no SoundFont to play");
+	}
+
+	Sf2Fixture fixture;
+	if (!fixture.create())
+	{
+		QSKIP("this build has no SF2 player module (no FluidSynth)");
+	}
+
+	const auto frames = lmms::Engine::audioEngine()->framesPerPeriod();
+	std::vector<lmms::SampleFrame> buffer(static_cast<std::size_t>(frames));
+	const std::span<lmms::SampleFrame> span{buffer};
+
+	// The player loads the real font and the render thread adopts the synth.
+	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "openFile", Qt::DirectConnection,
+		Q_ARG(QString, QString::fromUtf8(SF2_TEST_SOUNDFONT))));
+	fixture.instrument->play(span);
+	auto* loadedSynth = fixture.synth();
+	QVERIFY(loadedSynth != nullptr);
+	QCOMPARE(fluid_synth_sfcount(loadedSynth), 1);
+
+	// A file whose header FluidSynth accepts but whose chunks are cut off: the
+	// header check passes, so the player reads the bytes into its own copy
+	// before it learns that no synth can be built from them.
+	QTemporaryDir directory;
+	QVERIFY(directory.isValid());
+	const QString truncatedPath = directory.filePath(QStringLiteral("truncated.sf2"));
+	{
+		QFile source(QString::fromUtf8(SF2_TEST_SOUNDFONT));
+		QVERIFY(source.open(QIODevice::ReadOnly));
+		const QByteArray head = source.read(4096);
+		QFile truncated(truncatedPath);
+		QVERIFY(truncated.open(QIODevice::WriteOnly));
+		QCOMPARE(truncated.write(head), static_cast<qint64>(head.size()));
+	}
+	const QByteArray truncatedName = QFile::encodeName(truncatedPath);
+	QVERIFY2(fluid_is_soundfont(truncatedName.constData()),
+		"the premise of the test needs a file FluidSynth's header check accepts");
+
+	// The load fails and publishes nothing: the synth that is playing stays.
+	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "openFile", Qt::DirectConnection,
+		Q_ARG(QString, truncatedPath)));
+	fixture.instrument->play(span);
+	QCOMPARE(fixture.synth(), loadedSynth);
+
+	// A failed replacement must not eat the font the instrument is playing: the
+	// player keeps its own copy of the bytes, so the next reload still builds a
+	// synth from them. A player that kept the failed load's bytes refuses this
+	// reload and silently stays on the old synth.
+	QVERIFY(QMetaObject::invokeMethod(fixture.instrument.get(), "reloadSynth", Qt::DirectConnection));
+	fixture.instrument->play(span);
+	auto* reloadedSynth = fixture.synth();
+	QVERIFY(reloadedSynth != nullptr);
+	QVERIFY2(reloadedSynth != loadedSynth,
+		"the reload could not rebuild from the font the instrument still plays");
+	QCOMPARE(fluid_synth_sfcount(reloadedSynth), 1);
+	QVERIFY2(fixture.playedFrequency(span, 60) > 40.,
+		"the rebuilt synth does not play the kept soundfont");
 }
 
 void Sf2PlayerRealtimeTest::everySynthHasItsOwnSoundFont()
