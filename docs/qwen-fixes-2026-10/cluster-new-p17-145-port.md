@@ -54,7 +54,11 @@ is null afterwards.
 
 ## Self-check
 
-(answered after `submit_check.py`, below)
+- Red/green: with `include/RemotePluginAudioPorts.h` reverted the test fails (ctest EXIT=8, `test-3.log`); with the fix it passes (EXIT=0, `test-4.log`).
+- Deterministic: no sleeps or timing. Seam is `AudioEngine::modelChangeWaiters()` (`include/AudioEngine.h:671`, counts a thread parked in `requestChangeInModel()`), plus atomics handing off between a stand-in render thread and the detacher; without the fix the detacher finishes immediately, which the loop also exits on, so the test fails instead of hanging.
+- Complete: the only writers of `m_buffers` are `connectBuffers` (`RemotePlugin.cpp:189`) and `disconnectBuffers` (`RemotePlugin.cpp:218`), both guarded now; the other buffer-view writers (`updateBuffers`, `updateAudioBuffer`) were already guarded. The guard is recursive and a no-op on the render thread.
+- No collateral damage: control-thread-only change, no saved-data or protocol change, no limit added; `ConnectAndDisconnectBuffers` and the 12-test RemotePlugin family still pass.
+- Not an ALREADY-FIXED / FALSE-POSITIVE verdict.
 
 ## Other findings
 
