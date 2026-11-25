@@ -127,4 +127,4 @@ The new helpers are plain C++ on `uintptr_t` and use no Qt API. They sit inside 
 `small`/`near`/`far`/`interface`/`min`/`max` identifier. The Darwin calls (`pthread_get_stackaddr_np`,
 `mach_thread_self`) predate 10.15.
 
-**Completion check.** See `submit-check-1.log`, quoted in the commit that follows this report.
+**Completion check.** `PATH=/tmp/liz-224/bin:$PATH python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> Q050-224.2`, logged in `submit-check-1.log`, ran against `b6b0efb85d` and exited **0** with `RESULT: PASS - submit`. Every row passed, including `gates (feature_check.py)`, and no row read FAIL or WARN.
