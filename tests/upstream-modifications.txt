@@ -6152,3 +6152,5 @@ tests/CMakeLists.txt	cluster ci-e58078851126eac9-port: register ScriptClockQt5Js
 src/gui/editors/StepRecorderWidget.cpp	cluster new-p16-242: setPixelsPerBar rejects non-positive values and the paintEvent ruler loop is skipped unless m_ppb > 0, so a zero scale (constant xCoordOfTick) can no longer hang painting.
 include/StepRecorderWidget.h	cluster new-p16-242: m_ppb gets a default member initializer of 1 so a rejected non-positive constructor value never leaves it uninitialised.
 tests/src/gui/StepRecorderWidgetTest.cpp	cluster new-p16-242: adds a subprocess regression that paints after setPixelsPerBar(0) and must finish.
+src/tracks/SampleTrack.cpp	cluster 3503: a pattern-store pass whose seek lands at or past the clip window end schedules no handle and latches nothing (the arrangement branch already refuses an empty window); held by tests/src/tracks/SampleClipWindowTest.cpp patternPassPastTheWindowSchedulesNothing
+tests/CMakeLists.txt	cluster 3503: register SamplePatternPassWindowTest, the pattern-pass empty-window regression that does not fit SampleClipWindowTest.cpp under Gate 7.
