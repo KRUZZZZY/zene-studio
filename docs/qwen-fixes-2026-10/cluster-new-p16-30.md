@@ -142,6 +142,18 @@ an edit (`fork-sources` and `no-upstream-regression` exit 0).
 - **One undo step, nothing new on the audio thread.** `addUndoStep` is unchanged (the undo still removes the
   placed track and rewrites the journal as `in_progress`), `aPlaceUndoRedoIsOneStep` passes; the placement code
   runs on the control thread and adds no allocation, lock, wait or log to any per-period path.
+- **Sibling commands of the `record` group (as the submit check lists them).** My file registers only
+  `record.recovery_place`; the other `record.*` verbs live in files this change does not touch and none of them
+  places audio, so none needs the bound: `record.recovery_restore` (resolve-only,
+  `src/core/ControlCommandsRecordingRecovery.cpp:124-131`), `record.recovery_discard` (removes the journal),
+  `record.recovery_get_state` (reports `frames_recoverable`/`frames_in_file` — unchanged, and now it agrees with the
+  clip by construction because the clip is bounded by that same number), and the capture verbs
+  `record.arm_track`, `record.disarm_track`, `record.disarm_all`, `record.get_state`, `record.input_get_state`,
+  `record.input_set`, `record.journal_begin`, `record.journal_update`, `record.journal_finish`,
+  `record.midi_capture_status`, `record.midi_capture_commit` (they write or report the take's journal count, which
+  the bound reads through `recoverableFrames()` — `include/RecordingJournal.h:122-125` — so a journal written by any
+  of them is what the placed clip plays). No params or result schema changed on any of them, so the
+  `ControlCommandsSnapshot` canary does not move.
 - **Verdict cites evidence.** REAL: `src/core/audio/TrackRecorder.cpp:262-272` (the crash window),
   `src/core/RecordingJournal.cpp:310-319` (the count is the smaller number), and round-1 placement at
   `src/core/ControlCommandsRecordingPlace.cpp:62-69`, now bounded at `:81-89`.
