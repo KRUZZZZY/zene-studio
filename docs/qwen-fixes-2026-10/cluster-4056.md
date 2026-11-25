@@ -31,12 +31,12 @@ FALSE` — `Totals: 3 passed, 3 failed` (`test-1-red.log`).
 
 `src/core/ControlMasteringSupport.cpp` only, plus the declaration's comment:
 
-- `applyMasteringInverse(created, before)` (`:235-291`, file-static in an anonymous namespace) applies the whole
-  recorded inverse and returns the refusals `'; '`-joined, empty when everything worked. Each operation still runs
-  (`created` first, then the write-backs), so one refused file does not abandon the rest of the inverse. A name the
-  run created that is already gone is NOT a failure (`QFile::exists` guard, `:263`) — the inverse's goal, an absent
-  file, already holds. Removal uses the member `QFile::remove()` so `errorString()` is readable (`:265-270`); a failed
-  open (`:280-284`) and a short write (`:287-294`) are both reported with the byte counts.
+- `applyMasteringInverse(created, before)` (`:249`, inside the anonymous namespace at `:230-293`) applies the whole
+  recorded inverse and returns the refusals `'; '`-joined (`:290`), empty when everything worked. Each operation still
+  runs (`created` first, then the write-backs), so one refused file does not abandon the rest of the inverse. A name
+  the run created that is already gone is NOT a failure (`QFile::exists` guard, `:259`) — the inverse's goal, an
+  absent file, already holds. Removal uses the member `QFile::remove()` so `errorString()` is readable (`:260-265`); a
+  failed open (`:273-278`) and a short write (`:279-288`) are both reported with the byte counts.
 - The closure (`:305-317`) is now three lines of work and reports ONCE:
   `const QString why = applyMasteringInverse(createdCopy, beforeCopy); if (!why.isEmpty()) { recordActionRestoreFailure(...) }`
   — CCN 2, and the helper stays under 10 (7: two loops and four conditionals, no nesting).
