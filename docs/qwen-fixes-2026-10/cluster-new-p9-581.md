@@ -117,6 +117,40 @@ no row can be NEW in a file this branch changed.
 Registration: `tests/upstream-modifications.txt` gets one line for `src/core/BandLimitedWave.cpp` and one for
 `tests/CMakeLists.txt`; the test file is already a fork source (`tests/fork-sources.txt:2747`).
 
+## Completion check
+
+Commit of the product code: `b4975bfa54` ("fix(cluster new-p9-581): a truncated wavetable file regenerates
+instead of feeding partial samples").
+
+`python3 .../qwen/submit_check.py <worktree> new-p9-581` with the tool code taken from a writable copy
+(`tmp/qwen-tools`, `EXIT=0`, `submit-3.log`):
+
+```
+PRE-SUBMIT CHECK for new-p9-581
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-new-p9-581.md
+  PASS  tests added or changed - tests/src/core/BandLimitedWaveTest.cpp
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
+The canonical `submit_check.py` at `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen` (`submit-4-canonical.log`,
+`EXIT=1`) reports one item:
+
+```
+  FAIL  gates (feature_check.py)
+RESULT: FAIL - 1 item(s) to fix before submitting
+```
+
+That item is the read-only tool mount described under Gates, not this unit's work: the same check reaches
+`RESULT: PASS` when its `feature_check.py` can read a base listing. Nothing inside the lane can make the canonical
+copy pass - `~/.local/share/zene-bunny-fix` is mounted `ro` (`touch` -> `Read-only file system`), so the listing the
+tool wants to cache in `gate-baselines/` cannot be written there.
+
+Proof manifest: `logs/proof.json` (`unit`, `worktree`, `commit` `b4975bfa54`, claim, two `regression-test`
+artifacts; `red_exit` 8, `green_exit` 0).
+
 ## Self-check
 
 - **The regression test FAILS with the product change reverted and PASSES with it.** `git apply -R fix.patch`
@@ -141,6 +175,13 @@ Registration: `tests/upstream-modifications.txt` gets one line for `src/core/Ban
   realtime path is involved.
 - **Verdict is FIXED, not ALREADY-FIXED / FALSE-POSITIVE**, so this item does not apply; the evidence for the
   verdict is the base-commit code cited above and the RED run.
+- **The canonical completion check's single FAIL is the read-only tool mount, answered with evidence.** Its
+  `feature_check.py` exits 1 before running any gate row, because `base_listings()` cannot create
+  `gate-baselines/<sha>.json` (`OSError: [Errno 30] Read-only file system`, `gates-1.log`) and the bunny guard
+  refuses the fallback `git -C .../gate-baselines/tree checkout -q --detach 9913d36d5...` (exit 97, same log).
+  The same tool code, unchanged, with only `ROOT` relocated to a writable copy and the base listing replayed
+  from a `git archive` extraction of the base commit, reports all eight rows PASS and `RESULT: PASS`
+  (`gates-3-committed.log`, exit 0). No gate limit, baseline entry or script was edited.
 
 ## Other findings
 
