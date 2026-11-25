@@ -47,7 +47,7 @@ and requires 0 dB reduction and output equal to input within 1e-6. No timing, no
 
 `python3 .../feature_check.py <worktree>` could NOT run: it exited 1 (feature-check-1.log) because its own
 `git checkout --detach` on the baseline tree was refused by bunny-guard (exit 97). I did not work around it. Checked by hand instead:
-the new function is a straight-line body (CCN 1); the new test file is 127 lines; the new test file and this report are in tests/fork-sources.txt (file ends with a newline);
+the new function is a straight-line body (CCN 1); the new test file is 134 lines; the new test file and this report are in tests/fork-sources.txt (file ends with a newline);
 DeEsser.h was already in fork-sources.txt; tests/CMakeLists.txt was already in tests/upstream-modifications.txt.
 The registration this missed - tests/src/plugins/DeEsserBypassTest.cpp in tests/all-sources.txt - was added by the QA
 review (`qa-fix(new-p14-85)`); the manifest now reproduces from its own recipe (`bash tests/all-sources-reproduce.sh`
@@ -70,3 +70,16 @@ Delegation: Haiku was started three times (a first build run that found configur
 ## Other findings
 
 None noticed beyond the finding's 60 s vs 60 ms discrepancy.
+
+## Round 2 (sent back for tests/all-sources.txt)
+
+- The new test was missing from tests/all-sources.txt; the reviewer's commit 7004f29f72 registered it. Re-run this round (logs in
+  /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-85.r2/logs): `bash tests/all-sources-reproduce.sh` EXIT=0 (all-sources-1.log),
+  `bash tests/fork-sources-gate.sh` EXIT=0 (fork-gate-1.log).
+- `feature_check.py` still cannot finish: EXIT=1, its baseline `git checkout --detach` is refused by bunny-guard (exit 97, feature-check-1.log). Not worked around.
+- 4b again: product diff 9913d36d53..HEAD for plugins/DeEsser reverted -> build EXIT=0, `ctest -R DeEsserBypassTest` EXIT=8 (test-red-1.log);
+  re-applied -> build EXIT=0, ctest EXIT=0 (test-green-1.log).
+- Note from review, accepted: the regression passes on the envelope and gain resets alone; the two `reset()` calls on the biquads are an extra, harmless reset of
+  signal state (so a bypass round-trip also starts the filters from rest), and they run on every bypassed block (four float stores and two 2-element fills, no allocation),
+  unlike Compressor's `m_cleanedBuffers` guard.
+- Delegation (round 2): none; the gate re-runs and the red/green builds are seconds-long here and I ran them directly.
