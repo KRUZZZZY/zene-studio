@@ -99,6 +99,37 @@ The 4b literal reversal is recorded because the procedure names it. On its own i
 the seam the test needs, so the test binary does not rebuild and the stale one passes — which is exactly the failure
 mode the review measured on round 2. The caller-only revert above is the proof that the test catches the bug.
 
+## Round 4 re-verification (this session, logs in `.../new-p15-260-port.r4/logs`)
+
+The round-3 product code was already on the branch (HEAD `74084eeb41`); round 4 re-proved it with fresh runs rather than
+trusting the round-3 logs. No product line changed in round 4.
+
+| what | command | EXIT | log |
+| --- | --- | --- | --- |
+| build every target that includes the header | `cmake --build build --target zene audiofileprocessor SamplerEnvelopeTest SamplerStutterContinuationTest SamplerVoiceReuseTest AudioFileProcessorPlayheadTest AudioFileProcessorWaveViewTest SamplerTakeTest -j4 > $LOGS/build-green-1.log 2>&1` | 0 | build-green-1.log |
+| GREEN | `ctest -R '^SamplerStutterContinuationTest$' --output-on-failure > $LOGS/test-green-1.log 2>&1` | 0 | test-green-1.log |
+| GREEN family | `ctest -R 'Sampler\|AudioFileProcessor' --output-on-failure > $LOGS/test-green-family-1.log 2>&1` | 0 (7/7) | test-green-family-1.log |
+| **RED**: only the note-start caller in `playNoteImpl()` reverted to the e4194e0 double-read shape (end check reads `stutterContinuation().frame`, then `state.setFrameIndex(stutterContinuation().frame)` / `state.setBackwards(stutterContinuation().backwards)`), with the helper, the packed word and the hook all still present | `cmake --build build --target SamplerStutterContinuationTest -j4 > $LOGS/build-red-1.log 2>&1` | 0 | build-red-1.log |
+| **RED** run | `ctest -R '^SamplerStutterContinuationTest$' --output-on-failure > $LOGS/test-red-1.log 2>&1` | **8** | test-red-1.log |
+| fix restored (byte copy of the saved file), rebuilt | `cmake --build build --target zene audiofileprocessor SamplerEnvelopeTest SamplerStutterContinuationTest ... -j4 > $LOGS/build-green-2.log 2>&1` | 0 | build-green-2.log |
+| **GREEN** again | `ctest -R '^SamplerStutterContinuationTest$' --output-on-failure > $LOGS/test-green-3.log 2>&1` / family `> $LOGS/test-green-2.log` | **0** / 0 (7/7) | test-green-3.log, test-green-2.log |
+| whole-tree manifest | `bash tests/all-sources-reproduce.sh > $LOGS/allsources-verify.log 2>&1` | 0 (`REPRODUCES`) | allsources-verify.log |
+
+RED output (test-red-1.log): the two cases that drive the production caller fail on the mixed publication, (c) passes:
+
+```
+FAIL!  : SamplerStutterContinuationTest::aNoteStartReadsTheContinuationOnce() ... (the note started at the ramp value 0.899933 instead of 0.45)
+FAIL!  : SamplerStutterContinuationTest::pingPongPlaybackContinuesBackwardsAtThePublishedFrame() ... (the note started at the ramp value 0 instead of 0.888316)
+Totals: 3 passed, 2 failed, 0 skipped, 0 blacklisted
+```
+
+Gate run: `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` could NOT run in this session (EXIT=1, no table):
+its `base_listings()` runs `git -C .../qwen/gate-baselines/tree checkout -q --detach e4194e0bf5...` and the lane's
+bunny-guard refuses that command ("not allowed in a Bunny lane", feature_check-1.log, status 97). I did not work around
+the guard. The gates that can be run without that checkout were run directly: `tests/all-sources-reproduce.sh` EXIT=0
+(`REPRODUCES`); the three list files end with a newline; no function this fix adds has more than a few branches and no
+file it touches is new. The round-3 run of the same gate on the same product code was PASS (table below).
+
 ## Family and registration
 
 | what | command | EXIT | log |
@@ -177,3 +208,5 @@ carries the direction inside the one word instead of dropping it. The line is co
   log, and the `hwloc ... sysfs cpu topology` notes in build logs.
 - `tests/reference/AudioFileProcessor/` still holds the pre-fix copies of both files. It is a frozen reference copy
   and is not compiled, so it was deliberately left untouched.
+
+Delegation: Haiku ran the green build and tests, the red build and test run, and the green rebuild, family run and gate attempt (all logs under `.../new-p15-260-port.r4/logs`); I wrote the red edit, restored it from a saved copy and checked `git status`/`git diff` after each step.
