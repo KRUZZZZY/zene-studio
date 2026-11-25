@@ -238,27 +238,58 @@ that ran.
 
 ## Self-check
 
-- *Verdict backed by evidence?* Yes: `ALREADY-FIXED` half cites
-  `LadspaEffect.cpp:343-359` plus the commit that added it and the still-passing
-  `ladspaEffectRejectsZeroInputPlugin`; the `REAL` half cites the pre-fix division,
-  the guard that multiplies by zero, and the RED failure text above.
-- *Does the test fail without the fix?* Yes - step 4b ran it twice that way
-  (`test-1-red.log` before the fix, `test-3-reverted-red.log` with `fix.patch`
-  reversed), EXIT 1 both times, and it passes with the fix (`test-2-green.log`,
-  `test-4-green-restored.log`, `test-9-green-final.log`), EXIT 0.
-- *Fixed at the cause, callers and siblings consistent?* Yes - the guard sits before
-  the division and before any buffer; both callers covered, browser filter unchanged,
-  the three existing layouts behave as before.
-- *Collateral damage?* The four failures in the whole `PluginPortsMigrationTest`
-  binary (`nonRealtimeLadspaEffectsAreInvalid`, `malletsVoiceLimitIsEnforcedPerInstrument`,
-  `malletsVoiceLimitSurvivesDeviceChange`, `slice8PluginsAreLiveAndExact`) fail
-  identically on the base tree (`test-8-base-failing.log`, EXIT 4) and with this
-  change (`test-7-failing-individually.log`, EXIT 4). `LadspaChannelCountsTest`,
-  `LadspaManagerTest` and `LadspaGlobalLinkTest` pass.
-- *Realtime / undo / commands?* No audio-thread code touched; no undo step, no
-  control command, no saved-data format change.
-- *Registration?* The three ledger lines above; `tests/upstream-modifications.txt`
-  still ends with a newline.
+- *The regression test FAILS with the product change reverted and PASSES with it
+  (exit codes).* `ladspaEffectRejectsMoreInputsThanTheEffectBus`:
+  RED `test-1-red.log` EXIT 1 and, after `git apply -R .../logs/fix.patch`
+  (EXIT 0) plus a rebuild (EXIT 0), `test-3-reverted-red.log` EXIT 1 -
+  `FAIL! ... 'effect->processorCount() != 0 || !effect->isOkay()' returned FALSE`.
+  GREEN `test-2-green.log` EXIT 0, `test-4-green-restored.log` EXIT 0 (after
+  `git apply .../logs/fix.patch`, EXIT 0, rebuild EXIT 0) and
+  `test-9-green-final.log` EXIT 0, all `PASS`.
+- *The test is deterministic: no wall-clock timing, sleeps or races.* It has no
+  thread, clock, sleep or synchronization at all: it loads the fixture module with
+  `QLibrary`, constructs the real `LadspaEffect` through `lmms_plugin_main` on the
+  test thread, and inspects `isOkay()`, `processorCount()` and `controls()`. The
+  fixture descriptor's channel counts (`inputChannels = 4`, from four
+  `LADSPA_PORT_INPUT | LADSPA_PORT_AUDIO` ports) are compile-time constants, so the
+  processor count is a pure function of them.
+- *The fix is at the cause and complete: every caller and sibling checked.* Both
+  callers (`LadspaEffect.cpp:118` constructor, `:159` `changeSampleRate()`), the
+  layout check that follows the division, the browser filter
+  (`LadspaSubPluginFeatures.cpp:145`) and every `inputChannels` use in the plugin
+  are listed under "Callers and siblings checked" above; the guard runs before the
+  division and before any buffer exists.
+- *No collateral damage.* Layouts with one or two audio inputs keep their exact
+  processor counts (verified by the three sibling LADSPA tests and the same runs
+  above); a refused key becomes a `DummyEffect` with its XML preserved
+  (`src/core/EffectChain.cpp:234-246`), the same treatment the zero-input guard
+  already gives. The only whole-binary failures are the four pre-existing ones
+  proven at base (`test-8-base-failing.log`), not new limits.
+- *ALREADY-FIXED half:* `plugins/LadspaEffect/LadspaEffect.cpp:343-359` is the
+  guard, added by branch commit `32335cfa8b` (cluster new-p15-94), and its
+  regression `ladspaEffectRejectsZeroInputPlugin` passes in
+  `test-2-green.log`/`test-9-green-final.log`.
+- *Gates row of the pre-submit check is FAIL, and why.* That row runs the canonical
+  `/home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py`, which needs to
+  write a base listing into `~/.local/share/zene-bunny-fix/qwen/gate-baselines/` (a
+  read-only mount here; `touch` -> `Read-only file system`, EXIT 1) and skips that
+  only when the listing is cached - the one for base `9913d36d5` is not. It also
+  needs `lizard`, which no Python on this box has. Both failures are outside the
+  repository and outside this lane's write access, and both are recorded in the
+  Gates section with their output (`gates-1-feature-check.log`, EXIT 1). The
+  equivalent run - one line changed to point `CACHE` at a writable directory,
+  `lizard` installed with `pip --target` into the run folder - printed
+  `RESULT: PASS` for all eight gates (`gates-2-feature-check.log`, EXIT 0). Neither
+  `submit_check.py` nor any gate script was edited.
+- *Registration.* The three ledger lines above; `tests/upstream-modifications.txt`
+  still ends with a newline, `tests/fork-sources.txt` is untouched, and both test
+  files were already in `tests/all-sources.txt`.
+- *Realtime, undo and commands.* `processImpl`, `processLock` and `processUnlock` are
+  byte-for-byte unchanged (`git diff` on the commit touches only the two guards in
+  `pluginInstantiation`, before any handle exists); the new code allocates and logs
+  nothing on the audio thread. No undo step is created (the guard runs during
+  plugin construction, outside any undo transaction) and no control command was
+  added, so `commands_snapshot.json` is unchanged.
 
 ## Other findings
 
