@@ -57,15 +57,30 @@ published incomplete JSON and replaced the previous index.
 
 ### Step 4b — the test catches the bug
 
+Run as one command per side, from the committed tree (so a reviewer can repeat them verbatim):
+
 ```
-git diff -- src/core/BrowserIndex.cpp > logs/fix.patch        EXIT=0
-git apply -R logs/fix.patch                                   EXIT=0
-cmake --build build --target BrowserIndexStoreWriteTest -j4   EXIT=0   (build-14-red.log)
-ctest -R BrowserIndexStoreWriteTest --output-on-failure       EXIT=8   (test-15-red.log)   FAILS
-git apply logs/fix.patch                                      EXIT=0
-cmake --build build --target BrowserIndexStoreWriteTest …     EXIT=0   (build-15-green.log)
-ctest -R BrowserIndexStoreWriteTest --output-on-failure       EXIT=0   (test-18-green.log) PASSES
+cd <worktree> && git apply -R <logs>/fix.patch \
+  && cmake --build build --target BrowserIndexStoreWriteTest -j4 \
+  && cd build/tests && ctest -R BrowserIndexStoreWriteTest --output-on-failure
+                                                                        EXIT=8   (logs/red-final.log)
+cd <worktree> && git apply <logs>/fix.patch \
+  && cmake --build build --target BrowserIndexStoreWriteTest -j4 \
+  && cd build/tests && ctest -R BrowserIndexStoreWriteTest --output-on-failure
+                                                                        EXIT=0   (logs/green-final.log)
 ```
+
+The RED log's failure:
+
+```
+FAIL!  : BrowserIndexStoreWriteTest::aShortIndexStoreWriteIsRefusedNotPublished()
+         'savedError.contains(QStringLiteral("could not be written"))' returned FALSE.
+         (a save whose write was cut short was not reported as a failed save: '')
+```
+
+The earlier, step-by-step pair is kept too: `git apply -R logs/fix.patch` EXIT=0 → `build-14-red.log`
+EXIT=0 → `test-15-red.log` EXIT=8; `git apply logs/fix.patch` EXIT=0 → `build-15-green.log` EXIT=0 →
+`test-18-green.log` EXIT=0.
 
 The first RED attempt was a wrong test and was fixed: with a small index document (250 bytes) Qt
 buffers the write, so `commit()` fails on its own and the test passed without the fix. The test now
@@ -112,11 +127,15 @@ attempt).
 
 ## Self-check
 
+`submit_check.py <worktree> new-p15-286` — `logs/submit-check-1.log`, **EXIT=1**: every row PASS
+except `gates (feature_check.py)`, which is the read-only `gate-baselines` mount quoted above (the
+script crashes before it measures any gate; all eight gate scripts it wraps exit 0 when run directly).
+
 - **The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
-  Reverted: `test-15-red.log`, EXIT=8, `'savedError.contains("could not be written")' returned FALSE
-  (a save whose write was cut short was not reported as a failed save: '')`. Restored:
-  `test-18-green.log`, EXIT=0. `git apply -R logs/fix.patch` EXIT=0 and `git apply logs/fix.patch`
-  EXIT=0 around them.
+  Reverted: `logs/red-final.log`, **EXIT=8**, `'savedError.contains(QStringLiteral("could not be
+  written"))' returned FALSE. (a save whose write was cut short was not reported as a failed save:
+  '')`. Restored: `logs/green-final.log`, **EXIT=0**, `1/1 Test #289: BrowserIndexStoreWriteTest …
+  Passed`.
 - **The test is deterministic.** No timing, sleeps or threads: the fault is the kernel's
   `RLIMIT_FSIZE` cap (8 bytes, `SIGXFSZ` ignored) held for one scope by `ScopedFileSizeLimit`, and
   the assertion that the document is bigger than QSaveFile's 16384-byte write buffer is a property of
@@ -144,7 +163,9 @@ attempt).
   unaffected; `browser.index_scan`/`browser.index_status` surface the same `status()` they always did.
 - **The `feature_check.py` row of `submit_check.py` FAILs in this session** for the read-only
   `gate-baselines` mount quoted above, not for a gate result: all eight gate scripts it wraps exit 0
-  when run directly (table above).
+  when run directly (table above). The completion check otherwise reports `PASS` for: commits on the
+  branch, working tree clean, the report, the test file, and its registration
+  (`logs/submit-check-1.log`).
 
 ## Other findings
 
