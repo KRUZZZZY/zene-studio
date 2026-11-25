@@ -486,17 +486,6 @@ void NotePlayHandle::noteOff( const f_cnt_t _s )
 	}
 	m_released = true;
 
-	// MPE (cluster 3192): the release velocity the note-off carried was published by the input
-	// path for this key; the note that is ending takes it here, under its own lock, so the input
-	// thread never writes through a handle the render thread can retire.
-	const int pendingReleaseVelocity = m_instrumentTrack->takeMpeReleaseVelocity(
-		midiChannel(), key() );
-	if( pendingReleaseVelocity >= 0 )
-	{
-		setReleaseVelocity( Note::releaseVelocityFromMidi( pendingReleaseVelocity,
-			m_instrumentTrack->midiPort()->baseVelocity() ) );
-	}
-
 	// first note-off all sub-notes
 	for( NotePlayHandle * n : m_subNotes )
 	{

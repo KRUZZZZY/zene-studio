@@ -458,9 +458,14 @@ private:
 	// render owner scope is entered, so this path may not wait for the engine's model lock, and it
 	// may not reach through a note pointer the render thread can retire).
 	bool trackMpeInputEvent( const MidiEvent& event );
-	//! 0.5.0 Q050-039: publishes the release velocity an MPE note-off arrived with, for the note
-	//! that is ending to take (takeMpeReleaseVelocity) when it sends its own note-off.
-	void captureMpeReleaseVelocity( const MidiEvent& event );
+	//! 0.5.0 Q050-039: the release velocity an MPE note-off carried, converted to the note's own
+	//! volume scale (Note::releaseVelocityFromMidi), or -1 when the event carries none. Pure: it
+	//! touches no note. The caller stores it on the note it resolves under the engine guard
+	//! (processInEvent's MidiNoteOff branch).
+	int captureMpeReleaseVelocity( const MidiEvent& event );
+	//! processInEvent's note-off: resolves the live note on the event's key under the engine guard,
+	//! stores the MPE release velocity on it, releases it and drops the track's reference.
+	void releaseLiveNote( const MidiEvent& event, f_cnt_t offset );
 	//! Cluster 3192: publishes channel @a channel's current expression for the render thread - one
 	//! atomic store, any thread, no lock and no note pointer.
 	void publishLiveMpeExpression( int channel );
@@ -468,9 +473,6 @@ private:
 	//! to the handle, so the pitch, pressure and timbre the render path reads are written by the
 	//! render thread alone.
 	void applyLiveMpeExpression( NotePlayHandle& note );
-	//! Cluster 3192: the release velocity published for @a key on @a channel, consumed once (-1
-	//! when none is pending or the pending one belongs to another channel of the same key).
-	int takeMpeReleaseVelocity( int channel, int key );
 	//! Live input through the track's MIDI input transform (InstrumentTrackNotes.cpp): true when
 	//! the event was handled here - transformed and played, or dropped.
 	bool handleInputTransform( const MidiEvent& event, const TimePos& time, f_cnt_t offset );
@@ -511,12 +513,6 @@ private:
 	//! from it. Layout: bit 31 published, bits 14-27 pitch + MaxPitchCents, bits 7-13 pressure,
 	//! bits 0-6 timbre.
 	static constexpr std::uint32_t MpeLivePublished = 1u << 31;
-	/*! Cluster 3192: the release velocity an MPE note-off carried, per key, encoded as
-	 *  (channel + 1) << 8 | velocity, 0 = nothing pending. Published by the input thread and taken
-	 *  by the note that is ending, so the write needs no pointer into a handle the render thread
-	 *  can retire; a note-on clears its key, so a velocity for a key with no live note is handed
-	 *  to nobody, exactly as before. */
-	std::array<std::atomic<int>, NumKeys> m_mpeReleaseVelocity{};
 	MidiInputTransform m_inputTransform;
 	ArticulationMap m_articulations;
 	std::atomic<int> m_delayMs{0};

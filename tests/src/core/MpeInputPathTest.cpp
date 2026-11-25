@@ -473,16 +473,15 @@ private slots:
 		QCOMPARE( note->mpePitchCents(), 2400 );
 		QCOMPARE( note->mpePressure(), 96 );
 
-		// ---- (4) the note-off's release velocity is applied by the note that is ending, so the
-		// delivery thread needs no pointer into the handle at all.
+		// ---- (4) the note-off's release velocity is stored on the note the guarded note-off
+		// resolves (see the dedicated slots below for the threaded, retired and clip-note cases).
 		QCOMPARE( note->releaseVelocity(), -1 );
 		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, kKey, 96 ) );
 		QCOMPARE( note->releaseVelocity(), 96 );
 		QVERIFY( track->playingNote( kKey ) == nullptr );
 
 		// ---- (5) note retirement. With no live note on the key, a velocity delivery is handed to
-		// nobody; the handle retired here is never touched again (the delivery path holds no note
-		// pointer), and a later note on the same key inherits no stale velocity.
+		// nobody, and a later note on the same key inherits no stale velocity.
 		Engine::audioEngine()->removePlayHandlesOfTypes( track, PlayHandle::Type::NotePlayHandle );
 		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, kKey, 96 ) );
 		// The channel's expression is a value, not an event: the next note is born with it.
@@ -496,6 +495,181 @@ private slots:
 		QCOMPARE( next->releaseVelocity(), -1 );
 		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, kKey, 0 ) );
 		QCOMPARE( next->releaseVelocity(), -1 );
+
+		MpeExpression::setEnabled( false );
+		song->clearProject();
+	}
+
+	//! Cluster 3192 (round 3): a released note keeps the expression it had at its note-off through
+	//! its release tail, as it did when the input path wrote only the notes still held on their
+	//! key. The render thread applies the published capture to held notes only.
+	void releasedNoteKeepsItsExpressionThroughTheReleaseTail()
+	{
+		using namespace lmms;
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create( Track::Type::Instrument, song ) );
+		QVERIFY( track != nullptr );
+		MpeExpression::setEnabled( true );
+
+		constexpr int kMemberChannel = 6;
+		constexpr int kKey = 61;
+		std::vector<SampleFrame> period( Engine::audioEngine()->framesPerPeriod(),
+			SampleFrame( 0.f, 0.f ) );
+
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, kKey, 100 ) );
+		NotePlayHandle* note = track->playingNote( kKey );
+		QVERIFY( note != nullptr );
+		track->processInEvent( MidiEvent( MidiPitchBend, kMemberChannel, 12288 ) );
+		track->processInEvent( MidiEvent( MidiChannelPressure, kMemberChannel, 50 ) );
+		renderOnePeriodOf( note, period );
+		QCOMPARE( note->mpePitchCents(), 2400 );
+		QCOMPARE( note->mpePressure(), 50 );
+
+		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, kKey, 0 ) );
+		QVERIFY( note->isReleased() );
+
+		// The channel keeps moving (another note's gesture, or the controller settling): the
+		// released note is in its release tail and takes none of it.
+		track->processInEvent( MidiEvent( MidiPitchBend, kMemberChannel, 4096 ) );
+		track->processInEvent( MidiEvent( MidiChannelPressure, kMemberChannel, 100 ) );
+		track->processInEvent( MidiEvent( MidiControlChange, kMemberChannel, MpeTimbreController, 77 ) );
+		renderOnePeriodOf( note, period );
+		QCOMPARE( note->mpePitchCents(), 2400 );
+		QCOMPARE( note->mpePressure(), 50 );
+		QCOMPARE( note->mpeTimbre(), 0 );
+
+		MpeExpression::setEnabled( false );
+		song->clearProject();
+	}
+
+	//! Cluster 3192 (round 3): an MPE note-off's release velocity belongs to the live input note
+	//! the note-off resolves, never to a clip note that happens to share its key and channel and
+	//! ends later (the first take at this published the velocity per key for "the next note that
+	//! ends", which a clip note could take).
+	void releaseVelocityIsNotHandedToAClipNote()
+	{
+		using namespace lmms;
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create( Track::Type::Instrument, song ) );
+		QVERIFY( track != nullptr );
+		track->midiPort()->setBaseVelocity( DefaultVolume );
+		MpeExpression::setEnabled( true );
+
+		constexpr int kMemberChannel = 7;
+		constexpr int kKey = 66;
+
+		// A clip note on the same key and channel, not started from this track's input.
+		NotePlayHandle* clip = NotePlayHandleManager::acquire( track, 0,
+			Engine::audioEngine()->framesPerPeriod() * 64,
+			Note( TimePos( 384 ), TimePos( 0 ), kKey ), nullptr, kMemberChannel,
+			NotePlayHandle::Origin::MidiClip );
+		QVERIFY( clip != nullptr );
+		QCOMPARE( clip->midiChannel(), kMemberChannel );
+
+		// An input note-off arrives for a key with no live INPUT note: nobody to hand it to.
+		QVERIFY( track->playingNote( kKey ) == nullptr );
+		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, kKey, 96 ) );
+
+		clip->noteOff( 0 );
+		QCOMPARE( clip->releaseVelocity(), -1 );
+		NotePlayHandleManager::release( clip );
+
+		MpeExpression::setEnabled( false );
+		song->clearProject();
+	}
+
+	//! Cluster 3192 (round 3): the release velocity of a note-off delivered on another thread is
+	//! visible to the thread that joins it. The read happens after join(), which is the
+	//! synchronisation point; nothing is read while the writer may still be running.
+	void threadedNoteOffStoresTheReleaseVelocity()
+	{
+		using namespace lmms;
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create( Track::Type::Instrument, song ) );
+		QVERIFY( track != nullptr );
+		track->midiPort()->setBaseVelocity( DefaultVolume );
+		MpeExpression::setEnabled( true );
+
+		constexpr int kMemberChannel = 8;
+		constexpr int kKey = 67;
+		constexpr int kVelocity = 88;
+
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, kKey, 100 ) );
+		NotePlayHandle* note = track->playingNote( kKey );
+		QVERIFY( note != nullptr );
+
+		std::thread writer( [track] {
+			track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, kKey, kVelocity ) );
+		} );
+		writer.join();
+
+		QCOMPARE( note->releaseVelocity(), kVelocity );
+		QVERIFY( note->isReleased() );
+		QVERIFY( track->playingNote( kKey ) == nullptr );
+
+		MpeExpression::setEnabled( false );
+		song->clearProject();
+	}
+
+	//! Cluster 3192 (round 3): a note-off whose note is retired while the note-off waits for the
+	//! engine's model lock touches no retired handle. The note is resolved UNDER the guard: the
+	//! writer parks on the lock (its arrival is observed, not timed), the note is retired while the
+	//! lock is held (the destructor clears the track's slot), and the writer then finds the slot
+	//! empty. Also the single-threaded form: a note-off after the handle was retired.
+	void noteOffAfterRetirementTouchesNoRetiredHandle()
+	{
+		using namespace lmms;
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create( Track::Type::Instrument, song ) );
+		QVERIFY( track != nullptr );
+		track->midiPort()->setBaseVelocity( DefaultVolume );
+		MpeExpression::setEnabled( true );
+
+		constexpr int kMemberChannel = 9;
+		constexpr int kKey = 68;
+
+		// ---- single-threaded: retired, then note-off.
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, kKey, 100 ) );
+		QVERIFY( track->playingNote( kKey ) != nullptr );
+		Engine::audioEngine()->removePlayHandlesOfTypes( track, PlayHandle::Type::NotePlayHandle );
+		QVERIFY( track->playingNote( kKey ) == nullptr );
+		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, kKey, 96 ) );
+
+		// ---- threaded: the writer is parked on the model lock while the note is retired.
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, kKey, 100 ) );
+		QVERIFY( track->playingNote( kKey ) != nullptr );
+		bool writerParked = false;
+		std::thread writer;
+		{
+			const auto modelOwner = Engine::audioEngine()->requestChangesGuard();
+			writer = std::thread( [track] {
+				track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, kKey, 96 ) );
+			} );
+			const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 10 );
+			while( Engine::audioEngine()->modelChangeWaiters() == 0
+				&& std::chrono::steady_clock::now() < deadline )
+			{
+			}
+			writerParked = Engine::audioEngine()->modelChangeWaiters() > 0;
+			// The model lock is recursive on this thread: this is the render period retiring the
+			// note while the writer waits.
+			Engine::audioEngine()->removePlayHandlesOfTypes( track, PlayHandle::Type::NotePlayHandle );
+		}
+		writer.join();
+		QVERIFY2( writerParked, "the note-off did not wait for the engine's model lock" );
+		QVERIFY( track->playingNote( kKey ) == nullptr );
 
 		MpeExpression::setEnabled( false );
 		song->clearProject();
