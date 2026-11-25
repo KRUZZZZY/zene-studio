@@ -83,7 +83,32 @@ is unverified.
 
 ## Self-check
 
-SELF_CHECK_PLACEHOLDER
+Completion check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p14-275 > .../logs/submit-3.log 2>&1; echo EXIT=$?`
+gave EXIT=1. Commits, clean tree, report and tests items: PASS. The only item left is `FAIL gates (feature_check.py)`.
+That FAIL is the guard refusal quoted under "Commands and results" (the gate script's baseline `git checkout --detach`
+exits 97 in this lane). The FAIL cannot be cleared from inside the lane without getting around the guard, and the
+run's rules forbid that, so the gate step is **BLOCKED**. The table was never produced. Gate status for this commit
+(one doc file, no product, test or list change) is unverified.
+
+- **Regression test fails without the fix and passes with it:** not applicable. The verdict is FALSE-POSITIVE and no
+  product code changed, so there is nothing to revert. The existing `AudioClipLoopTest` passes unchanged
+  (build-1.log EXIT 0, test-1.log EXIT 0, "100% tests passed out of 1").
+- **Deterministic test:** no new test was added. `AudioClipLoopTest::refusalsAreTyped` drives `clip.set_loop` through
+  the control registry with fixed tick values (`start` 48 / `length` 32) on an in-memory song, with no timing, sleeps
+  or threads.
+- **Fix at the cause and complete; callers and siblings:** no fix was made. I checked every path that could pair the
+  stretcher with a loop: the audible render `play()` (`src/core/SamplePlayHandle.cpp:616-634`), the muted advance
+  `advanceSourceSilently` (`:807-846`), the window choice in `SampleTrack` (`src/tracks/SampleTrack.cpp:289-290`), and
+  both command entries (`ControlCommandsClipEnvelope.cpp:207-208`, `ControlCommandsNoteTools.cpp:330-331`). All of
+  them are gated by `audioloop::refusal` / `audioloop::engaged`.
+- **No collateral damage:** the commit contains only `docs/qwen-fixes-2026-10/cluster-new-p14-275.md`
+  (`git show --stat HEAD`). Project loading, saved data and render behaviour are untouched.
+- **Code or contract that shows FALSE-POSITIVE:** `src/core/SamplePlayHandle.cpp:129-134,164,183` (the stretcher needs
+  `!rendersLinearly || transpose != 0`); `src/core/ClipAudioLoop.cpp:69-77,79-84` (the loop is engaged only when
+  `rendersLinearly && transpose == 0`); `src/core/ClipAudioLoop.cpp:197-210` and `include/SamplePlayHandle.h:318`
+  (`m_loopMode` is `Off` unless engaged). The intended contract is the refusal text at `src/core/ClipAudioLoop.cpp:71,73`:
+  "a warped or tempo-leading clip's audio cannot loop in this release" / "a transposed clip's audio cannot loop in
+  this release".
 
 ## Other findings
 
