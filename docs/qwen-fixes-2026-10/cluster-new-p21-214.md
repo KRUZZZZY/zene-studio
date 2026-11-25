@@ -143,7 +143,8 @@ and one for `tests/src/gui/KnobKeyboardTest.cpp`. No new source file was added, 
 
 ## Self-check
 
-The completion check (`submit_check.py`, `submit-check-1.log`) reported one FAIL, `gates
+The completion check (`submit_check.py`, `submit-check-1.log` and `submit-check-2.log`
+after this report's commit) reported one FAIL, `gates
 (feature_check.py)`, and asked the five questions below. The FAIL is the environment limit above,
 not a gate: the checker runs `feature_check.py`, whose baseline for this branch's base commit is not
 cached and whose baseline `git checkout` the parent's own guard refuses
