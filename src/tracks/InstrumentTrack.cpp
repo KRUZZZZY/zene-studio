@@ -509,12 +509,22 @@ void InstrumentTrack::applyLiveMpeExpression( NotePlayHandle& note )
 
 void InstrumentTrack::releaseLiveNote( const MidiEvent& event, f_cnt_t offset )
 {
+	// Cluster 3192: a note-off for a key this track is not holding has nothing to resolve, so it
+	// must not take the engine's model lock. JACK dispatches MIDI from its audio callback before
+	// the render owner is entered (src/core/audio/AudioJack.cpp:442 vs :476), so a guard taken
+	// here waits on the control threads; a note-on this track dropped - monitoring Off, a key
+	// outside firstKey()..lastKey() - leaves exactly that empty slot. playingNote() bounds-checks
+	// the key, and only this thread ever fills a slot.
+	if( playingNote( event.key() ) == nullptr )
+	{
+		return;
+	}
 	// Cluster 3192: the note is resolved UNDER the engine guard. The render thread retires a
 	// finished handle while it holds the model lock (and the handle's destructor clears this
 	// slot), so a pointer read before the guard could be dangling by the time it is used; read
-	// after it, the slot is either a live note or null. Note-on and note-off already reach the
-	// engine through this guard, so no new wait is added for the callers that deliver MIDI from
-	// an audio callback.
+	// after it, the slot is either a live note or null. Note-on, and note-off for a held key,
+	// already reach the engine through this guard, so no new wait is added for the callers that
+	// deliver MIDI from an audio callback.
 	const int releaseVelocity = captureMpeReleaseVelocity( event );
 	Engine::audioEngine()->requestChangeInModel();
 	NotePlayHandle* const note = m_notes[event.key()];
