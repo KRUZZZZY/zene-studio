@@ -41,6 +41,9 @@ namespace
 
 constexpr f_cnt_t BlockFrames = 4410;
 constexpr float SibilanceHz = 10000.f;
+//! As a literal, the way include/BiquadDesign.h does it: MSVC's <cmath> defines M_PI only under
+//! _USE_MATH_DEFINES, which this project never sets.
+constexpr double Pi = 3.14159265358979323846;
 
 using Block = std::vector<SampleFrame>;
 
@@ -48,7 +51,7 @@ using Block = std::vector<SampleFrame>;
 Block sineBlock(float amplitude)
 {
 	Block block(BlockFrames);
-	const double step = 2.0 * M_PI * SibilanceHz / 44100.0;
+	const double step = 2.0 * Pi * SibilanceHz / 44100.0;
 	for (f_cnt_t frame = 0; frame < BlockFrames; ++frame)
 	{
 		const float v = amplitude * static_cast<float>(std::sin(step * static_cast<double>(frame)));
