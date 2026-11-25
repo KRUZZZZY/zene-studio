@@ -124,7 +124,8 @@ int semitonesToward(int from, int to)
 LoopSource analyse(const QString& path, QString* error)
 {
 	LoopSource source;
-	const ImportDetectionResult analysis = analyseAudioFile(path);
+	const ImportDetectionResult analysis = analyseAudioFile(path, detection::DefaultAnalysisSeconds,
+		AnalysisDecode::PrefixOnly);
 	if (!analysis.ok)
 	{
 		if (error != nullptr) { *error = analysis.error; }

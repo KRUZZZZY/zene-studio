@@ -164,6 +164,33 @@ private slots:
 		QCOMPARE( rebuilt, original );
 	}
 
+	/*! QXmlStreamReader::characterOffset() counts UTF-16 units, not bytes. Non-ASCII
+	 *  text BEFORE <song> (a two-byte run and a four-byte, surrogate-pair emoji)
+	 *  shifts the two apart by dozens of positions, so locating the content start
+	 *  tag with the character offset as a byte index picked an earlier '<' and
+	 *  spliced the wrong bytes. The round trip must stay byte-identical. */
+	void nonAsciiBeforeTheContentElementDoesNotMisplaceTheSplice()
+	{
+		QByteArray original = twoSectionDocument();
+		const QByteArray creator = QStringLiteral(
+			"creator=\"%1 %2\"" ).arg( QString( 40, QChar( 0x00E9 ) ),
+			QString::fromUcs4( U"\U0001F3B5\U0001F3B5\U0001F3B5" ) ).toUtf8();
+		QVERIFY( original.contains( "creator=\"Zene Studio\"" ) );
+		original.replace( "creator=\"Zene Studio\"", creator );
+
+		std::vector<std::pair<QString, QByteArray>> derived;
+		QString error;
+		QVERIFY2( projectcontainer::deriveContainerEntries( original,
+			QString::fromLatin1( kContent ), &derived, &error ), qPrintable( error ) );
+		QCOMPARE( int( derived.size() ), 3 );
+		QCOMPARE( derived.at( 2 ).second, QByteArray( "<tempo-map v=\"1\"/>\n  " ) );
+
+		QByteArray rebuilt;
+		QVERIFY2( projectcontainer::reassembleContainerDocument( derived,
+			QString::fromLatin1( kContent ), &rebuilt, &error ), qPrintable( error ) );
+		QCOMPARE( rebuilt, original );
+	}
+
 	/*! THE round trip, and the guarantee it proves: RAW byte identity - the
 	 *  rebuilt document equals the original byte for byte, not merely in
 	 *  canonical form. Chosen deliberately (see deriveContainerEntries in

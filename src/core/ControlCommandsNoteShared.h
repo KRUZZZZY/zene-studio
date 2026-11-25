@@ -29,6 +29,7 @@
 
 #include "ClipLinks.h"
 #include "ControlEdit.h"
+#include "ControlNoteShared.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "MidiClip.h"
@@ -73,7 +74,7 @@ inline QJsonObject finish(const ClipRef& ref, MidiClip* clip, const QString& com
 	clip->updateLength();
 	emit clip->dataChanged();
 	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
-	Engine::getSong()->setModified();
+	markProjectEdited();
 	// Luna cluster 4806: the inverse named the command itself with EMPTY args, so replaying
 	// it failed validation for every command that requires one (`clip` and `notes` above all):
 	// the advertised pair could never be executed. The journal checkpoint IS the inverse here,

@@ -40,6 +40,16 @@ def require_file(path: pathlib.Path, label: str) -> bool:
 	return False
 
 
+def expect_rejected(cxx: str, flags: list[str], source: pathlib.Path, output: pathlib.Path,
+                    label: str, detail: str) -> bool:
+	result = run([cxx, *flags, str(source), "-o", str(output)])
+	if result.returncode == 0:
+		print(f"FAIL {label}: {detail}")
+		return False
+	print(f"PASS {label}")
+	return True
+
+
 def test_vst2(root: pathlib.Path, cc: str) -> bool:
 	source = root / "tests/data/vst2-test-effect/vst2-test-effect.c"
 	return require_file(source, "VST2 source") and report(
@@ -159,7 +169,11 @@ def test_unused_result(root: pathlib.Path, cxx: str, qt_include: list[str]) -> b
 	header = root / "tests/src/core/MountNamespaceTestSupport.h"
 	if not require_file(header, "mount namespace test support header"):
 		return False
-	flags = ["-std=c++20", "-O2", "-D_FORTIFY_SOURCE=3", "-Werror=unused-result", "-c"]
+	# -Werror=unused-variable makes the compile fail when a caller keeps
+	# writeNamespaceHandshakeByte's result in `notified` but drops it instead of
+	# combining it into the caller's own return value.
+	flags = ["-std=c++20", "-O2", "-D_FORTIFY_SOURCE=3",
+	         "-Werror=unused-result", "-Werror=unused-variable", "-c"]
 	qt_flags: list[str] = []
 	for directory in qt_include:
 		qt_flags.extend(["-I", directory])
@@ -194,6 +208,30 @@ def test_unused_result(root: pathlib.Path, cxx: str, qt_include: list[str]) -> b
 			print("PASS unused-result control: a discarded write result is rejected")
 			checks.append(True)
 
+		# The exact historical shape: both handshakes as they were before the fix, a
+		# (void) cast on each ::write. Hosted linux-arm64 rejected both (historical
+		# MountNamespaceTestSupport.h lines 78 and 110); if this fixture compiles, the
+		# probe has stopped pinning that regression.
+		historic = dirpath / "historic-unchecked-handshakes.cpp"
+		historic.write_text(
+			"#include <unistd.h>\n"
+			"bool mapOwnUidIntoNamespace(int writeEnd)\n"
+			"{\n"
+			"\tchar done = 1;\n"
+			"\t(void)::write(writeEnd, &done, 1);\n"
+			"\treturn true;\n"
+			"}\n"
+			"bool enterOwnMountNamespace(int toChildWrite)\n"
+			"{\n"
+			"\tchar go = 1;\n"
+			"\t(void)::write(toChildWrite, &go, 1);\n"
+			"\treturn true;\n"
+			"}\n", encoding="utf-8")
+		checks.append(expect_rejected(
+			cxx, flags, historic, dirpath / "historic-unchecked-handshakes.o",
+			"unused-result historical handshakes",
+			"both unchecked (void)::write calls compiled, so the historical regression is not pinned"))
+
 		# ...while a checked write is accepted, so the flags reject the discarded result
 		# and not write() itself.
 		checked = dirpath / "checked-write.cpp"
@@ -207,6 +245,37 @@ def test_unused_result(root: pathlib.Path, cxx: str, qt_include: list[str]) -> b
 			"}\n", encoding="utf-8")
 		checks.append(report("unused-result checked write fixture",
 			run([cxx, *flags, str(checked), "-o", str(dirpath / "checked-write.o")])))
+
+		# A caller that stores the notification but never propagates it is still a
+		# discarded result. The hosted compile of the real header must reject that
+		# shape; -Werror=unused-variable is what turns the unused local into an error.
+		dropped = dirpath / "dropped-handshake-result.cpp"
+		dropped.write_text(
+			"#include <unistd.h>\n"
+			"#include <cerrno>\n"
+			"static bool writeNamespaceHandshakeByte(int fd, char value)\n"
+			"{\n"
+			"\tssize_t sent;\n"
+			"\tdo { sent = ::write(fd, &value, 1); } while (sent < 0 && errno == EINTR);\n"
+			"\treturn sent == 1;\n"
+			"}\n"
+			"bool probe(int writeEnd)\n"
+			"{\n"
+			"\tchar done = 1;\n"
+			"\tconst bool notified = writeNamespaceHandshakeByte(writeEnd, done);\n"
+			"\treturn true;\n"
+			"}\n", encoding="utf-8")
+		checks.append(expect_rejected(
+			cxx, flags, dropped, dirpath / "dropped-handshake-result.o",
+			"unused-result dropped handshake notification",
+			"a stored but unpropagated handshake result compiled, so propagation is not pinned"))
+
+		propagated = dirpath / "propagated-handshake-result.cpp"
+		propagated.write_text(
+			dropped.read_text(encoding="utf-8").replace(
+				"\treturn true;\n}\n", "\treturn notified;\n}\n"), encoding="utf-8")
+		checks.append(report("unused-result propagated handshake represented",
+			run([cxx, *flags, str(propagated), "-o", str(dirpath / "propagated-handshake-result.o")])))
 
 		# The real header, compiled in a translation unit that uses both helpers: the
 		# hosted linux-arm64 build stopped on these two ignored write() results (lines

@@ -790,6 +790,7 @@ tests/src/core/HardwareIoTestParts2.h
 tests/src/core/InstrumentRoutingTestParts1.h
 tests/src/core/LinkAudioStreamTestParts1.h
 tests/src/core/LinkAudioStreamTestParts2.h
+tests/src/core/LinkAudioStreamTestParts3.h
 tests/src/core/NotePlaybackTestParts1.h
 tests/src/core/NotePlaybackTestParts2.h
 tests/src/core/ProjectContainerSaveTestParts1.h
@@ -876,6 +877,10 @@ tests/remote-plugin-shm-fifo-qt-usage-check.py
 tests/no-ffmpeg-video-clips-compile-check.py
 tests/VideoClipsNoFfmpegCheck.py
 docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9.md
+# cluster ci-e58078851126eac9-port: port-lane report for the already-fixed hosted
+# linux-x86_64 Qt 5 QJsonValue::toInteger build regression; the source scan and the
+# Qt 5 probe registered above cover the same translation unit.
+docs/qwen-fixes-2026-10/cluster-ci-e58078851126eac9-port.md
 docs/qwen-fixes-2026-10/cluster-ci-619dd453d973527c.md
 docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f.md
 docs/qwen-fixes-2026-10/cluster-ci-2fd63d3310176c0c.md
@@ -924,6 +929,8 @@ docs/qwen-fixes-2026-10/cluster-ci-623e9e3a015cd5b1.md
 tests/qt5-worker-thread-check.py
 tests/src/core/TestWorkerThread.h
 docs/qwen-fixes-2026-10/cluster-ci-539b88713935565b.md
+# Cluster ci-539b88713935565b-port: ctest RemotePluginShmUnusedHelperCheck, -Werror=unused-function over the SYNC_WITH_SHM_FIFO build of RemotePluginAudioPortsTest.cpp.
+tests/remote-plugin-shm-unused-helper-check.py
 # Cluster ci-b5ac4280f3e4b317: the Qt 5 QStringList brace-assignment portability
 # regression. Hosted macos-arm64 builds against Qt 5.15, where QStringList's extra
 # `operator=(QList<QString>&&)`/`(const QList<QString>&)` overloads make
@@ -2702,6 +2709,7 @@ tests/src/plugins/AuParameterHandoffTest.cpp
 tests/stem-availability-docs-gate.py
 tests/src/core/AafImportTest.cpp
 tests/src/core/AbletonLinkAllocatorTest.cpp
+tests/src/core/AbletonLinkContextStopTest.cpp
 tests/src/core/AbletonLinkInteropTest.cpp
 tests/src/core/AbletonLinkSessionTest.cpp
 tests/src/core/AbletonLinkWorkDispatcherTest.cpp
@@ -2843,6 +2851,7 @@ tests/src/core/InstrumentLayersCommandsTest.cpp
 tests/src/core/InstrumentLayerZonePublishTest.cpp
 tests/src/core/InstrumentNoteOffProbe.h
 tests/src/core/InstrumentRoutingTest.cpp
+tests/src/core/JournalBeginGuardTest.cpp
 tests/src/core/JournallingObjectRestoreTest.cpp
 tests/src/core/LadspaManagerTest.cpp
 tests/src/core/LadspaPortCountFixture.cpp
@@ -4069,6 +4078,9 @@ tests/src/core/StemPythonDiscoveryServiceTest.cpp
 # pass advances the source with the same reads the audible pass makes (fork-NEW test).
 tests/src/tracks/SampleClipMuteCursorTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-223.md
+# cluster 3503 (2026-11): a pattern-store pass past the end of a clip window schedules nothing (fork-NEW regression).
+tests/src/tracks/SamplePatternPassWindowTest.cpp
+docs/qwen-fixes-2026-10/cluster-3503.md
 # cluster new-p12-248 (2026-11): the audio thread never waits on an automation clip's lock (fork-NEW regression).
 tests/src/core/AutomationRenderLockTest.cpp
 
@@ -4079,9 +4091,40 @@ tests/src/core/AutomationRenderLockTest.cpp
 tests/Qt5QStringListSizeConstructorCheck.py
 # cluster ci-8764ffa3b495466c-port: repair report and verification evidence.
 docs/qwen-fixes-2026-10/cluster-ci-8764ffa3b495466c-port.md
+# Cluster ci-b71ed146fd535ea5-port: port of the accepted Qt 5 QStringList count+value
+# check. Hosted linux-x86_64 builds against Qt 5.15, where QStringList has no size+value
+# constructor (its only two-argument form is the iterator pair); Qt 6's QStringList is
+# QList<QString>, which has it. The check scans first-party sources and, where a Qt 5 tree
+# is present, recompiles MixerSendsOnFadersTest.cpp against it (-fsyntax-only). Named after
+# its ctest (tests/CMakeLists.txt -> Qt5QStringListSizeCheck).
+tests/Qt5QStringListSizeCheck.py
+# Cluster ci-b71ed146fd535ea5-port: the port report for the hosted linux-x86_64
+# QStringList count+value build regression check.
+docs/qwen-fixes-2026-10/cluster-ci-b71ed146fd535ea5-port.md
 
 # Cluster ci-3eb9bda8aa6785a3-port: mingw64 unused gig allocation helper; report records the guard and the no-POSIX-hook compile check.
 docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3-port.md
 # cluster ci-c487f7d0c9f0a1ac (2026-11): every target compiling the NAM engine must carry the Eigen
 # -Wno-error=deprecated-enum-enum-conversion suppression (linux-arm64 -DUSE_WERROR; fork-NEW test).
 tests/nam-eigen-options-coverage-check.py
+# cluster new-p9-402-port (2026-11): replacing a playing clip's source retires its stale play
+# handles, so the next pass renders the new source through its own window (fork-NEW test).
+tests/src/tracks/SampleClipSourceSwapTest.cpp
+# cluster ci-9b3cdba8549c073f-port (2026-11-24): the linux-arm64 Qt 5 build regression for
+# ScriptClockTest's QJsonValue::toInteger is already fixed by the retained jsonInteger adapter and
+# Qt5JsonIntegerCheck; this port report records that verdict.
+docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f-port.md
+
+# Cluster ci-00e6f05f41fa4f1a: Windows-arm64 aligned-new compiler regression.
+tests/windows-arm64-aligned-new-check.py
+docs/qwen-fixes-2026-10/cluster-ci-00e6f05f41fa4f1a-port.md
+# cluster new-p17-14 (2026-10): every note edit that changes note state marks the project modified through control::markProjectEdited (add, remove, edit, slide, the three transforms); regression ControlNoteNoOpUndoTest::directNoteEditsMarkProjectDirty.
+docs/qwen-fixes-2026-10/cluster-new-p17-14.md
+# cluster ci-e58078851126eac9-port (2026-11-24): the hosted Qt 5.15 build / linux-x86_64 job stopped on
+# QJsonValue::toInteger in ScriptClockTest. The check asserts both source_bytes reads stay on
+# jsonInteger(value, -1) and recompiles the real test through compile_commands.json against Qt 5;
+# ctest ScriptClockQt5JsonIntegerPortCheck.
+tests/ScriptClockQt5JsonIntegerPortCheck.py
+# cluster new-p12-348 (2026-11): a full CLAP note queue must not lose a note-off or choke (fork-NEW regression).
+tests/src/plugins/ClapNoteQueueTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p12-348.md

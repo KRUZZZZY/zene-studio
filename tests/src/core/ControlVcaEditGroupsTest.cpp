@@ -48,6 +48,8 @@
 #include "ControlVcaTestSupport.h"
 #include "Engine.h"
 #include "Mixer.h"
+#include "ProjectJournal.h"
+#include "Song.h"
 #include "Track.h"
 
 using namespace lmms;
@@ -302,7 +304,52 @@ private slots:
 		QCOMPARE(clipPosition(clip), 3000);
 		evidence(QStringLiteral("refused_outside_set=1 refused_lock_off=1 refused_single_member=1 "
 			"anchor_untouched=1"));
-	}};
+	}
+
+	// -- 4. the edit set is document state: changing it marks the project modified
+
+	//! Membership and the phase lock live on the group, so no model change marks
+	//! the song dirty for them: each write, and its undo and redo, must do it.
+	//! A clean song is made with noteProjectSaved() (setModified(bool) is private).
+	void editSetChangesMarkTheProjectModified()
+	{
+		clearGroups();
+		Song* song = Engine::getSong();
+		const QString track = addTrack(QStringLiteral("instrument"));
+		const QString group = createGroup(QStringLiteral("Dirty"));
+		QVERIFY(!track.isEmpty());
+		QVERIFY(!group.isEmpty());
+		const QJsonObject addArgs{{QStringLiteral("group"), group}, {QStringLiteral("track"), track}};
+
+		song->noteProjectSaved(QString());
+		QVERIFY(!song->isModified());
+		QVERIFY(run(QStringLiteral("vca.track_add"), addArgs).ok);
+		QVERIFY2(song->isModified(), "vca.track_add left the project clean");
+
+		song->noteProjectSaved(QString());
+		QVERIFY(run(QStringLiteral("vca.set_phase_lock"),
+			{{QStringLiteral("group"), group}, {QStringLiteral("locked"), false}}).ok);
+		QVERIFY2(song->isModified(), "vca.set_phase_lock left the project clean");
+
+		song->noteProjectSaved(QString());
+		QVERIFY(run(QStringLiteral("vca.track_remove"), addArgs).ok);
+		QVERIFY2(song->isModified(), "vca.track_remove left the project clean");
+
+		// A refused change writes nothing, so it must not dirty a clean project.
+		song->noteProjectSaved(QString());
+		QVERIFY(!run(QStringLiteral("vca.track_remove"), addArgs).ok);
+		QVERIFY2(!song->isModified(), "a refused vca.track_remove marked the project modified");
+
+		// Undo and redo of an edit-set change are edits too.
+		ProjectJournal* journal = Engine::projectJournal();
+		song->noteProjectSaved(QString());
+		journal->undo();
+		QVERIFY2(song->isModified(), "undoing vca.track_remove left the project clean");
+		song->noteProjectSaved(QString());
+		journal->redo();
+		QVERIFY2(song->isModified(), "redoing vca.track_remove left the project clean");
+	}
+};
 
 QTEST_GUILESS_MAIN(ControlVcaEditGroupsTest)
 #include "ControlVcaEditGroupsTest.moc"

@@ -115,18 +115,37 @@ public:
     if (mpService && mpWork)
     {
       mpWork.reset();
+    }
+    // A stop() from the worker itself (see stop()) leaves the thread joinable
+    // here, so the join cannot be guarded by the work object: a std::thread
+    // destroyed while joinable calls std::terminate.
+    if (mThread.joinable())
+    {
       mThread.join();
     }
   }
 
+  // Stop the service and wait for the worker thread.
+  //
+  // May be called from a handler that runs on the worker thread itself. That
+  // thread cannot join itself: std::thread::join() throws std::system_error,
+  // and the worker's loop catches only the exception handler's own type, so
+  // the exception would escape the thread and terminate the process. The
+  // service is stopped either way, so run() returns once the handler returns;
+  // this call then returns without joining, and the join is left to the next
+  // stop() from another thread, or to the destructor.
   void stop()
   {
     if (mpService && mpWork)
     {
       mpWork.reset();
       mpService->stop();
-      mThread.join();
     }
+    if (!mThread.joinable() || std::this_thread::get_id() == mThread.get_id())
+    {
+      return;
+    }
+    mThread.join();
   }
 
 
