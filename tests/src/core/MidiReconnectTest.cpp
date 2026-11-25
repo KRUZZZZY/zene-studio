@@ -95,6 +95,11 @@ extern "C" size_t mio_write(mio_hdl*, const void*, size_t size)
 	return size;
 }
 
+extern "C" int mio_eof(mio_hdl*)
+{
+	return 0;
+}
+
 extern "C" size_t mio_read(mio_hdl*, void*, size_t)
 {
 	return 0;

@@ -68,9 +68,11 @@ public:
 		return "MidiSndio";
 	}
 
-	/*! Whole output events refused because the bounded queue was full, or still
-	 *  undelivered when a stalled device was abandoned. A refused event is never
-	 *  partly written, so the MIDI stream cannot be cut in the middle of a message. */
+	/*! Whole output events refused because the bounded queue was full or the device
+	 *  had failed, or never taken by the device. A refused event is never partly
+	 *  written, so the MIDI stream cannot be cut in the middle of a message. A refused
+	 *  Note Off is not lost: once the queue has drained, a recovery note-off releases
+	 *  the note. */
 	std::uint64_t outputQueueOverflowCount() const noexcept override;
 
 
