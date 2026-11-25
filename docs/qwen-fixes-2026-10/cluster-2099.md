@@ -196,7 +196,7 @@ file was changed, so `tests/upstream-modifications.txt` is untouched.
   internal one; deleting it would destroy a render a user can see and use. Reported, not changed, per the
   scope rule.
 - A render child that fails may leave a partial file at its target: `render()`
-  (`ControlCommandsSubprojects.cpp:146-153`) returns before the target is referenced, and the child's own
+  (`ControlCommandsSubprojects.cpp:154-161`) returns before the target is referenced, and the child's own
   partial output is not removed. Not this finding (the render there *fails*, it does not succeed and then go
   unlinked); worth its own unit.
 - `tests/control-success-paths.py` exits 1 in this build tree because `project.import` / `project.export_midi`
