@@ -79,6 +79,58 @@ closes, and the destruction does not finish while the write is still parked. The
 There is no product change, so no RED/GREEN reversal was run in this session. That proof belongs to
 commits 73ecb52ba3 and 97789a3fd0.
 
-Delegation: Haiku ran the build and the two test runs above (I checked the log lines myself) and ran
-the feature gate and completion check. Sonnet was not used: there was no fix or test to write, because
-the bug was already fixed.
+## Gates (step 5): blocked by the environment
+
+| Command | EXIT | Log |
+|---|---|---|
+| `python3 .../qwen/feature_check.py <worktree> > logs/gates-1.log 2>&1; echo EXIT=$?` (run by Haiku) | 1 | gates-1.log |
+| same command, run again in the lead session's shell `> logs/gates-2.log` | 1 | gates-2.log |
+
+Neither run produced a gate table. In both, the gate script's own baseline step was refused by the
+lane guard before any gate ran:
+
+```
+bunny-guard: 'git -C /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/gate-baselines/tree checkout -q --detach 3436a808b65a59d362b15837adc1308ea67bf675' is not allowed in a Bunny lane (AGENTS.md rules 1, 2, 11, 12). ...
+subprocess.CalledProcessError: Command '[... 'checkout', '-q', '--detach', '3436a808b6...']' returned non-zero exit status 97.
+```
+
+As the rules require, I did not work around the guard. Running the gates needs the harness to allow
+feature_check.py's baseline checkout in `qwen/gate-baselines/tree`. The diff of this job is one new
+Markdown file under `docs/` and no product, test or registration file. So there is nothing for the
+complexity, file-length or registration gates to measure, but this is unverified because the gate did
+not run.
+
+## Self-check
+
+- **The regression test FAILS with the product change reverted and PASSES with it.** This job has no
+  product change, so there is nothing to revert here. The regression test
+  `targetDestructionWaitsForAnInFlightAudioWrite` came in with fix commit 73ecb52ba3. This session it
+  PASSES on HEAD (test-1.log EXIT=0, test-2.log EXIT=0, `Totals: 16 passed, 0 failed`). The RED run
+  belongs to that earlier commit's own record; I did not re-run it this session.
+- **The test is deterministic.** It synchronises through a `Model::dataChanged` hook with
+  `testsupport::BinarySemaphore`. The audio write parks at the hook, and the destroyer is observed
+  through the `targetAlive` gate (`ModulationAudioViewTest.cpp:228-262`). It has no sleeps. The 2 s
+  `try_acquire_for` and deadline only bound a hang: on a correct build they never decide the result.
+- **The fix is at the cause and complete; callers and siblings checked.** Every raw-pointer write on
+  the audio path is in `applyModulationBlock` (`ModulationLayerPublisher.cpp:300-317`). Both writes
+  there, the model write at `:316` and the instrument write at `:312`, happen under the pin taken at
+  `:302`. Both teardown sources are wired to `retireTarget`: model destruction
+  (`AutomatableModel.cpp:184` → `:227`) and instrument destruction (`Instrument.cpp:78`,
+  `InstrumentTrack.cpp:255` → `:233`). A rebind closes the slot and waits for its writers the same way
+  (`:174-200`). `drivingSource` (`:273-281`) never dereferences the model.
+- **No collateral damage.** This job changes no product code, no saved data and no limits. It adds
+  only this report.
+- **ALREADY-FIXED: the code that shows it.** `include/ModulationLayer.h:418-443`
+  (`beginTargetWrite`/`endTargetWrite`), `src/core/ModulationLayerPublisher.cpp:130-159`
+  (`retireTarget`), `:222-238` (watches) and `:302-316` (pinned write), and
+  `src/core/AutomatableModel.cpp:184`. The fix commits 73ecb52ba3 and 97789a3fd0 are ancestors of HEAD
+  (merge-base EXIT 0 for both).
+
+## Other findings
+
+- The gate is blocked by the environment: in this lane, `feature_check.py` cannot check out its
+  baseline (see Gates above). Every lane that runs this gate under the same guard will hit it.
+
+Delegation: Haiku (two starts) ran the build, the ctest and direct test runs, the first gate run and
+the first completion check. I checked their key log lines myself. Sonnet and DeepSeek were not used:
+the bug was already fixed, so there was no fix or test to write.
