@@ -4293,6 +4293,11 @@ target_compile_definitions(ThemeContrastTest PRIVATE
 # 0.5.0 L10: DeviceCopyTest builds a drum rack from the shipped drum samples.
 target_compile_definitions(DeviceCopyTest PRIVATE
 	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
+# Cluster 5743: the rack.wrap order test needs a loadable effect, so the build's amplifier module is built first
+# (without it the test skips and proves nothing).
+if(TARGET amplifier)
+add_dependencies(DeviceCopyTest amplifier)
+endif()
 target_compile_definitions(DrumRackPadsTest PRIVATE
 	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
 target_compile_definitions(DrumRackPanelTest PRIVATE

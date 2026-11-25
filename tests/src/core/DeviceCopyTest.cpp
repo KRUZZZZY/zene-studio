@@ -439,6 +439,28 @@ private slots:
 		QCOMPARE(run(QStringLiteral("rack.wrap"), {{QStringLiteral("channel"), ch(2)}}).errorKind, ControlErrorKind::NotFound);
 	}
 
+	//! Cluster 5743: rack.wrap keeps the devices in the order of their source chain, whatever order 'plugins'
+	//! names them in (the description promises "in order"). The first device is bypassed to tell the two apart.
+	void wrappingKeepsTheSourceChainOrder()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString target = ch(index);
+		const QString first = loadAnEffect(target);
+		if (first.isEmpty()) { QSKIP("this build loads no effect"); }
+		const QString second = loadAnEffect(target);
+		QVERIFY(!second.isEmpty());
+		QVERIFY(run(QStringLiteral("plugin.bypass"), {{QStringLiteral("target"), target}, {QStringLiteral("plugin"), first},
+			{QStringLiteral("bypass"), true}}).ok);
+		const ControlResult wrapped = run(QStringLiteral("rack.wrap"), {{QStringLiteral("channel"), target},
+			{QStringLiteral("plugins"), QJsonArray{second, first}}});  // named in reverse
+		QVERIFY2(wrapped.ok, qPrintable(wrapped.errorMessage));
+		Rack& rack = Engine::mixer()->mixerChannel(index)->m_rack;
+		const auto& wrappedEffects = rack.chain(wrapped.result.value(QStringLiteral("chain")).toInt())->effects();
+		QCOMPARE(wrappedEffects.size(), std::size_t{2});
+		QVERIFY(!wrappedEffects[0]->isEnabled());  // the bypassed 'first' still comes first
+		QVERIFY(wrappedEffects[1]->isEnabled());
+	}
+
 	//! MX-102: a device on a parallel chain is addressed by its fx-<n> on the channel, like the chain's
 	//! own - bypass and unload reach it, and the unload's undo puts it back on its chain.
 	void aParallelChainsDeviceIsAddressedOnTheChannel()

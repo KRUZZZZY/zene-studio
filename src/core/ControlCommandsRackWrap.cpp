@@ -76,6 +76,12 @@ bool namedDevices(const QJsonObject& args, const ControlTarget& target, std::vec
 		}
 		out->push_back(effect);
 	}
+	// The call may name the devices in any order; they are wrapped in the order of their chain ("in order").
+	const std::vector<Effect*>& chainOrder = target.chain->effects();
+	const auto position = [&chainOrder](const Effect* effect) {
+		return std::find(chainOrder.begin(), chainOrder.end(), effect) - chainOrder.begin();
+	};
+	std::stable_sort(out->begin(), out->end(), [&position](const Effect* a, const Effect* b) { return position(a) < position(b); });
 	return true;
 }
 
