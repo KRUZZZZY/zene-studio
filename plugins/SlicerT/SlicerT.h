@@ -92,7 +92,9 @@ private:
 	//! What the render path reads of the editing state, as ONE immutable object: the sample (and
 	//! through Sample, the shared buffer it plays) and the slice map. A note pins the publication that
 	//! is current on its first period, so replacing the sample or moving a slice point neither switches
-	//! a sounding note nor frees the buffer under it. Built and published on a control thread only.
+	//! a sounding note nor frees the buffer under it. The per-slice controls stay live and are resolved
+	//! through the map (liveSliceFor), so the note never applies another slice's controls. Built and
+	//! published on a control thread only.
 	struct PlaybackSnapshot
 	{
 		Sample sample;
@@ -120,6 +122,10 @@ private:
 	//! engine's change guard excludes the whole render period, so the render thread's note-start read
 	//! sees a complete publication or the previous one, never a half made replacement.
 	void publishPlaybackSnapshot();
+	//! Audio thread: the index of the live slice that contains @a point (a fraction of the sample), or
+	//! -1 for a point outside every slice. The per-slice controls follow the map through this, so a note
+	//! that kept its interval applies that interval's controls across a merge or a split.
+	int liveSliceFor(float point) const noexcept;
 	//! Gain, pan, filter and random amount of slice @a slice applied to one rendered block. Audio thread:
 	//! reads the control atomics and writes only @a block and @a voice; neutral controls return at once.
 	void applySliceControls(SliceVoice& voice, int slice, SampleFrame* block, f_cnt_t frames) noexcept;

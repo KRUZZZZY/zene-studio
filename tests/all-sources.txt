@@ -3559,6 +3559,7 @@ tests/src/gui/ShellLayoutTest.cpp
 tests/src/gui/ShellTest.cpp
 tests/src/gui/ShortcutsCommandsTest.cpp
 tests/src/gui/ShortcutsPageTest.cpp
+tests/src/gui/SlicerTSampleSwapGuiTest.cpp
 tests/src/gui/SlicerTSliceControlsTest.cpp
 tests/src/gui/StartHubTest.cpp
 tests/src/gui/StemSplitBackgroundTest.cpp

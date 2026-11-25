@@ -96,6 +96,16 @@ QString sliceAttributeName(std::size_t control, std::size_t slice)
 	return QString::fromLatin1(prefixes[control]) + QString::number(slice);
 }
 
+//! The slice of \a points that contains \a point (both fractions of the sample), or -1.
+int sliceContainingPoint(const std::vector<float>& points, float point) noexcept
+{
+	for (std::size_t i = 0; i + 1 < points.size(); ++i)
+	{
+		if (point >= points[i] && point < points[i + 1]) { return static_cast<int>(i); }
+	}
+	return -1;
+}
+
 } // namespace
 
 // ################################# SlicerT ####################################
@@ -210,7 +220,7 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 	speedRatio *= pitchRatio;
 
 	float sliceStart, sliceEnd;
-	int sliceIndex = -1; // the base note plays the whole sample: no per-slice controls
+	bool sliceNote = false; // the base note plays the whole sample: no per-slice controls
 	if (noteIndex == 0) // full sample at base note
 	{
 		sliceStart = 0;
@@ -219,7 +229,7 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 	else if (noteIndex > 0 && static_cast<std::size_t>(noteIndex) < slicePoints.size())
 	{
 		noteIndex -= 1;
-		sliceIndex = noteIndex;
+		sliceNote = true;
 		sliceStart = slicePoints[noteIndex];
 		sliceEnd = slicePoints[noteIndex + 1];
 	}
@@ -266,9 +276,15 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 			out[i + offset][1] *= fadeValue;
 		}
 
-		if (sliceIndex >= 0 && static_cast<std::size_t>(sliceIndex) < slicer::MaxSlices)
+		// The per-slice controls stay LIVE but must belong to the interval this note renders: a merge or
+		// a split shifts the control banks with the map (sliceMerged/sliceSplit), so the controls are
+		// those of the live slice that contains the note's own start - not those of whichever slice now
+		// sits at the index the map had for it. The live map is the current publication, which the
+		// render period's own lock keeps from being replaced under this read.
+		const int controlSlice = sliceNote ? liveSliceFor(sliceStart) : -1;
+		if (controlSlice >= 0 && static_cast<std::size_t>(controlSlice) < slicer::MaxSlices)
 		{
-			applySliceControls(playbackSlot->voice, sliceIndex, out.data() + offset, frames);
+			applySliceControls(playbackSlot->voice, controlSlice, out.data() + offset, frames);
 		}
 
 		const auto currentNote = static_cast<float>(playbackState->frameIndex()) / sample.sampleSize();
@@ -319,6 +335,12 @@ void SlicerT::publishPlaybackSnapshot()
 			return retired == nullptr || retired.use_count() == 1;
 		}),
 		m_retiredSnapshots.end());
+}
+
+int SlicerT::liveSliceFor(float point) const noexcept
+{
+	const PlaybackSnapshot* const live = m_playbackSnapshot.get();
+	return live != nullptr ? sliceContainingPoint(live->slicePoints, point) : -1;
 }
 
 void SlicerT::applySliceControls(SliceVoice& voice, int slice, SampleFrame* block, f_cnt_t frames) noexcept
