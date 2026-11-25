@@ -136,7 +136,8 @@ PresetPreviewPlayHandle::PresetPreviewPlayHandle( const QString & _preset_file, 
 		Instrument * i = s_previewTC->previewInstrumentTrack()->instrument();
 		const QString ext = QFileInfo( _preset_file ).
 							suffix().toLower();
-		if( i == nullptr || !i->descriptor()->supportsFileType( ext ) )
+		// Q050-359: a placeholder instrument has no descriptor to ask about file types.
+		if( i == nullptr || i->descriptor() == nullptr || !i->descriptor()->supportsFileType( ext ) )
 		{
 			const PluginFactory::PluginInfoAndKey& infoAndKey =
 				getPluginFactory()->pluginSupportingExtension(ext);

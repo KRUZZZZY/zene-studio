@@ -190,6 +190,22 @@ bool importFileAndReport(const QString& path, Track* track, TimePos tick, Qt::Ke
 	return made;
 }
 
+void reportRefusedInstrument(const QString& pluginName, const QString& reason)
+{
+	// Q050-359: a module that declines leaves the track's instrument alone; the user is told which instrument
+	// did not load and why. Nothing here touches the project - a refused drop changes nothing.
+	QString message = QObject::tr("The instrument '%1' could not be loaded; the track kept the instrument it had.")
+		.arg(pluginName);
+	if (!reason.isEmpty()) { message += QLatin1Char(' ') + reason; }
+	if (getGUI() == nullptr || getGUI()->mainWindow() == nullptr)
+	{
+		// Headless (the control socket, a test): the reason goes where an operator reads it.
+		qWarning("%s", qPrintable(message));
+		return;
+	}
+	report(message, false);
+}
+
 QAction* addLoopWarpAction(QMenu* menu)
 {
 	QAction* action = menu->addAction(QObject::tr("Auto-Warp Dropped Loops"));
