@@ -187,7 +187,9 @@ void SessionGridView::rebuild(int tracks, int scenes)
 	m_scenes = std::min(scenes, MaxVisibleScenes);
 	m_dropCell = -1;
 	m_selected.clear();  // a cell's index means another cell in a grid of another size
-	m_playingScene.assign(static_cast<std::size_t>(m_tracks), -1);
+	m_playingScene.assign(static_cast<std::size_t>(tracks), -1);  // every authored track, drawn or not (cluster 5360)
+	m_playingName.assign(static_cast<std::size_t>(m_tracks), QString());
+	m_sceneHasClip.assign(static_cast<std::size_t>(m_scenes), false);
 	for (int track = 0; track < m_tracks; ++track)
 	{
 		// 0.5.0 theme 14: the column's header names its track (paintHeaders); a header is read, not pressed.
@@ -250,6 +252,7 @@ void SessionGridView::refresh()
 	m_subScenes = state.result.value(QStringLiteral("subscenes")).toArray();
 	m_names = cellNames(m_slots);
 	readPlayback(m_slots);
+	readAuthoredClips(m_slots);
 	paintHeaders();
 	for (int track = 0; track < m_tracks; ++track)
 	{
@@ -298,12 +301,12 @@ void SessionGridView::report(const ControlResult& result)
 void SessionGridView::readColumns(const QJsonArray& columns)
 {
 	std::fill(m_playingScene.begin(), m_playingScene.end(), -1);
-	m_phases.assign(static_cast<std::size_t>(std::max(m_tracks, 0)), QString());
+	m_phases.assign(static_cast<std::size_t>(std::max(m_gridTracks, 0)), QString());
 	for (const QJsonValue& value : columns)
 	{
 		const QJsonObject column = value.toObject();
 		const int track = column.value(QStringLiteral("track")).toInt();
-		if (track < 0 || track >= m_tracks) { continue; }
+		if (track < 0 || track >= m_gridTracks) { continue; }
 		m_playingScene[static_cast<std::size_t>(track)] = column.value(QStringLiteral("scene")).toInt();
 		m_phases[static_cast<std::size_t>(track)] = column.value(QStringLiteral("phase")).toString();
 	}
@@ -341,6 +344,27 @@ void SessionGridView::readPlayback(const QJsonArray& slotList)
 		const auto index = static_cast<std::size_t>(track * m_scenes + scene);
 		m_badges[index] = sessiongrid::playbackBadge(slot);
 		m_playback[index] = sessiongrid::playbackWords(slot);
+	}
+}
+
+
+//! Cluster 5360: the view draws at most 64 x 64 cells, but a scene button and a cell's replacement note
+//! speak for the whole authored grid, as PerformView does: note which drawn scenes hold a clip on any
+//! track, and the name of the clip each drawn track plays, in whatever scene row that is.
+void SessionGridView::readAuthoredClips(const QJsonArray& slotList)
+{
+	m_sceneHasClip.assign(static_cast<std::size_t>(std::max(m_scenes, 0)), false);
+	m_playingName.assign(static_cast<std::size_t>(std::max(m_tracks, 0)), QString());
+	for (const QJsonValue& value : slotList)
+	{
+		const QJsonObject slot = value.toObject();
+		const int track = slot.value(QStringLiteral("track")).toInt();
+		const int scene = slot.value(QStringLiteral("scene")).toInt();
+		if (track < 0 || track >= m_gridTracks) { continue; }
+		if (scene >= 0 && scene < m_scenes) { m_sceneHasClip[static_cast<std::size_t>(scene)] = true; }
+		if (track >= m_tracks || scene != m_playingScene[static_cast<std::size_t>(track)]) { continue; }
+		const QString name = slot.value(QStringLiteral("name")).toString();
+		m_playingName[static_cast<std::size_t>(track)] = name.isEmpty() ? tr("clip") : name;
 	}
 }
 
@@ -404,11 +428,17 @@ QString SessionGridView::launchNote(int track, int scene) const
 {
 	const int on = m_playingScene[static_cast<std::size_t>(track)];
 	const QString& name = m_names[static_cast<std::size_t>(track * m_scenes + scene)];
-	if (on < 0 || on == scene || on >= m_scenes || m_phases[static_cast<std::size_t>(track)] == QLatin1String("stopping"))
+	if (on < 0 || on == scene || on >= m_gridScenes || m_phases[static_cast<std::size_t>(track)] == QLatin1String("stopping"))
 	{
 		return name.isEmpty() ? QString() : tr("Press to launch %1").arg(name);
 	}
-	return sessiongrid::launchReplaces(name, m_names[static_cast<std::size_t>(track * m_scenes + on)]);
+	return sessiongrid::launchReplaces(name, m_playingName[static_cast<std::size_t>(track)]);
+}
+
+
+bool SessionGridView::sceneHoldsClip(int scene) const
+{
+	return scene >= 0 && scene < static_cast<int>(m_sceneHasClip.size()) && m_sceneHasClip[static_cast<std::size_t>(scene)];
 }
 
 
@@ -420,7 +450,9 @@ void SessionGridView::paintScenes(const QJsonArray& sceneStates)
 		const QString name = sceneStates.at(scene).toObject().value(QStringLiteral("name")).toString();
 		const QString label = name.isEmpty() ? tr("Scene %1").arg(scene + 1) : name;
 		// 0.5.0 theme 14: the play mark says the row's state by its shape; an empty scene is in italics too.
-		const sessiongrid::SceneState state = sessiongrid::sceneState(scene, m_scenes, m_names, m_playingScene, m_phases);
+		// The row's state is over every authored track: a clip on a track this view does not draw still fills it.
+		sessiongrid::SceneState state = sessiongrid::sceneState(scene, m_scenes, m_names, m_playingScene, m_phases);
+		if (state == sessiongrid::SceneState::Empty && sceneHoldsClip(scene)) { state = sessiongrid::SceneState::Stopped; }
 		button->setText(sessiongrid::sceneMark(state) + label);
 		if (button->font().italic() != (state == sessiongrid::SceneState::Empty))
 		{
