@@ -100,7 +100,46 @@ reported using `awk`/`sed` on named files for lookups because fff was not availa
 
 ## Self-check
 
-(Filled in after running submit_check.py; see below.)
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 3503` ran with
+EXIT 0, RESULT PASS (logs/submit-1.log). Each question it asks:
+
+- **The test fails without the fix and passes with it.** With `src/tracks/SampleTrack.cpp`
+  reverted (`git apply -R logs/fix.patch`, EXIT 0), the run exits 8:
+  `FAIL! patternPassPastTheWindowSchedulesNothing() '!track.play(TimePos(boundary), kPeriod, 0, 0)' returned FALSE`,
+  test-red-5.log. With the fix re-applied (`git apply logs/fix.patch`, EXIT 0), it exits 0
+  (test-green-5.log, "100% tests passed out of 1").
+- **The test is deterministic.** It calls `SampleTrack::play` synchronously with injected
+  positions: tick 0, the first tick whose start frame is >= sourceOut (computed from
+  `Engine::framesPerTick` as the product computes it), and that tick + 100. It asserts the
+  return value and the two atomic latches, which `play()` sets synchronously. Nothing is read
+  from the audio thread and nothing is timed. `drainPlayHandles()`'s `qWait` is teardown
+  cleanup copied from `SampleClipWindowTest` and asserts nothing.
+- **The fix is at the cause and complete.** The cause is where the window is built, in
+  `SampleTrack::play`'s pattern branch. Callers with `_clip_num >= 0`:
+  - `PatternStore::play` (`src/core/PatternStore.cpp:62`) ORs the return value into
+    `notePlayed`. Returning false when nothing was scheduled is what the arrangement branch
+    already does.
+  - `Song::processNextBuffer` calls `track->play(..., clipNum)` (`src/core/Song.cpp:687`) and
+    goes through `PatternStore::play` for a session cell (`src/core/Song.cpp:682`).
+
+  Siblings: the arrangement branch already refuses empty windows (`src/tracks/SampleTrack.cpp:302`),
+  and the fix uses the same rule, including its record-armed exception. The non-pattern-store
+  single-clip case plays the authored window, which cannot be inverted (`SampleWindow::clamped`,
+  `include/SampleWindow.h:64-69`). `SamplePlayHandle` still tolerates degenerate windows
+  (`length()`, `renderPreservingPitch`'s empty check), and it is not changed.
+- **No collateral damage.** No save, load, undo or command code is touched. The only behaviour
+  that changes is a pattern pass whose window is empty. It used to produce a handle that rendered
+  silence; it now produces nothing, returns false, and leaves the latches clear. Any pass that has
+  frames to play takes the same path as before: the control case in the test passes, and so does
+  the family run (11 of 11 tests, test-family-1.log). The new check is not a limit, so it cannot
+  reject a caller that legitimately exceeds one.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not applicable: the verdict is FIXED. The parts of
+  the finding that are not real are shown under "What is not real" above
+  (`include/SampleWindow.h:73`, `src/core/SamplePlayHandle.cpp:741-747`).
+- **Sibling commands in changed command files.** This change touches no command file. The
+  commit changes only `src/tracks/SampleTrack.cpp`, the new test, registration lists and this
+  report. The `app.*` commands the check lists come from the branch's base diff, not from this
+  fix, and no control command was added (the ControlCommandsSnapshot canary is unaffected).
 
 ## Other findings
 
