@@ -37,3 +37,11 @@ Seam note: `VstEffect::processImpl` needs a live remote VST process, so it canno
 None.
 
 Delegation: Haiku ran the RED build and test, and the GREEN / revert / reapply sequence, and reported exit codes. I read the logs myself and checked `git status` and `git diff`.
+
+## Self-check
+- Test fails with the product change reverted and passes with it: revert-test.log EXIT=8 (`dryOnlyMixSilencesEveryOutputChannel`: Actual 9 vs Expected 0.5 at `VstEffectControlsTest.cpp:183`; `wetDryMixMapsExtraOutputsToLastInput`: Actual 2 vs Expected 1.5 at `:206`). reapply-test.log and green-test.log EXIT=0.
+- Deterministic: the tests call `mixVstWetDry` directly on fixed stack arrays with fixed gains (0/1 and 0.5/0.5). There is no timing, thread, sleep or random input.
+- Cause and siblings: the only clamp was the `std::min(..., 2)` in the old `VstEffect::processImpl` loop, now `mixVstWetDry`. A search of `plugins/` and `src/` (excluding Carla) for `mixableOutputs` and "first 2/two channels" found no other copy. `VstEffect::processImpl` is the only caller (`VstEffect.cpp:105`). The dry-input mapping is the old rule (`min(c, inputs-1)`), so channels 0 and 1 are unchanged.
+- Collateral: outputs 0 and 1 produce the same values as before, and the zero-input early return in `processImpl` is unchanged. No saved data or project format is involved. Mixers with more than 2 outputs now apply the wet/dry knobs to the extra channels, which is the fix. No limit or check was added. No control commands were added, and the audio thread gains no allocation or lock.
+- Not a ALREADY-FIXED or FALSE-POSITIVE verdict.
+- Gates: `feature_check.py` could not run (git checkout in its baseline tree refused by bunny-guard, `feature-check.log`). I did not work around it, so the gate step is unverified and submit_check reports it as FAIL.
