@@ -59,12 +59,16 @@ the finding asks for ("defer target destruction until audio readers have exited"
 
 ## Regression test (already on the branch, added by 73ecb52ba3)
 
-`tests/src/core/ModulationAudioViewTest.cpp:222-271` is
+`tests/src/core/ModulationAudioViewTest.cpp:222-287` is
 `targetDestructionWaitsForAnInFlightAudioWrite`. Its audio thread parks inside the model write through
 a `dataChanged` hook. Another thread then deletes the model. The test checks two things: the gate
 closes, and the destruction does not finish while the write is still parked. The sibling
-`rebindDuringDestructionIgnoresAStaleTargetClosure` (`:273`) covers the generation scoping that
+`rebindDuringDestructionIgnoresAStaleTargetClosure` (`:289`) covers the generation scoping that
 97789a3fd0 added.
+
+The second check as 97789a3fd0 left it sampled once, immediately after the gate closed, and it passed
+on a build with no writer wait at all - that commit had replaced 73ecb52ba3's 50 ms sleep with the
+single sample. The QA review restored a bounded observation window (see "QA review" below).
 
 ## Commands run this session
 
@@ -109,8 +113,11 @@ not run.
   belongs to that earlier commit's own record; I did not re-run it this session.
 - **The test is deterministic.** It synchronises through a `Model::dataChanged` hook with
   `testsupport::BinarySemaphore`. The audio write parks at the hook, and the destroyer is observed
-  through the `targetAlive` gate (`ModulationAudioViewTest.cpp:228-262`). It has no sleeps. The 2 s
-  `try_acquire_for` and deadline only bound a hang: on a correct build they never decide the result.
+  through the `targetAlive` gate (`ModulationAudioViewTest.cpp:228-262`). The 2 s `try_acquire_for`
+  and deadline only bound a hang: on a correct build they never decide the result. The QA review
+  replaced the single post-gate sample with a bounded 250 ms observation window (see "QA review"
+  below); the audio write stays parked for that whole window, so a build that defers the teardown
+  cannot finish inside it and the window never decides a pass.
 - **The fix is at the cause and complete; callers and siblings checked.** Every raw-pointer write on
   the audio path is in `applyModulationBlock` (`ModulationLayerPublisher.cpp:300-317`). Both writes
   there, the model write at `:316` and the instrument write at `:312`, happen under the pin taken at
@@ -130,6 +137,30 @@ not run.
 
 - The gate is blocked by the environment: in this lane, `feature_check.py` cannot check out its
   baseline (see Gates above). Every lane that runs this gate under the same guard will hit it.
+
+## QA review (r1)
+
+The claim was checked against the branch, and the cited regression was measured for sensitivity. The
+ALREADY-FIXED verdict holds: the pin-and-wait scheme really does close the check-then-use window the
+finding describes (`ModulationLayer.h:418-443`, `ModulationLayerPublisher.cpp:130-159`, `:291-319`).
+The test as submitted did not prove it, so the wait assertion was strengthened to a bounded 250 ms
+observation window (`ModulationAudioViewTest.cpp:261-283`), the same shape 73ecb52ba3 used before
+97789a3fd0 removed it.
+
+| Command | EXIT |
+|---|---|
+| `cmake --build build --target zene ModulationAudioViewTest -j4` | 0 |
+| `cd build/tests && ctest -R ModulationAudioView --output-on-failure` | 0 (`186 ... Passed`, 16 passed / 0 failed) |
+| `./ModulationAudioViewTest targetDestructionWaitsForAnInFlightAudioWrite`, five repeats | 0, 0, 0, 0, 0 |
+| the same ctest with `retireTarget`'s writer wait removed from `ModulationLayerPublisher.cpp:151-157` (product hunk reversed, test untouched), rebuilt | 8 (`FAIL! ... 'waitedForWriter' returned FALSE`, `ModulationAudioViewTest.cpp:283`) |
+| `git checkout -- src/core/ModulationLayerPublisher.cpp`, rebuilt, ctest again | 0 |
+
+Without the observation window that reversal PASSED (EXIT 0), which is how the gap was found.
+`feature_check.py` on this worktree: EXIT 1 with no gate table - the six simple gates PASS
+(`fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`,
+`doc-figures`), then `base_listings()` dies on the same guard-blocked baseline checkout the builder
+reported, so the complexity and file-length rows never run. No product file is touched by this unit,
+so neither ratchet has an item to list in it.
 
 Delegation: Haiku (two starts) ran the build, the ctest and direct test runs, the first gate run and
 the first completion check. I checked their key log lines myself. Sonnet and DeepSeek were not used:

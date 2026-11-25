@@ -258,8 +258,23 @@ private slots:
 			std::this_thread::yield();
 		}
 		const bool teardownEntered = !publisher.targetAlive(0, view.entries[0].token);
-		const bool waitedForWriter = teardownEntered
-			&& !destructionFinished.load(std::memory_order_acquire);
+		// The gate closing is not the wait. Observe the destroyer for a bounded
+		// window while the audio write stays parked: a build that defers the
+		// teardown cannot finish inside it, one that does not finishes in
+		// microseconds. Sampling once, right after the gate closed, passes
+		// either way - the assertion has to outlast the destroyer's next step.
+		bool finishedWhileParked = false;
+		const auto parkedUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(250);
+		while (std::chrono::steady_clock::now() < parkedUntil)
+		{
+			if (destructionFinished.load(std::memory_order_acquire))
+			{
+				finishedWhileParked = true;
+				break;
+			}
+			std::this_thread::yield();
+		}
+		const bool waitedForWriter = teardownEntered && !finishedWhileParked;
 		resumeWrite.release();
 		audio.join();
 		destroyer.join();
@@ -267,6 +282,7 @@ private slots:
 		QVERIFY2(teardownEntered, "the destroyer did not close the target gate before teardown");
 		QVERIFY2(waitedForWriter,
 			"the target was destroyed while the audio thread still held its raw pointer");
+		QVERIFY(destructionFinished.load(std::memory_order_acquire));
 		QVERIFY(!publisher.targetAlive(0, view.entries[0].token));
 	}
 
