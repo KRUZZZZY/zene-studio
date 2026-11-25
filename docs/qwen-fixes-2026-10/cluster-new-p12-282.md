@@ -16,7 +16,7 @@ Realtime: the helper is `noexcept`, allocation-free and lock-free, and runs the 
 
 Seam note: `VstEffect::processImpl` needs a live remote VST process, so it cannot be driven in a unit test. The mix is extracted so the test runs the exact code that `processImpl` calls.
 
-## Commands (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p12-282.r1/logs)
+## Commands, round 1 (logs in .../runs/new-p12-282.r1/logs; they are not in r2/logs. The round-2 re-run is at the end.)
 | Step | Command | EXIT |
 |---|---|---|
 | RED build (bug in place) | `cmake --build build --target VstEffectControlsTest -j4 > red-build.log` | 0 |
@@ -31,12 +31,23 @@ Seam note: `VstEffect::processImpl` needs a live remote VST process, so it canno
 | 4b reapply test | `ctest -R VstEffectControlsTest` (reapply-test.log) | 0, passed |
 
 ## Gates
-`python3 .../feature_check.py <worktree>` did NOT run. The script's `git checkout --detach` of its baseline tree was refused by bunny-guard (output in `feature-check.log`, EXIT=1). I did not work around it. The gate table is therefore unverified. By inspection: the new function `mixVstWetDry` has CCN 3 and `VstWetDryMix.h` is about 55 lines.
+Round 1 omitted `plugins/VstEffect/VstWetDryMix.h` from `tests/all-sources.txt`. Commit b430774a98 added it (after `VstSubPluginFeatures.h`, line 1546). Re-run in round 2 from the worktree (logs in r2/logs):
+
+| Gate | Command | EXIT |
+|---|---|---|
+| fork-sources | `bash tests/fork-sources-gate.sh` (gate-fork.log) | 0, "PASS: every tracked source in scope is registered" |
+| all-sources-reproduce | `bash tests/all-sources-reproduce.sh` (gate-allsources.log) | 0, "REPRODUCES" |
+| no-upstream-regression | `bash tests/no-upstream-regression-gate.sh` (gate-simple-1.log) | 0 |
+| check-namespace | `tests/scripted/check-namespace` (gate-simple-2.log) | 0 |
+| no-tautology | `bash tests/no-tautology-gate.sh` (gate-simple-3.log) | 0 |
+| doc-figures | `python3 tests/doc-figures-gate.py` (gate-simple-4.log) | 0 |
+| file-length | `bash tests/file-length-gate.sh --check` (gate-length.log) | 0 |
+
+`python3 .../feature_check.py <worktree>` exits 1 (feature-check.log): only its cached-baseline step is blocked, because bunny-guard refuses `git -C .../gate-baselines/tree checkout --detach`. I did not work around it. So the complexity row is not verified by tooling (the reviewer reports lizard is not installed); by inspection `mixVstWetDry` has CCN 3 and `VstWetDryMix.h` is about 55 lines.
 
 ## Other findings
-None.
-
-Delegation: Haiku ran the RED build and test, and the GREEN / revert / reapply sequence, and reported exit codes. I read the logs myself and checked `git status` and `git diff`.
+- `plugins/Vst3Effect/Vst3Effect.cpp:249` mixes only `min(inputs, outputs)` channels, so outputs above that keep the wet signal only. The VST2 fix gives every extra output the last input channel. The two plug-in paths therefore differ for outputs without an input (not changed here).
+- `plugins/VstEffect/VstEffect.cpp` still includes `<algorithm>` although `std::min` is no longer used there (cosmetic).
 
 ## Self-check
 - Test fails with the product change reverted and passes with it: revert-test.log EXIT=8 (`dryOnlyMixSilencesEveryOutputChannel`: Actual 9 vs Expected 0.5 at `VstEffectControlsTest.cpp:183`; `wetDryMixMapsExtraOutputsToLastInput`: Actual 2 vs Expected 1.5 at `:206`). reapply-test.log and green-test.log EXIT=0.
@@ -44,4 +55,9 @@ Delegation: Haiku ran the RED build and test, and the GREEN / revert / reapply s
 - Cause and siblings: the only clamp was the `std::min(..., 2)` in the old `VstEffect::processImpl` loop, now `mixVstWetDry`. A search of `plugins/` and `src/` (excluding Carla) for `mixableOutputs` and "first 2/two channels" found no other copy. `VstEffect::processImpl` is the only caller (`VstEffect.cpp:105`). The dry-input mapping is the old rule (`min(c, inputs-1)`), so channels 0 and 1 are unchanged.
 - Collateral: outputs 0 and 1 produce the same values as before, and the zero-input early return in `processImpl` is unchanged. No saved data or project format is involved. Mixers with more than 2 outputs now apply the wet/dry knobs to the extra channels, which is the fix. No limit or check was added. No control commands were added, and the audio thread gains no allocation or lock.
 - Not a ALREADY-FIXED or FALSE-POSITIVE verdict.
-- Gates: `feature_check.py` could not run (git checkout in its baseline tree refused by bunny-guard, `feature-check.log`). I did not work around it, so the gate step is unverified and submit_check reports it as FAIL.
+- Gates: see the Gates table above. Only feature_check.py's baseline step is blocked, the registration gates pass.
+
+## Round 2
+I re-ran the green / revert / reapply sequence in round 2 (r2/logs): green EXIT 0; with `git diff 1fc44db37b HEAD -- plugins/VstEffect/VstWetDryMix.h` reversed, rebuild EXIT 0 and ctest EXIT 8 (both new tests fail: `VstEffectControlsTest.cpp:183` Actual 9 vs Expected 0.5, `:206` Actual 2 vs Expected 1.5); after reapply, ctest EXIT 0.
+
+Delegation: Haiku ran the round-2 build and ctest sequence (green, revert, reapply) and reported exit codes. I read green-test.log, revert-test.log and reapply-test.log myself and ran the gate scripts directly.
