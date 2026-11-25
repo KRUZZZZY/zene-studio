@@ -136,10 +136,15 @@ int barAt(const QJsonArray& events, int row, int projectNumerator, int projectDe
 	{
 		const QJsonObject event = events.at(i).toObject();
 		const int tick = event.value(QStringLiteral("tick")).toInt();
-		while (tick - barStart >= perBar)
+		// Advance by the QUOTIENT, not one bar at a time: a metre of 1/32 makes a bar six ticks
+		// (DefaultTicksPerBar / 32) and an event may sit at any tick, so stepping one bar per iteration
+		// cost hundreds of millions of them for a row near the last tick (cluster new-p12-260). The
+		// quotient times the metre never passes the tick, so the product cannot overflow.
+		const int barsAhead = (tick - barStart) / perBar;
+		if (barsAhead > 0)
 		{
-			barStart += perBar;
-			++bar;
+			barStart += barsAhead * perBar;
+			bar += barsAhead;
 #ifdef LMMS_TESTING
 			++g_barWalkSteps;
 #endif

@@ -259,6 +259,32 @@ private slots:
 		QCOMPARE(table->item(2, 0)->text(), QStringLiteral("3"));  // tick 250: that bar ended at 100+144
 		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
 	}
+
+	//! BUG 11 (cluster new-p12-260): the bar column walked the map one bar per iteration. A 1/32 metre
+	//! makes a bar six ticks (DefaultTicksPerBar 192 / 32) and a project file's event may sit at any
+	//! tick, so a row near the last signed tick cost 357,913,941 iterations - the panel froze while
+	//! filling it. The walk must reach the row by the quotient, and must still report the bar a
+	//! bar-at-a-time walk reached.
+	void theBarWalkDoesNotStepOncePerBar()
+	{
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+		QCOMPARE(mapState().value(QStringLiteral("event_count")).toInt(), 0);
+		// 1/32 from tick 0, then an event at the last tick the format allows (tickProperty is 0..INT_MAX).
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0}, {QStringLiteral("numerator"), 1},
+				{QStringLiteral("denominator"), 32}}).ok);
+		QVERIFY(ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_add"),
+			{{QStringLiteral("tick"), 0x7fffffff}, {QStringLiteral("bpm"), 120}}).ok);
+		// The panel's own refresh does the walk; opening it is where the freeze showed.
+		TempoMapPanel panel;
+		auto* table = panel.findChild<QTableWidget*>();
+		QCOMPARE(panel.rowCount(), 2);
+		// 2147483647 / 6 = 357913941 whole bars after the first: bar 357913942, as the per-bar walk said.
+		QCOMPARE(table->item(1, 0)->text(), QStringLiteral("357913942"));
+		const qint64 steps = TempoMapPanel::barWalkStepsForTest();
+		QVERIFY2(steps <= 4, qPrintable(QStringLiteral("the bar walk took %1 steps").arg(steps)));
+		ControlRegistry::instance()->invoke(QStringLiteral("transport.tempo_map_clear"), QJsonObject{});
+	}
 };
 
 QTEST_MAIN(TempoMapPanelTest)
