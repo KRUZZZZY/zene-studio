@@ -1543,6 +1543,7 @@ plugins/VstEffect/VstEffectControls.cpp
 plugins/VstEffect/VstEffectControls.h
 plugins/VstEffect/VstSubPluginFeatures.cpp
 plugins/VstEffect/VstSubPluginFeatures.h
+plugins/VstEffect/VstWetDryMix.h
 plugins/WasmEffect/WasmEffect.cpp
 plugins/WasmEffect/WasmEffect.h
 plugins/WasmEffect/WasmEffectControlDialog.cpp
