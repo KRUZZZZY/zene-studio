@@ -28,10 +28,13 @@
 
 #include "ControlMixerSupport.h"
 #include "ControlReversibility.h"
+#include "AudioEngine.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "Mixer.h"
 #include "MixerSurround.h"
+#include "MultiTrackRecorder.h"
+#include "RecorderTaps.h"
 
 namespace lmms
 {
@@ -74,6 +77,19 @@ MixerChannel* resolveChannel(const QString& id, ControlResult* error)
 		return nullptr;
 	}
 	return channel;
+}
+
+//! The record routes (by number) whose tap is mixer channel @a channelId.
+QJsonArray recordRoutesTapping(int channelId)
+{
+	QJsonArray routes;
+	const int count = Engine::audioEngine()->recorder().trackCount();
+	for (int route = 0; route < count; ++route)
+	{
+		const recordertaps::Tap tap = recordertaps::get(route);
+		if (tap.source == recordertaps::Source::Channel && tap.channelId == channelId) { routes.append(route); }
+	}
+	return routes;
 }
 
 QJsonObject channelState(MixerChannel* channel)
@@ -323,6 +339,7 @@ void registerMixerCommands(ControlRegistry& registry)
 		cmd.resultSchema = objectSchema({
 			{QStringLiteral("removed"), stringProperty()},
 			{QStringLiteral("count"), QJsonObject{{QStringLiteral("type"), QStringLiteral("integer")}}},
+			{QStringLiteral("record_routes_reset"), QJsonObject{{QStringLiteral("type"), QStringLiteral("array")}}},
 		});
 		cmd.mutating = true;
 		cmd.handler = [](const QJsonObject& args) {
@@ -343,11 +360,14 @@ void registerMixerCommands(ControlRegistry& registry)
 			// pointer is gone, and the id is what the caller was told
 			// (SPEC-stable-ids.md slice 2 - it survives the delete).
 			const QString removedId = control::channelIdOf(channel);
+			// Before the delete too: the routes tapping this channel go back to the input with it.
+			const QJsonArray resetRoutes = recordRoutesTapping(channel->id());
 			mixer->deleteChannel(index);
 
 			QJsonObject result;
 			result.insert(QStringLiteral("removed"), removedId);
 			result.insert(QStringLiteral("count"), static_cast<int>(mixer->numChannels()));
+			if (!resetRoutes.isEmpty()) { result.insert(QStringLiteral("record_routes_reset"), resetRoutes); }
 			QJsonObject transaction;
 			transaction.insert(QStringLiteral("before"), beforeState);
 			transaction.insert(QStringLiteral("inverse"),

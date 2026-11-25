@@ -101,6 +101,27 @@ class ControlRecordingRoutesTest : public QObject
 		return qScopeGuard([previous] { ConfigManager::inst()->setWorkingDir(previous); });
 	}
 
+	//! mixer.add_channel: the new channel's "ch-<n>" id.
+	static QString addChannel()
+	{
+		const ControlResult added = ControlRegistry::instance()->invoke(QStringLiteral("mixer.add_channel"));
+		return added.ok ? added.result.value(QStringLiteral("channel")).toString() : QString();
+	}
+
+	//! record.route_source on route 0: with no \a source a query; \a channel only for the "channel" source.
+	static ControlResult routeSource(const QString& source = QString(), const QString& channel = QString())
+	{
+		QJsonObject args{{QStringLiteral("route"), 0}};
+		if (!source.isEmpty()) { args.insert(QStringLiteral("source"), source); }
+		if (!channel.isEmpty())
+		{
+			args.insert(QStringLiteral("channel"), channel);
+			args.insert(QStringLiteral("tap"), QStringLiteral("post_fader"));
+			args.insert(QStringLiteral("side"), QStringLiteral("left"));
+		}
+		return ControlRegistry::instance()->invoke(QStringLiteral("record.route_source"), args);
+	}
+
 private slots:
 
 	void initTestCase()
@@ -536,6 +557,73 @@ private slots:
 		// The pending tap applies at the next period boundary, exactly once.
 		mixer->masterMix(out.data());
 		QCOMPARE(recorder.track(0).framesPushed(), base + 2 * expected);
+	}
+
+	//! new-p17-140: a route tapping a channel that is deleted must go back to the input, or the input
+	//! path keeps skipping it and nothing ever pushes into it.
+	void aTapOnADeletedChannelGoesBackToTheInput()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		ControlRegistry* registry = ControlRegistry::instance();
+		AudioDevice* device = Engine::audioEngine()->audioDev();
+		QVERIFY(device != nullptr);
+		device->stopProcessing();  // this test drives the periods itself
+		const auto restartAudio = qScopeGuard([device] { device->startProcessing(); });
+		const auto resetRoute = qScopeGuard([] { routeSource(QStringLiteral("input")); });
+
+		const QString a = addChannel();
+		const QString b = addChannel();
+		QVERIFY(!a.isEmpty() && !b.isEmpty());
+		QVERIFY2(routeSource(QStringLiteral("channel"), b).ok, "route_source channel failed");
+		std::vector<SampleFrame> out(static_cast<std::size_t>(Engine::audioEngine()->framesPerPeriod()));
+		mixer->masterMix(out.data());
+		QVERIFY(recordertaps::audioTapped(0));
+
+		const ControlResult removedA = registry->invoke(QStringLiteral("mixer.remove_channel"),
+			QJsonObject{{QStringLiteral("channel"), a}});
+		QVERIFY2(removedA.ok, qPrintable(removedA.errorMessage));
+		QCOMPARE(recordertaps::get(0).source, recordertaps::Source::Channel);
+		QCOMPARE(QStringLiteral("ch-%1").arg(recordertaps::get(0).channelId), b);
+		QVERIFY(!removedA.result.contains(QStringLiteral("record_routes_reset")));
+
+		const ControlResult removedB = registry->invoke(QStringLiteral("mixer.remove_channel"),
+			QJsonObject{{QStringLiteral("channel"), b}});
+		QVERIFY2(removedB.ok, qPrintable(removedB.errorMessage));
+		QCOMPARE(removedB.result.value(QStringLiteral("record_routes_reset")).toArray(), QJsonArray{0});
+		QVERIFY(!recordertaps::tapped(0));
+		QCOMPARE(recordertaps::get(0).source, recordertaps::Source::Input);
+		QCOMPARE(routeSource().result.value(QStringLiteral("source")).toString(), QStringLiteral("input"));
+
+		mixer->masterMix(out.data());
+		QVERIFY(!recordertaps::audioTapped(0));
+	}
+
+	//! new-p17-140: undo must not restore a tap on a channel that has since been deleted.
+	void undoingOntoADeletedChannelTapsTheInput()
+	{
+		ControlRegistry* registry = ControlRegistry::instance();
+		const auto resetRoute = qScopeGuard([] { routeSource(QStringLiteral("input")); });
+
+		const QString c = addChannel();
+		QVERIFY(!c.isEmpty());
+		QVERIFY(routeSource(QStringLiteral("channel"), c).ok);
+		QVERIFY(routeSource(QStringLiteral("master")).ok);
+		// Delete C below the command layer: mixer.remove_channel records an irreversible transaction,
+		// which would make control.undo refuse instead of undoing the route_source step.
+		Mixer* mixer = Engine::mixer();
+		int index = -1;
+		for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+		{
+			if (control::channelIdOf(mixer->mixerChannel(i)) == c) { index = i; }
+		}
+		QVERIFY(index > 0);
+		mixer->deleteChannel(index);
+		QCOMPARE(recordertaps::get(0).source, recordertaps::Source::Master);
+
+		const ControlResult undone = registry->invoke(QStringLiteral("control.undo"));
+		QVERIFY2(undone.ok, qPrintable(undone.errorMessage));
+		QCOMPARE(recordertaps::get(0).source, recordertaps::Source::Input);
 	}
 };
 
