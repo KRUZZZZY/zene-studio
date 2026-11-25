@@ -250,18 +250,23 @@ bool SampleTrack::play( const TimePos & _start, const f_cnt_t _frames,
 		{
 			return false;
 		}
-		clips[clipCount++] = {sClip, sClip->sampleWindow(), 0, sClip->snapshotWarp()};
+		SampleWindow window = sClip->sampleWindow();
 		if (trackContainer() == Engine::patternStore())
 		{
 			auto bufferFramesPerTick = Engine::framesPerTick(sClip->sample().sampleRate());
 			f_cnt_t sampleStart = bufferFramesPerTick * _start;
-			pattern_track = PatternTrack::findPatternTrack(_clip_num);
 			// this pass starts inside the source; the clip's own window still
 			// bounds it (was: sClip->setSampleStartFrame(), a model write)
-			clips[clipCount - 1].window = { sampleStart, sClip->sampleWindow().sourceOut };
+			window = { sampleStart, window.sourceOut };
+			// Cluster 3503: a seek at or past the window's end has nothing to play. Schedule no
+			// handle and latch nothing, exactly as the arrangement branch refuses an empty window
+			// (a record-armed clip excepted: its take does not render the window).
+			if (window.empty() && !sClip->isRecord()) { return false; }
+			pattern_track = PatternTrack::findPatternTrack(_clip_num);
 			sClip->setIsPlaying(true);
 			setPlaying(true);
 		}
+		clips[clipCount++] = {sClip, window, 0, sClip->snapshotWarp()};
 	}
 	else
 	{

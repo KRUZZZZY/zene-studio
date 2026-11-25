@@ -39,8 +39,6 @@ namespace
 
 static_assert(std::is_same_v<sample_t, float>, "the wire format is float32");
 
-//! Silence inserted for a sequence gap is capped, so a long outage cannot flood the ring.
-constexpr std::uint32_t MaxGapPackets = 8;
 //! A sequence jump further than this is a restarted peer, not loss: resynchronise.
 constexpr std::int32_t ResyncDistance = 64;
 constexpr std::size_t ScratchFrames = 2048;
@@ -263,6 +261,11 @@ void LinkAudioStream::receivePeriod(SampleFrame* frames, std::size_t period, sam
 	if (m_primed && fill < period)
 	{
 		m_underruns.fetch_add(1, std::memory_order_relaxed);
+		// The frames still in the ring belong to the audio before this gap: played after the
+		// silence they would add a discontinuity and a delay the report does not show. They
+		// go with the underrun, so the re-prime starts on fresh audio; the latency report
+		// below then shows the emptied ring.
+		m_rx.skip(fill);
 		m_primed = false;
 	}
 	if (m_primed) { addFromRing(frames, period); }
@@ -348,10 +351,11 @@ bool LinkAudioStream::acceptSequence(const AudioPacketHeader& header) noexcept
 	if (distance > 0)
 	{
 		m_lost.fetch_add(static_cast<std::uint64_t>(distance), std::memory_order_relaxed);
-		const std::uint32_t gap = std::min<std::uint32_t>(static_cast<std::uint32_t>(distance), MaxGapPackets);
-		insertGapSilence(static_cast<std::size_t>(gap) * header.frames);
+		insertGapSilence(gapSilenceFrames(header, static_cast<std::uint32_t>(distance)));
 	}
 	m_expectedRx = header.sequence + 1;
+	m_expectedRxFrame = header.framePosition + header.frames;
+	m_rxPositioned = header.hasFramePosition;
 	return true;
 }
 
@@ -461,6 +465,7 @@ void LinkAudioStream::publish(const AudioStreamConfig& cfg)
 	resetCounters();
 	m_haveRx = false;
 	m_nextSequence = 0;
+	m_nextFramePosition = 0;
 	m_latencyMs.store(cfg.latencyMs, std::memory_order_relaxed);
 	m_epoch.fetch_add(1, std::memory_order_release);
 	m_stop.store(false, std::memory_order_release);

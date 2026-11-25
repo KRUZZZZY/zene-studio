@@ -25,8 +25,12 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdint>
+#include <fstream>
 #include <memory>
+#include <sstream>
+#include <string>
 #include <vector>
 
 #include "AudioDevice.h"
@@ -116,6 +120,32 @@ private slots:
 		m_track = nullptr;
 		Engine::getSong()->clearProject();
 		Engine::destroy();
+	}
+
+	//! Bug 16: the realtime path's atomics must be lock-free on every build, not only this one. The header has
+	//! to reject a target whose std::atomic<uint64_t> would use an internal lock; this test proves that guard is
+	//! present and that this build's atomics are lock-free in the first place.
+	void realtimeAtomicsMustBeAlwaysLockFree()
+	{
+		QVERIFY2(std::atomic<std::size_t>::is_always_lock_free,
+			"the queue positions are not lock-free on this target");
+		QVERIFY2(std::atomic<std::uint64_t>::is_always_lock_free,
+			"the overflow bookkeeping is not lock-free on this target");
+		QVERIFY2(std::atomic<std::uint32_t>::is_always_lock_free,
+			"the overflow flags are not lock-free on this target");
+
+		std::ifstream file(MIDI_HANDOFF_QUEUE_HEADER);
+		QVERIFY2(file.good(), "could not read include/MidiHandoffQueue.h");
+		std::stringstream buffer;
+		buffer << file.rdbuf();
+		const std::string text = buffer.str();
+		for (const char* assertion : {
+			"static_assert(std::atomic<std::size_t>::is_always_lock_free",
+			"static_assert(std::atomic<std::uint64_t>::is_always_lock_free",
+			"static_assert(std::atomic<std::uint32_t>::is_always_lock_free"})
+		{
+			QVERIFY2(text.find(assertion) != std::string::npos, assertion);
+		}
 	}
 
 	//! The button of the instrument view, found by its label.

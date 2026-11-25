@@ -42,6 +42,7 @@
 
 #include "ControlEdit.h"
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "DataFile.h"
 #include "AutomatableModel.h"
 #include "Engine.h"
@@ -674,6 +675,189 @@ private slots:
 		QVERIFY2(model->value() < static_cast<int>(Engine::mixer()->numChannels()),
 			"a child must not be able to select a channel that has been deleted");
 		removeAll(name);
+	}
+
+	//! BUG 4535: routing visited only the DIRECT children. A child folder has no
+	//! mixer channel of its own to point anywhere, so the track inside it was never
+	//! reached and kept playing through its own channel. The scenario is the one in
+	//! the finding: instrument in folder A, A in folder B, routing on B.
+	void routingAFolderRoutesTheTracksOfItsNestedFolders()
+	{
+		const QString name = QStringLiteral("n-nested");
+		TrackFolder* outer = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		TrackFolder* inner = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* deep = addTrack(Track::Type::Instrument, name);
+		Track* direct = addTrack(Track::Type::Instrument, name);
+		deep->setParentFolder(inner);
+		inner->setParentFolder(outer);
+		direct->setParentFolder(outer);
+		IntModel* deepModel = deep->mixerChannelModel();
+		IntModel* directModel = direct->mixerChannelModel();
+		QVERIFY(deepModel != nullptr && directModel != nullptr);
+		const int deepBefore = deepModel->value();
+
+		QString error;
+		QVERIFY2(outer->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int channel = static_cast<int>(outer->mixerChannel());
+		QVERIFY(channel > 0);
+		QCOMPARE(directModel->value(), channel);
+		QCOMPARE(deepModel->value(), channel);
+		QCOMPARE(outer->savedChannelFor(deep->id()), deepBefore);
+
+		QVERIFY2(outer->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		QCOMPARE(deepModel->value(), deepBefore);
+		QCOMPARE(deepModel->maxValue(), static_cast<float>(Engine::mixer()->numChannels() - 1));
+		removeAll(name);
+	}
+
+	//! The invariant also holds for membership changes AFTER routing is on: a track
+	//! that joins a group folder nested in a routing folder is routed, one that
+	//! leaves goes back, and a whole folder moved in (or out) takes its tracks along.
+	void tracksMovingIntoOrOutOfANestedFolderFollowTheOuterRouting()
+	{
+		const QString name = QStringLiteral("n-nested-move");
+		TrackFolder* outer = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		TrackFolder* inner = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* seed = addTrack(Track::Type::Instrument, name);
+		Track* joiner = addTrack(Track::Type::Instrument, name);
+		Track* moved = addTrack(Track::Type::Instrument, name);
+		seed->setParentFolder(outer);
+		inner->setParentFolder(outer);
+		moved->setParentFolder(inner);
+		IntModel* joinerModel = joiner->mixerChannelModel();
+		IntModel* movedModel = moved->mixerChannelModel();
+		QVERIFY(joinerModel != nullptr && movedModel != nullptr);
+		const int joinerBefore = joinerModel->value();
+		const int movedBefore = movedModel->value();
+
+		QString error;
+		QVERIFY2(outer->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int channel = static_cast<int>(outer->mixerChannel());
+
+		joiner->setParentFolder(inner);   // joins a group folder INSIDE the routing one
+		QCOMPARE(joinerModel->value(), channel);
+		joiner->setParentFolder(nullptr);
+		QCOMPARE(joinerModel->value(), joinerBefore);
+
+		inner->setParentFolder(nullptr);  // the folder leaves, its track goes with it
+		QCOMPARE(movedModel->value(), movedBefore);
+		inner->setParentFolder(outer);    // and comes back
+		QCOMPARE(movedModel->value(), channel);
+
+		QVERIFY2(outer->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		QCOMPARE(movedModel->value(), movedBefore);
+		removeAll(name);
+	}
+
+	//! A nested folder that is itself routing owns its own children: the outer one
+	//! must not take them off the channel the inner folder summed them into.
+	void aNestedRoutingFolderKeepsItsOwnChildren()
+	{
+		const QString name = QStringLiteral("n-nested-routing");
+		TrackFolder* outer = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		TrackFolder* inner = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* innerChild = addTrack(Track::Type::Instrument, name);
+		Track* outerChild = addTrack(Track::Type::Instrument, name);
+		innerChild->setParentFolder(inner);
+		QString error;
+		QVERIFY2(inner->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int innerChannel = static_cast<int>(inner->mixerChannel());
+		inner->setParentFolder(outer);
+		outerChild->setParentFolder(outer);
+
+		QVERIFY2(outer->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		QCOMPARE(outerChild->mixerChannelModel()->value(), static_cast<int>(outer->mixerChannel()));
+		QCOMPARE(innerChild->mixerChannelModel()->value(), innerChannel);
+
+		QVERIFY2(outer->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		QCOMPARE(innerChild->mixerChannelModel()->value(), innerChannel);
+		removeAll(name);
+	}
+
+	//! BUG 4535, sibling of 4536: a nested track is summed through the OUTER folder's
+	//! channel, so the reassignment guard has to look past the direct parent too.
+	void reassigningANestedRoutedTracksMixerChannelIsRefused()
+	{
+		const QString name = QStringLiteral("n-nested-reassign");
+		Mixer* mixer = Engine::mixer();
+		const int other = mixer->createChannel();
+		QVERIFY(other > 0);
+		const QString otherId = control::channelIdOf(mixer->mixerChannel(other));
+		TrackFolder* outer = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		TrackFolder* inner = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* deep = addTrack(Track::Type::Instrument, name);
+		deep->setParentFolder(inner);
+		inner->setParentFolder(outer);
+		QString error;
+		QVERIFY2(outer->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int channel = static_cast<int>(outer->mixerChannel());
+		QCOMPARE(deep->mixerChannelModel()->value(), channel);
+
+		const ControlResult refused = ControlRegistry::instance()->invoke(
+			QStringLiteral("track.set_mixer_channel"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(deep)},
+				{QStringLiteral("channel"), otherId}});
+		QVERIFY2(!refused.ok, "a track summed through a routing ancestor was moved off its channel");
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(deep->mixerChannelModel()->value(), channel);
+		removeAll(name);
+	}
+
+	//! BUG 4536: routing mode OWNS every child's mixer channel (the invariant
+	//! childLinked() establishes when a child joins). A direct reassignment - what
+	//! the Inspector's mixer channel menu and a script both are - moved the child
+	//! off the folder's channel while the folder still reported routing enabled,
+	//! so its audio stopped passing through the folder and nothing said so. The
+	//! reassignment is refused, typed, and changes NOTHING; the very same call is
+	//! accepted once the folder is out of routing mode, so the refusal is about
+	//! the routing and not about the command.
+	void reassigningARoutedChildsMixerChannelIsRefused()
+	{
+		const QString name = QStringLiteral("q-reassign");
+		Mixer* mixer = Engine::mixer();
+		// A channel of its own to name, made BEFORE the folder takes one: the
+		// folder's is then the higher index, and releasing routing deletes only it.
+		const int other = mixer->createChannel();
+		QVERIFY(other > 0);
+		const QString otherId = control::channelIdOf(mixer->mixerChannel(other));
+
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int folderChannel = static_cast<int>(folder->mixerChannel());
+		QVERIFY(folderChannel > other);
+		QCOMPARE(child->mixerChannelModel()->value(), folderChannel);
+
+		const QJsonObject stepBefore = lastInverse();
+		const ControlResult refused = ControlRegistry::instance()->invoke(
+			QStringLiteral("track.set_mixer_channel"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(child)},
+				{QStringLiteral("channel"), otherId}});
+		QVERIFY2(!refused.ok, qPrintable(QStringLiteral(
+			"the child of a routing folder stands on ch-%1 while the folder reports routing: its "
+			"audio leaves the folder's sum and the folder keeps advertising a channel it no longer "
+			"sums into (refusal expected, got channel %2)")
+			.arg(child->mixerChannelModel()->value()).arg(other)));
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		// The refusal changed nothing: the invariant still holds and no undo step was taken.
+		QCOMPARE(child->mixerChannelModel()->value(), folderChannel);
+		QVERIFY(folder->isRouting());
+		QCOMPARE(folder->mixerChannel(), folderChannel);
+		QVERIFY2(lastInverse() == stepBefore, "a refused reassignment cost an undo step");
+
+		// Out of routing mode the same call goes through and the child really moves.
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Group, &error), qPrintable(error));
+		const ControlResult allowed = ControlRegistry::instance()->invoke(
+			QStringLiteral("track.set_mixer_channel"),
+			QJsonObject{{QStringLiteral("track"), control::trackIdOf(child)},
+				{QStringLiteral("channel"), otherId}});
+		QVERIFY2(allowed.ok, qPrintable(allowed.errorMessage));
+		QCOMPARE(child->mixerChannelModel()->value(), other);
+
+		removeAll(name);
+		mixer->deleteChannel(other);
 	}
 
 	//! A routing folder's mixer channel is NAMED after it, and the name is shown on

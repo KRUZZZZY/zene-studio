@@ -72,7 +72,7 @@ private:
 	TimePos m_curStepStartPos;
 	TimePos m_curStepEndPos;
 
-	int m_ppb; // pixels per bar
+	int m_ppb = 1; // pixels per bar, always > 0
 	TimePos m_currentPosition; // current position showed by on PianoRoll
 
 	QColor m_colorLineStart;

@@ -243,6 +243,39 @@ private slots:
 		QVERIFY2(!loaded->frozenTakeSilencesSource(250), "the source must not be silenced from the start onward");
 	}
 
+	//! BUG 11 (cluster 5412): a preset carries no frozen state (saveTrack returns before it), so loading one
+	//! must leave a frozen take, and the clips it muted, exactly as they were. Before the fix loadTrack()
+	//! cleared the take but nothing unmuted the clips, so the track went silent.
+	void loadingAPresetKeepsTheFrozenTakeAndItsMutedClips()
+	{
+		QTemporaryDir scratch;
+		QVERIFY(scratch.isValid());
+		SampleTrack* track = trackWithOneClip(scratch.path());
+		QVERIFY(track != nullptr);
+		const QString wav = taketest::writeToneWav(scratch.filePath(QStringLiteral("take.wav")), 330.0);
+
+		QDomDocument presetDoc;
+		QDomElement preset = presetDoc.createElement(QStringLiteral("instrumenttrack"));
+		track->savePreset(presetDoc, preset);  // taken while the track is not frozen
+
+		std::vector<std::pair<tick_t, tick_t>> cut;
+		const auto inside = arrangement::isolateRegion(track, 60, 120, &cut);
+		QCOMPARE(inside.size(), std::size_t{1});
+		QString why;
+		QVERIFY2(track->freezeTo(wav, 60, 120, asMuted(inside), &why, true), qPrintable(why));
+		QVERIFY(track->isFrozen());
+		QVERIFY(!noClipMuted(track));
+
+		track->loadPreset(preset);
+
+		QVERIFY2(track->isFrozen(), "loading a preset must not discard the frozen take");
+		QCOMPARE(track->frozenTake().startTicks, tick_t{60});
+		QCOMPARE(track->frozenTake().endTicks, tick_t{120});
+		QVERIFY2(!noClipMuted(track), "the clips the freeze muted must stay muted under the take");
+		track->unfreeze();
+		QVERIFY2(noClipMuted(track), "unfreeze must still release the clips");
+	}
+
 	//! A2: with a tempo map in force, the take's playback frames at the region's START and END equal the
 	//! frames the render actually cuts for those ticks (BounceInPlace::prepareRenderTracks' window) and the
 	//! timeline frames the tempo map gives; the one-rate arithmetic would be off by thousands of frames.

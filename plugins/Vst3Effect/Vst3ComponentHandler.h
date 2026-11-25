@@ -100,8 +100,9 @@ public:
 		return kResultOk;
 	}
 
-	//! BUGS 11.34: a plug-in whose latency changed says so here (UI thread, per the VST3 SDK);
-	//! the host re-reads it and the owning chain re-aligns its paths.
+	//! BUGS 11.34: a plug-in whose latency changed says so here. It may call this from ANY thread - its
+	//! processing thread included, which is the audio thread - so the callback may only raise a flag;
+	//! the owning effect re-reads the latency and re-aligns the chain from its control thread.
 	tresult PLUGIN_API restartComponent(int32 flags) SMTG_OVERRIDE
 	{
 		if ((flags & kLatencyChanged) != 0 && m_onLatencyChanged) { m_onLatencyChanged(); }

@@ -54,7 +54,11 @@ public:
 
 	static void init();
 	static void cleanup();
-	static ConstNotePlayHandleList nphsOfInstrumentTrack( const InstrumentTrack* instrumentTrack );
+	/*! The preview note playing on @a instrumentTrack, or nullptr if it has none.
+	 *  It allocates nothing, so the arpeggio can ask for it on the audio thread
+	 *  (cluster new-p12-94); the ConstNotePlayHandleList it used to hand back cost a
+	 *  heap allocation there. */
+	static const NotePlayHandle* previewNoteOfInstrumentTrack( const InstrumentTrack* instrumentTrack );
 
 	static bool isPreviewing();
 

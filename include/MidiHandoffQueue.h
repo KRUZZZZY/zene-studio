@@ -50,6 +50,16 @@ struct HandoffMidiEvent
 	std::uint32_t offset = 0;
 };
 
+// The queue and its overflow recovery run on the render path. std::atomic is allowed to use an internal
+// lock, so a target where these types are not always lock-free would put a mutex on the audio thread.
+// Refuse that target at build time instead of assuming the implementation's choice.
+static_assert(std::atomic<std::size_t>::is_always_lock_free,
+	"the MIDI handoff queue positions must be always lock-free for the audio thread");
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free,
+	"the MIDI overflow stamps must be always lock-free for the audio thread");
+static_assert(std::atomic<std::uint32_t>::is_always_lock_free,
+	"the MIDI overflow flags must be always lock-free for the audio thread");
+
 /*!
  * Bounded multi-producer queue (Vyukov's bounded queue; each cell carries its own
  * sequence number, so producers and the consumer never wait for each other).

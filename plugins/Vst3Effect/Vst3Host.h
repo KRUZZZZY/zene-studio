@@ -292,6 +292,14 @@ public:
 	auto lastChunkEventOffset(int index) const -> int;
 	//! Test-only: how many parameters the LAST process() call sent the plug-in a change for.
 	auto lastParameterChangeCount() const -> int;
+	/*! Test-only: the latency latency() reports instead of the plug-in's own (nullopt restores the
+	 * plug-in's answer). A VST3 fixture that has no latency of its own cannot otherwise drive the
+	 * kLatencyChanged path, whose whole subject is the value read back after the report. */
+	void setReportedLatencyForTest(std::optional<std::uint32_t> frames);
+	/*! Test-only: deliver the plug-in's kLatencyChanged the way the plug-in does - through the
+	 * component handler's callback - on the CALLING thread, so a test can raise it from a thread
+	 * that is not the GUI thread (the audio thread is one such thread). */
+	void raiseLatencyChangedForTest();
 #endif
 
 	//! GUI thread: plug-in rendered string for a normalized value

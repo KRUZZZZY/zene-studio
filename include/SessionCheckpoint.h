@@ -38,6 +38,9 @@ namespace lmms
 namespace control
 {
 
+//! The journal's undo and redo history as it was before an action (defined in SessionCheckpoint.cpp).
+struct SessionJournal;
+
 /*! The two operations that replace or rewrite more of the session than the
  *  registry can describe - project.open (the whole session is replaced) and
  *  script.run (a Lua script writes through its own bindings) - take the session
@@ -73,6 +76,10 @@ struct SessionCheckpoint
 	bool containerV2After = false;  //!< the post-action session was a v2 container (the redo state)
 	QString note;              //!< the plain-words reason when not Taken
 	bool pushed = false;       //!< the undo step is on the journal
+	//! The undo and redo history as it was before the action. The action's own commands clear the redo
+	//! steps and can evict older undo steps; a refused action puts this back whole, and a completed one
+	//! pushes its one step onto it, so neither loses history the action did not replace.
+	std::shared_ptr<const SessionJournal> journalBefore;
 
 	bool taken() const { return state == State::Taken; }
 	bool refused() const { return state == State::TooLarge; }
@@ -94,9 +101,10 @@ LMMS_EXPORT bool loadProjectWithCheckpoint(const QString& path, const QStringLis
 
 /*! After a script ran: when the project differs from \a checkpoint, replace the
  *  finer journal steps the script pushed (everything newer than
- *  \a serialBefore) with the ONE step that restores the checkpoint. Sets
- *  \a changed to whether the project differs; if the snapshot pair does not fit,
- *  it restores the checkpoint and sets \a refusal. */
+ *  \a serialBefore) with the ONE step that restores the checkpoint, on top of
+ *  the history as it was before the script. Sets \a changed to whether the
+ *  project differs; if the snapshot pair does not fit, it restores the
+ *  checkpoint and that history, and sets \a refusal. */
 LMMS_EXPORT void finishScriptCheckpoint(SessionCheckpoint* checkpoint, quint64 serialBefore,
 	bool* changed, QString* refusal);
 

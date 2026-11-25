@@ -33,6 +33,23 @@ SOURCES = (
 )
 CONFIG = "lmmsconfig.h"
 MARKER = "ZENE_HAVE_FFMPEG"
+HEADER = os.path.join("tests", "src", "core", "VideoTestClip.h")
+
+# An unguarded caller: these are the three makeClip spellings the video tests use.
+PROBE = """#include "lmmsconfig.h"
+#include "VideoTestClip.h"
+int main()
+{
+\tconst QString path;
+\treturn videotest::makeClip(path) ||
+\t       videotest::makeClip(path, videotest::Palette::RedBlue) ||
+\t       videotest::makeClip(path, videotest::Palette::GreenYellow);
+}
+"""
+
+# The no-FFmpeg fallback branch, from its #else to the matching #endif.
+FALLBACK_RE = re.compile(
+    r"#else\s+namespace videotest\s*\{.*?#endif // " + MARKER, re.S)
 
 WINDOWS_COMMAND_RE = re.compile(r"(?:^|[\s=\"'])[A-Za-z]:[\\/]|\\\\[^\"']")
 
@@ -267,6 +284,75 @@ def shadow_compiles(prepared, shadow):
     return failed
 
 
+def force_no_ffmpeg(real, directory):
+    """Write a lmmsconfig.h that includes the real one and then undefines the macro."""
+    with open(os.path.join(directory, CONFIG), "w", encoding="utf-8") as handle:
+        handle.write('#include "%s"\n#undef %s\n'
+                     % (real.replace("\\", "/"), MARKER))
+
+
+def remove_fallback(real, directory):
+    """Copy VideoTestClip.h with the no-FFmpeg makeClip fallback removed."""
+    text = open(real, encoding="utf-8", errors="replace").read()
+    stripped, removed = FALLBACK_RE.subn("#endif // " + MARKER, text)
+    if removed != 1:
+        return False
+    with open(os.path.join(directory, "VideoTestClip.h"), "w", encoding="utf-8") as handle:
+        handle.write(stripped)
+    return True
+
+
+def probe_command(entry, includes, source):
+    """The recorded compile line for the probe instead of its own translation unit."""
+    args = compile_flags(entry)
+    recorded = os.path.normcase(os.path.normpath(
+        entry["file"] if os.path.isabs(entry["file"])
+        else os.path.join(entry["directory"], entry["file"])))
+
+    def is_recorded(arg):
+        path = arg if os.path.isabs(arg) else os.path.join(entry["directory"], arg)
+        return os.path.normcase(os.path.normpath(path)) == recorded
+
+    return ([args[0], switch(args[0], "/Zs", "-fsyntax-only")]
+            + [switch(args[0], "/I", "-I") + path for path in includes]
+            + [arg for arg in args[1:] if not is_recorded(arg)] + [source])
+
+
+def probe_make_clip(entry, root, tempdir):
+    """Compile an unguarded no-FFmpeg makeClip probe; a negative control removes the fallback."""
+    real_config = find_config(entry)
+    if real_config is None:
+        print("FAIL: could not find %s for the makeClip probe" % CONFIG)
+        return False
+    forced = os.path.join(tempdir, "probe-config")
+    os.makedirs(forced)
+    force_no_ffmpeg(real_config, forced)
+    source = os.path.join(tempdir, "make-clip-no-ffmpeg.cpp")
+    with open(source, "w", encoding="utf-8") as handle:
+        handle.write(PROBE)
+    core = os.path.dirname(os.path.join(root, HEADER))
+    positive = run(probe_command(entry, [core, forced], source), entry["directory"])
+    print("makeClip probe without %s: %s (exit %d)"
+          % (MARKER, "PASS" if positive.returncode == 0 else "FAIL", positive.returncode))
+    if positive.returncode:
+        for line in errors_of(positive):
+            print("  " + line)
+        return False
+    broken = os.path.join(tempdir, "probe-no-fallback")
+    os.makedirs(broken)
+    header = os.path.join(root, HEADER)
+    if not os.path.isfile(header) or not remove_fallback(header, broken):
+        print("FAIL: could not remove the makeClip fallback for the negative control")
+        return False
+    negative = run(probe_command(entry, [broken, core, forced], source), entry["directory"])
+    print("makeClip probe with the fallback removed: %s (exit %d)"
+          % ("FAIL" if negative.returncode else "PASS - unexpected", negative.returncode))
+    if negative.returncode == 0:
+        print("FAIL: the probe compiled without the fallback; it does not detect the defect")
+        return False
+    return True
+
+
 def check(root, build, moc):
     entries, error = load_entries(build)
     if entries is None:
@@ -275,6 +361,9 @@ def check(root, build, moc):
     if found is None:
         return fail(error)
     with tempfile.TemporaryDirectory(prefix="videoclips-noffmpeg-") as tempdir:
+        if not probe_make_clip(found[0][1], root, tempdir):
+            print("FAIL: the no-FFmpeg makeClip probe failed")
+            return 1
         prepared, error = prepare_all(found, tempdir, moc)
         if prepared is None:
             return fail(error)

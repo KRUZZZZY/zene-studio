@@ -79,7 +79,9 @@ enum class RecoveryVerdict
 	NotPresent,
 	//! Present but zero bytes - a truncated write holds nothing to recover.
 	Empty,
-	//! The project it came from is at least as new: recovering would go backwards.
+	//! The project it came from is strictly older than the saved project:
+	//! recovering would go backwards. Equal modification times are NOT stale -
+	//! they cannot order the two writes (see decideRecovery()).
 	Stale,
 	//! It belongs to a project other than the one this launch is opening.
 	OtherProject,
@@ -138,8 +140,11 @@ bool removeRecovery(const QString& recoveryFile);
  *
  * A recovery file is offered only when it is this session's:
  * a recovery naming a DIFFERENT project is never offered as the recovery of the
- * project being opened, and one no newer than the project file it came from is
- * stale (the saved project already holds at least as much).
+ * project being opened, and one STRICTLY OLDER than the project file it came
+ * from is stale (the saved project already holds more). Equal modification
+ * times do not establish which write came later - a file system whose stamps
+ * are coarser than the writes gives a save and the autosave after it the same
+ * instant - so equality is treated as uncertain and the recovery is offered.
  */
 RecoveryDecision decideRecovery(const RecoveryInfo& recovery, const QString& projectBeingOpened);
 

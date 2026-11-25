@@ -183,6 +183,53 @@ private slots:
 		QVERIFY(!QFileInfo::exists(pending));
 	}
 
+	//! BUG 8 (cluster new-p16-177): a restore whose rotation is REFUSED keeps the bytes it took out of the
+	//! set. Rotation shifts the newest slot first, so a restore of revision 2 has its slot overwritten by the
+	//! rev1 -> rev2 shift before the rev0 -> rev1 copy runs; when that later copy fails the restore is
+	//! refused, and the stage is then the only copy of the revision that was asked for. Deleting it with the
+	//! attempt - what the reporting code did - loses the revision the user selected.
+	void aRefusedRotationKeepsTheRevisionTheRestoreSelected()
+	{
+		const QString project = path(QStringLiteral("refused-rotation.mmp"));
+		const QString rev0 = projectRevisionPath(project, 0);
+		const QString rev1 = projectRevisionPath(project, 1);
+		const QString rev2 = projectRevisionPath(project, 2);
+		const QByteArray selected = documentWith(9);
+		QVERIFY(writeBytes(project, documentWith(3)));
+		QVERIFY(writeBytes(rev0, documentWith(2)));
+		QVERIFY(writeBytes(rev1, documentWith(6)));
+		QVERIFY(writeBytes(rev2, selected));
+
+		// rev0 is made unreadable, so the rev0 -> rev1 copy fails AFTER the rev1 -> rev2 shift has already
+		// overwritten the slot of the revision this restore selects.
+		struct ReadableAgain
+		{
+			QString path;
+			~ReadableAgain() { QFile::setPermissions(path, QFile::ReadOwner | QFile::WriteOwner); }
+		} readable{rev0};
+		QVERIFY(QFile::setPermissions(rev0, QFile::Permissions()));
+
+		QString error;
+		QVERIFY2(!restoreProjectRevision(project, 2, &error),
+			"a refused rotation was reported as a completed restore");
+		QVERIFY(!error.isEmpty());
+
+		// The shift really did put revision 1's bytes in the slot revision 2 held...
+		QCOMPARE(readBytes(rev2), documentWith(6));
+		// ...so the stage is the only copy of the bytes that were asked for, and the refusal keeps it.
+		const QStringList stages = QDir(m_dir.path()).entryList(
+			QStringList{QStringLiteral("refused-rotation.mmp.rev2.restore*")}, QDir::Files | QDir::Hidden,
+			QDir::Name);
+		QCOMPARE(stages.size(), 1);
+		QCOMPARE(readBytes(m_dir.path() + QLatin1Char('/') + stages.first()), selected);
+
+		// A retry of the same revision installs the bytes the refused attempt selected, not the ones the
+		// shift left in the slot.
+		QVERIFY(QFile::setPermissions(rev0, QFile::ReadOwner | QFile::WriteOwner));
+		QVERIFY2(restoreProjectRevision(project, 2, &error), qPrintable(error));
+		QCOMPARE(readBytes(project), selected);
+	}
+
 	//! A restore installs the whole revision, so the policy's per-revision cap binds it as it binds a
 	//! rotation. A revision over MaxRevisionBytes is refused BEFORE anything is staged, rotated or replaced:
 	//! the live file and the retained set keep their bytes, and no stage is left behind.

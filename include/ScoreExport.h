@@ -42,7 +42,10 @@ class MidiClip;
  *  Voices (W6): voice 1 holds, at every start, the shortest of the notes starting there, with rests in its gaps -
  *  for notes that share their lengths, every note, as before. Notes that start with shorter ones but last longer
  *  go to voice 2, 3, ... by length, written after a <backup> to the bar line with <forward> over their gaps, so
- *  every note keeps its own duration. */
+ *  every note keeps its own duration.
+ *
+ *  Returns an empty string, never a partial score, when a note (or the time signature) lies beyond the tick range a
+ *  score can hold - its snapped end would overflow 32-bit tick arithmetic (3471). */
 LMMS_EXPORT QString musicXmlOf(const MidiClip& clip, int numerator, int denominator, const QString& title);
 
 } // namespace lmms

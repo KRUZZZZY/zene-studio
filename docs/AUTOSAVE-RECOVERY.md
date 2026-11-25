@@ -132,7 +132,8 @@ Rules, in the order the function applies them:
 | `NotPresent` | no recovery file | no |
 | `Empty` | present but zero bytes (a truncated write) | no |
 | `OtherProject` | it names a project different from the one this launch is opening | no |
-| `Stale` | the project file it came from is **at least as new** (mtime `<=`) | no |
+| `Stale` | the project file it came from is **strictly newer** (mtime `<`) | no |
+| `Offer` (equal mtimes) | the two stamps are **equal**, which cannot order the two writes | yes |
 | `Offer` | otherwise, including **no sidecar at all** (an upstream-written recovery) | yes |
 
 The last row is the behaviour-preserving one: not knowing which project a recovery is must not
@@ -252,7 +253,10 @@ either way.
   shipped alpha's own build.
 * **Freshness is mtime-based.** A clock jump, or a project file on a network share with coarse
   timestamps, can make a live recovery look stale (or a stale one look live). Equal timestamps are
-  treated as stale on purpose: the saved project then already holds at least as much.
+  treated as **uncertain**, not stale (cluster 5235): on a file system whose stamps are coarser
+  than the writes, a save and the autosave after it carry the same instant, so reading equality as
+  stale threw the newer unsaved work away. An equal-stamp recovery is now offered; the offer opens
+  the recovery file, never the project file, and Discard is still there.
 * **A crash during playback can still lose more than the interval.** `ui/enablerunningautosave`
   defaults to `0`, so while playing the timer defers (retrying every 10 s) and only writes once
   playback stops. That is upstream behaviour and this branch does not change the default — a user

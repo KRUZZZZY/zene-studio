@@ -113,6 +113,23 @@ struct LinkAudioStreamTestAccess
 	{
 		return stream.m_rx.write(samples, frames);
 	}
+
+	//! Hand one wire datagram to the receive path exactly as the I/O thread does (no socket, no thread).
+	static bool deliver(LinkAudioStream& stream, const std::vector<std::uint8_t>& wire)
+	{
+		AudioPacketHeader header;
+		std::vector<float> samples(AudioMaxPacketFrames * AudioChannels);
+		if (!decodeAudioPacket(wire.data(), wire.size(), header, samples.data(), samples.size())) { return false; }
+		stream.acceptPacket(header, samples.data());
+		return true;
+	}
+
+	static std::size_t rxFill(LinkAudioStream& stream) { return stream.m_rx.fill(); }
+
+	static std::size_t readRx(LinkAudioStream& stream, float* out, std::size_t frames)
+	{
+		return stream.m_rx.read(out, frames);
+	}
 };
 
 } // namespace lmms::link
@@ -137,6 +154,13 @@ private slots:
 	void refusalsChangeNothing();
 
 	void largePeriodsKeepTheJitterTargetInsideItsSupportedRange();
+
+	/*! A period the RX ring cannot fill is an underrun, and the frames still in the ring at that
+	 *  moment are stale: they were queued before the silence interval. Playing them after it
+	 *  adds a discontinuity and a delay that the report does not show, so the underrun drops
+	 *  them and the re-prime starts with fresh audio. Deterministic: the receive seams only
+	 *  (writeRx + enableReceiver), no thread, no sleep. */
+	void anUnderrunDiscardsTheStalePartialFrames();
 
 	void loopbackExchangeIsSampleExact();
 
@@ -204,10 +228,26 @@ private slots:
 	void omittedEnabledIsRefusedAndTheRunningStreamKeepsRunning();
 
 	void theStreamLeavesLinkSyncAlone();
+
+	/*! A lost packet may be shorter than 128 frames (the sender sends what it has). The gap must be
+	 *  filled with the frames that were really lost, not with the length of the packet that arrived
+	 *  after it, or every later sample is shifted. Deterministic: the receive path only, no thread. */
+	void aLostShortPacketIsConcealedWithItsOwnDuration();
+
+	//! An older peer sends the 16-byte header (no frame position): it still plays, and its gap keeps the old estimate.
+	void aLegacyHeaderPacketStillPlaysAndKeepsTheOldGapEstimate();
+
+	//! A header version this build does not know, or a packet whose size does not fit its version, is refused.
+	void aHeaderVersionThatIsNotKnownIsRefused();
+
+	/*! Over a real loopback socket: every datagram the sender emits carries the stream frame index of
+	 *  its first frame, whatever way the I/O thread happened to split the audio into packets. */
+	void sentPacketsCarryTheirFramePosition();
 };
 
 #include "LinkAudioStreamTestParts1.h"
 #include "LinkAudioStreamTestParts2.h"
+#include "LinkAudioStreamTestParts3.h"
 
 QTEST_GUILESS_MAIN(LinkAudioStreamTest)
 #include "LinkAudioStreamTest.moc"

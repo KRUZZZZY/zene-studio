@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Red/green compiler regressions for hosted test-source failures.
 
-Covers the four case51 failures plus the Qt 5.15 portability of the
+Covers the four case51 failures plus the Qt 5.15 portability (with a Qt 5
+negative control, cluster ci-1660dea90b5a288f-port) of the
 MixerSendsOnFadersTest faders answer (cluster ci-ec26fd9bddef0dd4).
 """
 
@@ -197,12 +198,68 @@ void probe() {
     qt5 = pkg_flags("pkg-config", ["Qt5Core"])
     compile_source(compiler, fixture, temporary, "mixer-faders-qt5", success=True,
                    flags=[*qt5, "-fPIC"])
+    # Negative control: the pre-fix count/value constructor (hosted
+    # linux-x86_64 run 43786984969, cluster ci-1660dea90b5a288f-port) must
+    # still be rejected by Qt 5, or this probe proves nothing.
+    original = """#include <QStringList>
+#include <QString>
+#define QVERIFY(...) do { (void)(__VA_ARGS__); } while (0)
+void probe() {
+    QStringList faders;
+    const int channels = 3;
+    const QStringList expected(channels, QStringLiteral("volume"));
+    QVERIFY(faders == expected);
+}
+"""
+    compile_source(compiler, original, temporary, "mixer-faders-qt5-original", success=False,
+                   flags=[*qt5, "-fPIC"], expected_diagnostic=("QStringList",))
     if pkg_exists("pkg-config", ["Qt6Core"]):
         qt6 = pkg_flags("pkg-config", ["Qt6Core"])
         compile_source(compiler, fixture, temporary, "mixer-faders-qt6", success=True,
                        flags=[*qt6, "-fPIC"])
     else:
         print("OMITTED mixer-faders-qt6: Qt6Core unavailable")
+
+
+def shutdown_timeout_probe(root, compiler, temporary):
+    """Every named-pipe deadline reference must name the server member.
+
+    ClientIdleTimeoutMs is a static member of ControlServer, not a free name
+    that a using-directive imports.  A POSIX host preprocesses the named-pipe
+    cases away, so scan the part headers the Windows jobs compile and compile
+    both spellings under `using namespace lmms` as the compiler regression.
+    """
+    parts = (
+        "tests/src/core/ControlShutdownHookTestParts1.h",
+        "tests/src/core/ControlShutdownHookTestParts2.h",
+    )
+    references = 0
+    unqualified = []
+    for part in parts:
+        for line_number, line in enumerate(
+                (root / part).read_text(encoding="utf-8").splitlines(), 1):
+            at = line.find("ClientIdleTimeoutMs")
+            while at >= 0:
+                references += 1
+                if not line[:at].endswith("ControlServer::"):
+                    unqualified.append(f"{part}:{line_number}")
+                at = line.find("ClientIdleTimeoutMs", at + 1)
+    if references < 6:
+        fail(f"expected at least six ClientIdleTimeoutMs references, found {references}")
+    if unqualified:
+        fail("ClientIdleTimeoutMs is a ControlServer member; unqualified references: "
+             + ", ".join(unqualified))
+    fixture = """namespace lmms {
+struct ControlServer { static constexpr int ClientIdleTimeoutMs = 30000; };
+}
+using namespace lmms;
+int probe() { return %s; }
+"""
+    compile_source(compiler, fixture % "ControlServer::ClientIdleTimeoutMs", temporary,
+                   "shutdown-timeout-qualified", success=True)
+    compile_source(compiler, fixture % "ClientIdleTimeoutMs", temporary,
+                   "shutdown-timeout-bare", success=False,
+                   expected_diagnostic=("ClientIdleTimeoutMs",))
 
 
 def main():
@@ -220,6 +277,7 @@ def main():
         sfz_probe(root, compiler, temporary)
         touch_probe(root, compiler, temporary)
         mixer_faders_probe(root, compiler, temporary)
+        shutdown_timeout_probe(root, compiler, temporary)
     return 0
 
 

@@ -42,8 +42,14 @@
 
 #include <QtTest>
 
+#include <array>
 #include <atomic>
+#include <initializer_list>
 #include <memory>
+#include <utility>
+#include <vector>
+
+#include <QDomDocument>
 
 #include "../core/AllocationProbe.h"
 #include "AudioDevice.h"
@@ -109,6 +115,93 @@ private:
 	int m_noteOffs = 0;
 	bool m_sawMutexHeld = false;
 };
+
+/*! The arpeggio's modes, as its mode model fills its menu and as a project file stores
+ *  the number: InstrumentFunctionArpeggio::ArpMode is private to the class. */
+enum ArpModeIndex
+{
+	FreeArpMode = 0,
+	SortArpMode = 1,
+	SyncArpMode = 2
+};
+
+//! Turns @a track's arpeggio on in @a mode, the way an <arpeggiator> project element does.
+void enableArpeggio(InstrumentTrack& track, int mode, int arpRange = 1)
+{
+	QDomDocument document;
+	QDomElement trackSettings = document.createElement(QStringLiteral("instrumenttrack"));
+	QDomElement arpeggio = document.createElement(QStringLiteral("arpeggiator"));
+	arpeggio.setAttribute(QStringLiteral("arp-enabled"), 1);
+	arpeggio.setAttribute(QStringLiteral("arp"), 0);  // the "octave" chord: one pitch per step
+	arpeggio.setAttribute(QStringLiteral("arprange"), arpRange);
+	arpeggio.setAttribute(QStringLiteral("arprepeats"), 1);
+	arpeggio.setAttribute(QStringLiteral("arpmode"), mode);
+	arpeggio.setAttribute(QStringLiteral("arpdir"),
+		static_cast<int>(InstrumentFunctionArpeggio::ArpDirection::Up));
+	arpeggio.setAttribute(QStringLiteral("arptime"), 25);  // the model's minimum
+	trackSettings.appendChild(arpeggio);
+	track.loadTrackSpecificSettings(trackSettings);
+}
+
+/*! The note handles a test has sounding on @a track. They are in the engine's play handle
+ *  list - which is where the arpeggio looks for a track's notes, in this order - while the
+ *  guard lives, and out of it, and out of the note pool, when it dies. */
+class SoundingNotes
+{
+public:
+	SoundingNotes(InstrumentTrack& track, std::initializer_list<int> keys, f_cnt_t frames)
+	{
+		for (const int key : keys)
+		{
+			const Note note(TimePos(48), TimePos(0), key);
+			NotePlayHandle* handle = NotePlayHandleManager::acquire(&track, 0, frames, note);
+			if (handle != nullptr) { m_handles.push_back(handle); }
+		}
+		for (NotePlayHandle* handle : m_handles) { Engine::audioEngine()->playHandles().append(handle); }
+	}
+
+	~SoundingNotes()
+	{
+		for (NotePlayHandle* handle : m_handles)
+		{
+			Engine::audioEngine()->playHandles().removeAll(handle);
+			NotePlayHandleManager::release(handle);
+		}
+	}
+
+	SoundingNotes(const SoundingNotes&) = delete;
+	SoundingNotes& operator=(const SoundingNotes&) = delete;
+
+	int count() const { return static_cast<int>(m_handles.size()); }
+	//! The first handle in play order: the one sort mode lets through.
+	NotePlayHandle* first() const { return m_handles.empty() ? nullptr : m_handles.front(); }
+	//! The handle of the note at @a key, or nullptr.
+	NotePlayHandle* withKey(int key) const
+	{
+		for (NotePlayHandle* handle : m_handles) { if (handle->key() == key) { return handle; } }
+		return nullptr;
+	}
+
+private:
+	std::vector<NotePlayHandle*> m_handles;
+};
+
+//! The allocations and the frees @a work made on the calling thread.
+struct ProbeCounts
+{
+	int allocations;
+	int frees;
+};
+
+template <typename Work>
+ProbeCounts countAllocationsOf(Work&& work)
+{
+	lmms::test::resetAllocationCount();
+	lmms::test::tlCountAllocations = true;
+	work();
+	lmms::test::tlCountAllocations = false;
+	return {static_cast<int>(lmms::test::tlAllocationCount), static_cast<int>(lmms::test::tlFreeCount)};
+}
 
 } // namespace
 
@@ -274,6 +367,134 @@ private slots:
 		track.processOutEvent(MidiEvent(MidiNoteOff, 0, 62, 0), TimePos(0), 0);
 		QVERIFY2(instrument->noteOffs() == offsBefore + 1,
 			"the note started after silenceAllNotes() never got its note-off");
+	}
+
+	/*! cluster new-p12-94: the arpeggio reads the notes it plays over without building a list.
+	 *
+	 *  processNote() collected the track's note handles into a QList on EVERY note and every
+	 *  period. A QList grows on the heap, and the calls that filled it - the collection, and
+	 *  the fallback that appends the processed note when the track has none - allocated and
+	 *  freed in the render path, which is what an audible dropout is made of.
+	 *
+	 *  The probe below counts operator new only, and a QList allocates through Qt's malloc,
+	 *  which it does not see (docs/KNOWN-LIMITATIONS.md, "What it still does not prove"). The
+	 *  collection's own regression is therefore the static sweep, which now declares this
+	 *  function an audio-thread path (tests/rt-safety-scope.txt, cluster new-p12-94). This slot
+	 *  is the runtime half of the rule: the same path must make no operator-new allocation
+	 *  either, in any mode and with or without other notes sounding.
+	 *
+	 *  Every case drives the REAL InstrumentFunctionArpeggio::processNote() on the calling
+	 *  thread - the thread the engine renders on. The three modes and both note layouts are
+	 *  here because the modes read the collection differently: Sort mode takes its size, its
+	 *  first note and its keys, Sync mode its size and first note, Free mode nothing at all.
+	 *  The notes are 64 frames long, shorter than
+	 *  one arpeggio step, so the render loop below the collection plays nothing: what is
+	 *  measured is the collection alone (creating an arpeggio note has its own list to grow,
+	 *  which is a different defect). */
+	void theArpeggioReadsItsNotesWithoutAllocating()
+	{
+		const std::array<std::pair<int, bool>, 5> cases{{
+			{SortArpMode, true},
+			{SyncArpMode, true},
+			{FreeArpMode, true},
+			// No note of the track is sounding: the arpeggio falls back to the track's
+			// preset-preview note, and with none of those to the note it is processing.
+			{SortArpMode, false},
+			{SyncArpMode, false},
+		}};
+
+		for (const auto& [mode, notesSounding] : cases)
+		{
+			InstrumentTrack track(Engine::getSong());
+			QVERIFY(track.loadInstrument(QStringLiteral("no_such_instrument_in_this_test")) != nullptr);
+			enableArpeggio(track, mode);
+			QVERIFY(track.isArpeggioEnabled());
+
+			std::unique_ptr<SoundingNotes> sounding;
+			NotePlayHandle* note = nullptr;
+			if (notesSounding)
+			{
+				sounding = std::make_unique<SoundingNotes>(track, std::initializer_list<int>{60, 64, 67}, 64);
+				QCOMPARE(sounding->count(), 3);
+				// The layout the finding describes: three notes to collect.
+				QCOMPARE(static_cast<int>(NotePlayHandle::nphsOfInstrumentTrack(&track).size()), 3);
+				note = sounding->first();  // sort mode lets the first note in play order through
+			}
+			else
+			{
+				const Note only(TimePos(48), TimePos(0), 60);
+				note = NotePlayHandleManager::acquire(&track, 0, 64, only);
+			}
+			QVERIFY(note != nullptr);
+
+			// The warm-up call pays the arpeggio's one-time construction (its chord table and
+			// the models); the measured call is the same path in its steady state.
+			track.m_arpeggio.processNote(note);
+			const ProbeCounts counts = countAllocationsOf([&] { track.m_arpeggio.processNote(note); });
+
+			const QString what = QStringLiteral("mode %1 with %2 note(s) sounding")
+				.arg(mode).arg(notesSounding ? 3 : 1);
+			QVERIFY2(counts.allocations == 0, qPrintable(what
+				+ QStringLiteral(": the arpeggio allocated %1 time(s) on the render path")
+					.arg(counts.allocations)));
+			QVERIFY2(counts.frees == 0, qPrintable(what
+				+ QStringLiteral(": the arpeggio freed %1 time(s) on the render path")
+					.arg(counts.frees)));
+
+			if (notesSounding) { sounding.reset(); }
+			else { NotePlayHandleManager::release(note); }
+		}
+	}
+
+	/*! cluster new-p12-94: sort mode still plays the keys it played before.
+	 *
+	 *  Sort mode was the only mode that needed the collected notes in an ORDER (it sorted them
+	 *  by key and played the note at a position of that order), so the fix has to answer "which
+	 *  key sits at position k of the ascending order" without a sorted list. This drives the
+	 *  real processNote() one step at a time and reads the key of the note it created.
+	 *
+	 *  The step the arpeggio plays is (the first note's played frame count + one arp step) / one
+	 *  arp step, so the played frame count is INJECTED: no sleep, no second thread, and no
+	 *  dependence on how fast the machine renders. The notes are handed over in the order
+	 *  67, 60, 64, so the ascending order the arpeggio plays is not the play order. */
+	void sortModeArpeggioStillPlaysTheAscendingKeys()
+	{
+		InstrumentTrack track(Engine::getSong());
+		QVERIFY(track.loadInstrument(QStringLiteral("no_such_instrument_in_this_test")) != nullptr);
+		// Range 2 with one repeat and a one-pitch chord: six steps - the three base keys in
+		// ascending order, then the same three an octave up.
+		enableArpeggio(track, SortArpMode, 2);
+		QVERIFY(track.isArpeggioEnabled());
+
+		SoundingNotes sounding(track, {67, 60, 64}, 8192);
+		QCOMPARE(sounding.count(), 3);
+		NotePlayHandle* const first = sounding.first();
+		QVERIFY(first != nullptr);
+		QCOMPARE(first->key(), 67);
+		// The arpeggio's timing runs off the note it would play first once the notes are in
+		// ascending key order - 60 here, not the 67 that sort mode lets through.
+		NotePlayHandle* const timed = sounding.withKey(60);
+		QVERIFY(timed != nullptr);
+
+		const auto arpFrames = static_cast<f_cnt_t>(
+			25.0 / 1000.0 * Engine::audioEngine()->outputSampleRate());
+		QVERIFY(arpFrames > 0);
+
+		QList<int> played;
+		for (int step = 0; step < 4; ++step)
+		{
+			timed->m_totalFramesPlayed = step * arpFrames;
+			const int created = static_cast<int>(first->m_subNotes.size());
+			track.m_arpeggio.processNote(first);
+			QVERIFY2(static_cast<int>(first->m_subNotes.size()) > created,
+				qPrintable(QStringLiteral("step %1 played no arpeggio note").arg(step)));
+			played << first->m_subNotes.at(created)->key();
+		}
+
+		// The un-sorted play order was 67, 60, 64 and the arpeggio plays 60, 64, 67, 72: the
+		// ascending key order, then the lowest key an octave up. Captured from an unfixed
+		// render (the RED run logged in the report) and unchanged since.
+		QCOMPARE(played, (QList<int>{60, 64, 67, 72}));
 	}
 };
 

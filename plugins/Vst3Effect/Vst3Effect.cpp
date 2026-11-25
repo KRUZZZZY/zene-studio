@@ -118,7 +118,10 @@ Vst3Effect::Vst3Effect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 			}
 		}
 		cacheLatency();
-		m_plugin.setLatencyChangedCallback([this] { cacheLatency(); });
+		// The report may come from any thread (the plug-in's processing thread included), so the
+		// callback only raises a flag: cacheLatency() reads the plug-in and walks the chain, which may
+		// log, and neither is real-time safe. Vst3EffectControls::poll() applies it on the GUI thread.
+		m_plugin.setLatencyChangedCallback([this] { m_latencyChanged.store(true, std::memory_order_relaxed); });
 	}
 
 	// The controls must exist even for a failed load: the effect chain and the
@@ -126,7 +129,18 @@ Vst3Effect::Vst3Effect(Model* parent, const Descriptor::SubPluginFeatures::Key* 
 	m_controls = std::make_unique<Vst3EffectControls>(this);
 }
 
-Vst3Effect::~Vst3Effect() = default;
+Vst3Effect::~Vst3Effect()
+{
+	// The flag the callback raises goes before the object it is raised on, exactly as Vst3Instrument's
+	// destructor does: a plug-in torn down after this may still report kLatencyChanged.
+	m_plugin.setLatencyChangedCallback(nullptr);
+}
+
+void Vst3Effect::refreshLatencyIfChanged()
+{
+	if (!m_latencyChanged.exchange(false, std::memory_order_relaxed)) { return; }
+	cacheLatency();
+}
 
 bool Vst3Effect::openNativeEditor(QString* error)
 {

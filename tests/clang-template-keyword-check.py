@@ -24,18 +24,21 @@ The check has two independent halves:
     `.template name` and `->template name` where `name` is not followed by
     `<`.  This half runs on every platform, including GCC hosts that accept the
     construct, so the regression is red wherever the suite runs.
-  * a compile probe: if the supplied compiler enforces the rule (it rejects a
-    known-bad fixture), the real atomic_queue header is compiled through a
-    translation unit that instantiates both affected queue templates.  A GCC
-    host accepts the known-bad fixture, so the probe is reported as skipped
-    there and the source scan is the authoritative half.
+  * a compile probe: --compiler may be given more than once.  The probe uses
+    the first supplied compiler that enforces the rule (rejects a known-bad
+    fixture) and compiles the real atomic_queue header through a translation
+    unit that instantiates both affected queue templates.  A GCC accepts the
+    known-bad fixture, so a GCC-only list skips the probe; the probe is skipped
+    only when no supplied compiler rejects the fixture, and then the source
+    scan is the authoritative half.
 
 Both halves are proved able to fail by the self-test fixtures (`--self-test`),
 which this file runs as its own red/green control.
 
 Usage:
-  clang-template-keyword-check.py [--root DIR] [--compiler CXX]
+  clang-template-keyword-check.py [--root DIR] [--compiler CXX]...
                                   [--atomic-queue-include DIR]
+  (--compiler is repeatable)
   clang-template-keyword-check.py --self-test
 
 Exit codes: 0 = clean, 1 = finding (or a failed fixture), 2 = usage error.
@@ -213,6 +216,30 @@ def self_test():
 		failures.append(f"red fixture line numbers {[line for _, line, _ in red]}, expected [6, 12, 17, 17]")
 	if green:
 		failures.append(f"green fixture flagged: {green}")
+	failures += compiler_selection_failures()
+	return failures
+
+
+def select_probe_compiler(compilers, rejects):
+	"""Return the first compiler for which rejects(compiler) is true, else None."""
+	for compiler in compilers:
+		if rejects(compiler):
+			return compiler
+	return None
+
+
+def compiler_selection_failures():
+	rejects = lambda c: c.endswith("clang++")
+	cases = [
+		(["/usr/bin/g++", "/usr/bin/clang++"], "/usr/bin/clang++"),
+		(["/usr/bin/g++"], None),
+		([], None),
+	]
+	failures = []
+	for compilers, expected in cases:
+		got = select_probe_compiler(compilers, rejects)
+		if got != expected:
+			failures.append(f"select_probe_compiler({compilers}) returned {got!r}, expected {expected!r}")
 	return failures
 
 
@@ -225,7 +252,10 @@ def compiler_rejects_bad_syntax(compiler, workdir):
 	probe = os.path.join(workdir, "bad-keyword.cpp")
 	with open(probe, "w", encoding="utf-8") as handle:
 		handle.write(COMPILER_RED_PROBE)
-	return run([compiler, "-std=gnu++17", "-fsyntax-only", probe]).returncode != 0
+	try:
+		return run([compiler, "-std=gnu++17", "-fsyntax-only", probe]).returncode != 0
+	except OSError:
+		return False
 
 
 def compile_real_header(compiler, include_dir, workdir):
@@ -236,13 +266,15 @@ def compile_real_header(compiler, include_dir, workdir):
 	return command, run(command)
 
 
-def compile_probe(compiler, include_dir):
+def compile_probe(compilers, include_dir):
 	workdir = tempfile.mkdtemp(prefix="zene-template-keyword-",
 		dir=os.environ.get("TMPDIR") or None)
 	try:
-		if not compiler_rejects_bad_syntax(compiler, workdir):
-			print(f"compile probe skipped: {compiler} accepts the bad fixture "
-				f"(it does not enforce the rule); the source scan above is the check")
+		compiler = select_probe_compiler(compilers,
+			lambda c: compiler_rejects_bad_syntax(c, workdir))
+		if compiler is None:
+			print(f"compile probe skipped: none of {', '.join(compilers)} rejects the bad "
+				f"fixture (none enforces the rule); the source scan above is the check")
 			return 0
 		command, result = compile_real_header(compiler, include_dir, workdir)
 		if result.returncode == 0:
@@ -262,7 +294,7 @@ def main(argv):
 	parser = argparse.ArgumentParser(add_help=True,
 		description="Fail on a `template` keyword with no template argument list.")
 	parser.add_argument("--root", default=os.getcwd())
-	parser.add_argument("--compiler")
+	parser.add_argument("--compiler", action="append", default=[])
 	parser.add_argument("--atomic-queue-include")
 	parser.add_argument("--self-test", action="store_true")
 	args = parser.parse_args(argv[1:])
@@ -276,7 +308,8 @@ def main(argv):
 	if args.self_test:
 		if failures:
 			return 1
-		print("self-test: red fixture flagged at the expected lines, green fixture clean")
+		print("self-test: red fixture flagged at the expected lines, green fixture clean, "
+			"compiler-selection cases correct")
 		return 0
 	if failures:
 		return 1

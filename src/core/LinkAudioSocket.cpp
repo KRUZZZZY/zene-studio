@@ -59,6 +59,9 @@ constexpr int MaxPacketsPerWake = 256;
 namespace
 {
 
+//! Silence inserted for a sequence gap is capped, so a long outage cannot flood the ring.
+constexpr std::uint32_t MaxGapPackets = 8;
+
 #ifdef _WIN32
 using Handle = SOCKET;
 using SockLen = int;
@@ -183,6 +186,17 @@ void LinkAudioStream::receiveDatagrams()
 	}
 }
 
+//! The frames that replace the \a distance packets lost before \a header: the frames that really are missing
+//! (the frame position says where this packet starts), within the same bound as before. A legacy peer
+//! sends no position and the duration of a lost packet is not on the wire: it is estimated as this packet's.
+std::size_t LinkAudioStream::gapSilenceFrames(const AudioPacketHeader& header, std::uint32_t distance) const noexcept
+{
+	const std::uint32_t gap = std::min(distance, MaxGapPackets);
+	if (!header.hasFramePosition || !m_rxPositioned) { return static_cast<std::size_t>(gap) * header.frames; }
+	const std::uint32_t missing = header.framePosition - m_expectedRxFrame;   // wrapping
+	return std::min<std::size_t>(missing, std::size_t{gap} * AudioMaxPacketFrames);
+}
+
 void LinkAudioStream::sendPending()
 {
 	// The window in which the frames of the TX ring stay queued: a test can hold the I/O
@@ -202,6 +216,8 @@ void LinkAudioStream::sendPending()
 		if (m_peerAddress == 0 || n == 0) { continue; }  // nowhere to send: drained and dropped
 		AudioPacketHeader header;
 		header.sequence = m_nextSequence++;
+		header.framePosition = m_nextFramePosition;
+		m_nextFramePosition += static_cast<std::uint32_t>(n);
 		header.sampleRate = rate;
 		header.frames = static_cast<std::uint16_t>(n);
 		const std::size_t bytes = encodeAudioPacket(header, m_samples.data(), m_packet.data(), m_packet.size());

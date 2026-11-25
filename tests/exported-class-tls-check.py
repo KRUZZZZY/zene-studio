@@ -195,6 +195,27 @@ class LMMS_EXPORT FunctionLocal
 """
 
 
+# Cluster ci-512849fa221097db-port: the exact shape of the msvc-x64 regression
+# (include/AudioEngine.h(891), C2492): a namespaced LMMS_EXPORT class with a
+# base list and Q_OBJECT, the member inside #ifdef LMMS_TESTING after a
+# private: label. Exactly one finding, on line 11.
+FIXTURE_AUDIOENGINE = """
+namespace lmms
+{
+class LMMS_EXPORT AudioEngine : public QObject
+{
+	Q_OBJECT
+public:
+	bool isChangeInModelHeld() const noexcept;
+private:
+#ifdef LMMS_TESTING
+	static thread_local int s_changeInModelDepth;
+#endif
+};
+} // namespace lmms
+"""
+
+
 def self_test():
 	red = scan_text("fixture-red.h", FIXTURE_RED)
 	green = scan_text("fixture-green.h", FIXTURE_GREEN)
@@ -205,6 +226,9 @@ def self_test():
 		failures.append(f"red fixture line numbers {[line for _, line, _ in red]}, expected [5, 12]")
 	if green:
 		failures.append(f"green fixture flagged {green}")
+	engine = scan_text("fixture-audioengine.h", FIXTURE_AUDIOENGINE)
+	if [line for _, line, _ in engine] != [11]:
+		failures.append(f"AudioEngine-shape fixture flagged {engine}, expected one finding on line 11")
 	return failures
 
 

@@ -29,6 +29,7 @@
 #include <QDomDocument>
 #include <QFile>
 #include <QFileInfo>
+#include <QMetaObject>
 
 #include <algorithm>
 #include <atomic>
@@ -66,6 +67,7 @@ private slots:
 	void testStateRoundTripThroughMmp();
 	void testParameterFallbackWithoutStateChunks();
 	void testAValueTheChunksDoNotCarryIsRestoredFromTheHost();
+	void testLatencyChangeFromThePlugInThreadIsDeferredToTheControlThread();
 	void testRendersBeforeAfterWav();
 
 private:
@@ -574,8 +576,53 @@ void Vst3EffectIntegrationTest::testAValueTheChunksDoNotCarryIsRestoredFromTheHo
 	QVERIFY2(std::abs(storage[0][0] - 0.15f) < 1e-6f, qPrintable(QStringLiteral("processed %1").arg(storage[0][0])));
 }
 
+/*! cluster new-p14-363: kLatencyChanged may reach the host on the plug-in's own thread - the audio
+ *  thread is one of them - and the callback must not re-align the effect chain there. EffectChain::
+ *  refreshLatency() walks the chain and may log (qWarning locks and allocates), which the audio thread
+ *  may not do; Vst3Instrument's callback only raises a flag for its poll for the same reason. The
+ *  callback raises the flag, and the control thread's poll re-reads the latency and lets the chain
+ *  re-align. The fixture has no latency of its own, so the value the plug-in reports is injected
+ *  (HostedPlugin::setReportedLatencyForTest) and the report is raised the way the plug-in raises it. */
+void Vst3EffectIntegrationTest::testLatencyChangeFromThePlugInThreadIsDeferredToTheControlThread()
+{
+	constexpr f_cnt_t fpp = 48;
+	constexpr std::uint32_t reported = 320;  // frames the plug-in reports after the change
+	BufferManager::init(fpp);
+
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new Vst3Effect{&chain, &key};
+	chain.appendEffect(effect);
+	QVERIFY(!effect->isCorrupted());
+	auto* controls = dynamic_cast<Vst3EffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	auto* plugin = effect->plugin();
+
+	chain.refreshLatency();
+	QCOMPARE(effect->latencyFrames(), 0);
+	QCOMPARE(chain.latencyFrames(), 0);
+
+	// The plug-in's latency changed, and it says so from its own thread.
+	plugin->setReportedLatencyForTest(reported);
+	std::thread plugInThread{[plugin] { plugin->raiseLatencyChangedForTest(); }};
+	plugInThread.join();
+
+	// Nothing the plug-in thread may not do happened on it: the effect and its chain are where they
+	// were. A refresh here would be the chain walk (and its logging) on the audio thread.
+	QVERIFY2(effect->latencyFrames() == 0,
+		qPrintable(QStringLiteral("the callback read the plug-in's latency on its own thread: %1")
+			.arg(effect->latencyFrames())));
+	QVERIFY2(chain.latencyFrames() == 0,
+		qPrintable(QStringLiteral("the callback re-aligned the chain on its own thread: %1")
+			.arg(chain.latencyFrames())));
+
+	// The control thread's poll carries the report through: the cached latency and the chain follow.
+	QVERIFY(QMetaObject::invokeMethod(controls, "poll", Qt::DirectConnection));
+	QCOMPARE(effect->latencyFrames(), static_cast<int>(reported));
+	QCOMPARE(chain.latencyFrames(), static_cast<int>(reported));
+}
+
 } // namespace lmms
 
 QTEST_GUILESS_MAIN(lmms::Vst3EffectIntegrationTest)
-
 #include "Vst3EffectIntegrationTest.moc"

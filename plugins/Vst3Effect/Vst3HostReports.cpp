@@ -28,6 +28,9 @@
 
 #include "Vst3HostInternals.h"
 #include "pluginterfaces/vst/ivstnoteexpression.h"
+#ifdef LMMS_TESTING
+#include "pluginterfaces/vst/ivsteditcontroller.h"  // kLatencyChanged, for raiseLatencyChangedForTest
+#endif
 
 namespace lmms::vst3
 {
@@ -35,6 +38,10 @@ namespace lmms::vst3
 auto HostedPlugin::latency() const -> std::uint32_t
 {
 	const auto& d = *m_impl;
+#ifdef LMMS_TESTING
+	// The fixture has no latency of its own to change, so a test states what the plug-in reports.
+	if (d.testLatency >= 0) { return static_cast<std::uint32_t>(d.testLatency); }
+#endif
 	return d.prepared && d.processor ? d.processor->getLatencySamples() : 0;
 }
 
@@ -51,6 +58,20 @@ void HostedPlugin::setLatencyChangedCallback(std::function<void()> callback)
 	m_impl->onLatencyChanged = std::move(callback);
 	if (m_impl->handlerImpl != nullptr) { m_impl->handlerImpl->setOnLatencyChanged(m_impl->onLatencyChanged); }
 }
+
+#ifdef LMMS_TESTING
+void HostedPlugin::setReportedLatencyForTest(std::optional<std::uint32_t> frames)
+{
+	m_impl->testLatency = frames.has_value() ? static_cast<std::int32_t>(*frames) : -1;
+}
+
+void HostedPlugin::raiseLatencyChangedForTest()
+{
+	// The same call the plug-in makes, so the handler's callback runs exactly as it would for the plug-in.
+	auto& d = *m_impl;
+	if (d.handlerImpl != nullptr) { d.handlerImpl->restartComponent(Steinberg::Vst::kLatencyChanged); }
+}
+#endif
 
 auto HostedPlugin::outputEventCount() const -> int { return m_impl->blockOutputCount; }
 

@@ -216,12 +216,16 @@ local id = channel:id()
 local fx = channel:chain():effect(1)
 print("before valid=" .. tostring(fx:isValid()) .. " plugin=" .. fx:pluginName())
 zene.command("mixer.remove_channel", {channel = id})
-print("after valid=" .. tostring(fx:isValid()) .. " index=" .. fx:index())
+print("after valid=" .. tostring(fx:isValid()) .. " index=" .. fx:index()
+    .. " id=[" .. fx:id() .. "] params=" .. fx:parameterCount())
 )LUA").arg(channel), &logs);
 		QVERIFY2(error.isEmpty(), qPrintable(error));
 		QCOMPARE(logs.size(), 2);
 		QCOMPARE(logs.at(0), QStringLiteral("before valid=true plugin=rackparamtest"));
-		QCOMPARE(logs.at(1), QStringLiteral("after valid=false index=-1"));
+		// isValid(), id() and parameterCount() are the three calls the finding
+		// names: each one used to walk the removed channel's chain and read the
+		// device that died with it.
+		QCOMPARE(logs.at(1), QStringLiteral("after valid=false index=-1 id=[] params=0"));
 	}
 };
 
