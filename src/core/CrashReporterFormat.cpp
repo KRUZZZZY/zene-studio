@@ -296,6 +296,72 @@ void stackCeilingForHandler(uintptr_t& high, uintptr_t& stackLow)
 #endif
 }
 
+// ---- the walk's pieces (split out of captureFrames() for the complexity
+// ratchet; same checks, same order, same stopping frame).  Each is raw loads
+// or arithmetic only: no allocation, no lock, no I/O.
+
+constexpr uintptr_t kWord = sizeof(uintptr_t);
+constexpr uintptr_t kFrameAlignMask = (2 * kWord) - 1;
+
+// Outside a signal there is no ucontext to read the frame pointer from, and
+// __builtin_frame_address() is not trustworthy in a build that omits frame
+// pointers. __builtin_return_address(0), read by captureFrames() itself, is
+// always a real return address, so it is the one honest caller we can add.
+int appendCallerOutsideSignal(uintptr_t caller, unsigned long long* out, int count, int capacity)
+{
+	if (caller != 0 && count < capacity) { out[count++] = static_cast<unsigned long long>(caller); }
+	return count;
+}
+
+// Whether the recorded bounds admit a walk at all.  No recorded ceiling means
+// no dereference at all: a wrong read would fault inside the handler and lose
+// the report (the PC is already captured).  With exact bounds (install-time),
+// the interrupted SP must be on that same stack; a marker-only thread
+// (render/JACK) has no recorded low, so the interrupted SP is its own lower
+// bound.  Finally the first frame pointer must lie inside [low, high - 2 words].
+bool walkBoundsAdmit(uintptr_t low, uintptr_t high, uintptr_t stackLow, uintptr_t framePointer)
+{
+	if (high == 0 || high <= low + 2 * kWord) { return false; }
+	if (high - low > kMaxStackSpan) { return false; }
+	if (stackLow != 0 && low < stackLow) { return false; }
+	if (framePointer < low || framePointer > high - 2 * kWord) { return false; }
+	return true;
+}
+
+// A frame pointer may be dereferenced (two words) only when it is 16-byte
+// aligned and inside [low, high - 2 words].
+bool frameReadable(uintptr_t framePointer, uintptr_t low, uintptr_t high)
+{
+	return (framePointer & kFrameAlignMask) == 0
+		&& framePointer >= low && framePointer <= high - 2 * kWord;
+}
+
+// The saved frame pointer continues the chain only if it strictly increases
+// (the stack grows down), stays below the ceiling and is aligned; this is what
+// stops a corrupt or cyclic chain.
+bool savedFrameAdvances(uintptr_t savedFrame, uintptr_t framePointer, uintptr_t high)
+{
+	return savedFrame > framePointer && savedFrame <= high - 2 * kWord
+		&& (savedFrame & kFrameAlignMask) == 0;
+}
+
+// The raw walk itself, bounded by the frame budget.  Repeated return addresses
+// are kept (a recursive chain reaches one call site at every depth).
+int walkFramePointerChain(uintptr_t framePointer, uintptr_t low, uintptr_t high,
+	unsigned long long* out, int count, int capacity)
+{
+	while (count < capacity)
+	{
+		if (!frameReadable(framePointer, low, high)) { break; }
+		const uintptr_t savedFrame = *reinterpret_cast<const uintptr_t*>(framePointer);
+		const uintptr_t returnAddress = *reinterpret_cast<const uintptr_t*>(framePointer + kWord);
+		if (returnAddress != 0) { out[count++] = returnAddress; }
+		if (!savedFrameAdvances(savedFrame, framePointer, high)) { break; }
+		framePointer = savedFrame;
+	}
+	return count;
+}
+
 } // namespace
 
 void recordThreadStackBounds()
@@ -343,63 +409,26 @@ int captureFrames(void* context, unsigned long long* out, int capacity)
 	if (pc != 0) { out[count++] = pc; }
 	if (count >= capacity) { return count; }
 
-	if (context == nullptr)
-	{
-		// Outside a signal there is no ucontext to read the frame pointer from,
-		// and __builtin_frame_address() is not trustworthy in a build that
-		// omits frame pointers. __builtin_return_address(0) is always a real
-		// return address, so it is the one honest caller we can add here.
+	// Read HERE, not in the helper: __builtin_return_address(0) names the
+	// caller of the function it is written in, so moving it into
+	// appendCallerOutsideSignal() would record captureFrames() itself.
 #if defined(__GNUC__) && !defined(_WIN32)
-		const uintptr_t caller =
-			reinterpret_cast<uintptr_t>(__builtin_return_address(0));
-		if (caller != 0 && count < capacity)
-		{
-			out[count++] = static_cast<unsigned long long>(caller);
-		}
+	const uintptr_t caller = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+#else
+	const uintptr_t caller = 0;
 #endif
-		return count;
-	}
+	if (context == nullptr) { return appendCallerOutsideSignal(caller, out, count, capacity); }
 
 	uintptr_t framePointer = 0;
 	uintptr_t stackPointer = 0;
 	if (!contextStackPointers(context, framePointer, stackPointer)) { return count; }
 
-	const uintptr_t word = sizeof(uintptr_t);
-	const uintptr_t alignMask = (2 * word) - 1;
 	const uintptr_t low = stackPointer;
 	uintptr_t high = 0;
 	uintptr_t stackLow = 0;
 	stackCeilingForHandler(high, stackLow);
-	// No recorded ceiling means no dereference at all: a wrong read would fault
-	// inside the handler and lose the report. PC is still captured above.
-	if (high == 0 || high <= low + 2 * word) { return count; }
-	if (high - low > kMaxStackSpan) { return count; }
-	// With exact bounds (install-time), the interrupted SP must be on that same
-	// stack.  A marker-only thread (render/JACK) has no recorded low, so the
-	// interrupted SP is its own lower bound.
-	if (stackLow != 0 && low < stackLow) { return count; }
-	if (framePointer < low || framePointer > high - 2 * word) { return count; }
-
-	while (count < capacity)
-	{
-		if ((framePointer & alignMask) != 0
-			|| framePointer < low || framePointer > high - 2 * word)
-		{
-			break;
-		}
-		const uintptr_t savedFrame =
-			*reinterpret_cast<const uintptr_t*>(framePointer);
-		const uintptr_t returnAddress =
-			*reinterpret_cast<const uintptr_t*>(framePointer + word);
-		if (returnAddress != 0) { out[count++] = returnAddress; }
-		if (savedFrame <= framePointer || savedFrame > high - 2 * word
-			|| (savedFrame & alignMask) != 0)
-		{
-			break;
-		}
-		framePointer = savedFrame;
-	}
-	return count;
+	if (!walkBoundsAdmit(low, high, stackLow, framePointer)) { return count; }
+	return walkFramePointerChain(framePointer, low, high, out, count, capacity);
 }
 
 unsigned long appendFrames(char* buf, unsigned long cap, unsigned long pos,
