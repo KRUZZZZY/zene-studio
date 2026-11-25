@@ -1,80 +1,107 @@
-FALSE-POSITIVE
+FIXED
 
-# Cluster new-p16-30 — `record.recovery_place` places audio beyond the guaranteed recovery count
+# Cluster new-p16-30 — `record.recovery_place` placed audio beyond the guaranteed recovery count
 
-Finding (patrol, historical line): `src/core/ControlCommandsRecordingPlace.cpp:62` — "The command places the
-original WAV in a clip without limiting playback to `frames_recoverable` … a crashed take has more frames in its
-WAV than the journal guarantees; `record.recovery_place` creates a clip that plays the entire file." Proposed fix:
-"Place only the guaranteed frame range, using a bounded clip region or a separate truncated recovery file."
+Round 1 closed this as FALSE-POSITIVE on the argument that `commitTake()` writes the WAV header and the journal
+from the same count. The reviewer is right that this overlooks the *window between them*: a crash after
+`SFC_UPDATE_HEADER_NOW` and before `writeJournal()` leaves a WAV whose data chunk declares frames the journal never
+recorded. `record.recovery_place` then placed the whole decodable file, so the clip played past
+`frames_recoverable` — the number the command reports as the guaranteed count. The fix bounds the placed clip at
+the cause, and the bound is applied again on redo.
 
-Line 62 is still where the clip is made: `landRecoveredTake()` → `track->createClip(TimePos(0))` →
-`clip->setSampleFile(audio)` (`src/core/ControlCommandsRecordingPlace.cpp:62-69`). Nothing in the branch limits
-the clip to `frames_recoverable`, so the premise of the finding ("the code does not clamp") is true. The defect
-claim built on it is not: `frames_recoverable` is a documented **floor** (a guarantee), and the clip cannot play
-audio that is not on disk, nor — for a take this program wrote — audio past the count.
+## The defect, with line evidence
 
-## Why this is not a bug
+- `src/core/audio/TrackRecorder.cpp:262-272` — `commitTake()`: `sf_command(m_sf, SFC_UPDATE_HEADER_NOW, …)` (269),
+  `sf_write_sync(m_sf)` (270), then `m_journalFrames = m_framesRecorded` and `writeJournal()` (271-272). A kill
+  between 269 and 272 leaves the decodable WAV longer than the journal's last count.
+- `src/core/RecordingJournal.cpp:310-319` and `include/RecordingJournal.h:122-125` — `frames_recoverable` is
+  `min(journal.framesOnDisk, framesInFile())`, so in that crash it is the *journal* count, smaller than what the
+  file decodes.
+- `src/core/SampleDecoder.cpp:144-151` — the decoder reads exactly the declared frames, so the surplus is
+  playable audio (`sfInfo.frames`), not padding.
+- `src/core/ControlCommandsRecordingPlace.cpp:62-69` (round 1) — `landRecoveredTake()` called
+  `clip->setSampleFile(audio)` and stopped there; `setSampleFile` → `resetWindowToFullBuffer()`
+  (`src/core/SampleClip.cpp:493-506`) makes the clip's window the whole buffer, so the clip played every decodable
+  frame.
 
-**1. The count is the guaranteed minimum, not a ceiling, and that is written down.**
-- `include/RecordingJournal.h:122-125`: `recoverableFrames()` — "THE REPORTED BOUND: `min(journal.framesOnDisk,
-  framesInFile())`. Never more than the file holds, so the number cannot promise material that is not on disk."
-  The stated purpose is to avoid *over*-promising, i.e. a lower bound.
-- `include/RecordingJournal.h:126-128`: `updateIntervalFrames()` — "The most the journal's count can
-  **understate** what the writer has already written." The journal count lags the file by construction.
-- `src/core/ControlRecordingSupport.cpp:77-83`: `frames_recoverable` and `frames_beyond_the_journal` are reported
-  side by side; the surplus is a reported fact, not an error, and
-  `tests/control-recording-recovery.py:226` ("the material beyond the journal is inside the stated lag bound")
-  locks the surplus as legitimate recorded audio within the documented bound.
-- Placement's own contract is "the recovered file", untouched: `ControlCommandsRecordingPlace.cpp:173-178`
-  ("holding the recovered file in a clip at bar 1 … The take's WAV is never moved, rewritten or deleted") and the
-  result field `audio_untouched: true` (`ControlCommandsRecordingPlace.cpp:148`). The proposed remedy — trim the
-  clip, or write "a separate truncated recovery file" — contradicts both, and the result schema
-  (`:180-190`) has no field in which a truncation could be reported.
+## The fix (product code)
 
-**2. For a take this program crashed on, the count, the header and the clip are the same number.**
-`TrackRecorder::commitTake()` refreshes the WAV header and writes the journal from the same value in one step
-(`src/core/audio/TrackRecorder.cpp:262-272`: `SFC_UPDATE_HEADER_NOW`, `sf_write_sync`, then
-`m_journalFrames = m_framesRecorded` and `writeJournal()`). So the data chunk always declares exactly the
-journalled count; frames written after the commit grow the file beyond the declaration. Both the journal's own
-measurement (`src/core/RecordingJournal.cpp:310-319`: `min(declaredSize, present)`) and the decoder
-(`src/core/SampleDecoder.cpp:144-151`: allocate `sfInfo.frames`, refuse a short read) stop at the declaration.
-Measured this session with libsndfile 1.2.2 (`logs/probe-1.log`, BUILD_EXIT=0, RUN_EXIT=0):
+`src/core/ControlCommandsRecordingPlace.cpp`:
 
-```
-take_declared_1000_present_3000.wav: frames libsndfile reports = 1000 (rate 48000, 1 ch)
-take_declared_3000_present_1000.wav: frames libsndfile reports = 1000 (rate 48000, 1 ch)
-```
+- `:104-112` — the guaranteed count is read once from `takeJson(journal)` (`frames_recoverable`) and used for both
+  the "no recoverable audio" refusal and the clip's bound, so the two can never disagree.
+- `:66` — `landRecoveredTake(Song*, const QString& audio, std::uint64_t framesGuaranteed)` takes the count.
+- `:81-89` — after the file loads, the clip's play range is bounded: a `SampleWindow` of
+  `min(framesGuaranteed, whole.length())` frames through `clip->setSampleWindow()`, which is the single authoring
+  point for a window (`src/core/SampleClip.cpp:873-903`): it clamps into the buffer, refuses an empty window,
+  moves the clip's timeline length with `changeLength(sampleLength())`, and clears auto-resize for a trimmed
+  window. `limit == whole.length()` (a take whose journal already matches the file) changes nothing.
+- `:131` and `:147` — both entry points pass the same count: the first placement and the redo lambda, which
+  captures `guaranteed`. Redo therefore re-places the take with the same bound.
+- `:31-34` — `<algorithm>`, `<cstdint>` for `std::min`/`std::uint64_t`.
 
-A file physically holding 3000 frames but declaring 1000 decodes 1000 — the surplus bytes are not played, so the
-clip does not "play the entire file" in the scenario the finding describes. (Probe source kept at
-`logs/probe-declared-vs-present.cpp`; the same bound is what `framesInDataChunk` computes for the offer.)
+Why a window and not a truncated copy of the file: the command promises `audio_untouched: true`
+(`src/core/ControlCommandsRecordingPlace.cpp:165`) and "The take's WAV is never moved, rewritten or deleted"
+(`:193-194`); a window is the clip's own authored state, it is saved with the project
+(`src/core/SampleClip.cpp:1053-1054`) and restored on load (`:1129-1137`), and a clip that plays its whole source
+still writes neither attribute, so no other project serialises differently.
 
-**3. Where the file really does hold more than the journal (a count set by `record.journal_update`, or a journal
-written smaller than the take), the extra frames are real PCM that is on disk and decodable.** In that case
-`frames_recoverable` understates the take. Playing it is the point of recovery; trimming would silently cut up to
-`lossBoundFrames` of audio the crash did not lose (`include/RecordingJournal.h:132-134`,
-"THE BOUND: the most audio a crash **loses**"), and would make the placed clip shorter than the file the user was
-told is untouched.
+Callers and siblings checked: `landRecoveredTake()` has exactly two call sites, both in this file (placement and
+redo). `record.recovery_restore` resolves the offer and never places audio
+(`src/core/ControlCommandsRecordingRecovery.cpp:124-131`). The GUI (`src/gui/RecordingRecoveryMenu.cpp:68`, the
+startup offer at `:163-167`) only invokes the command, so the menu, the startup offer and the agent surface all
+get the bound from the one implementation.
 
-No product file is changed by this report. `record.recovery_restore` (resolve only) and the GUI entry
-(`src/gui/RecordingRecoveryMenu.cpp:68`, the startup offer, `File > Recover Recordings`) all call the same
-`recoveryPlace` handler, so there is no sibling path with a different rule.
+## Regression test
 
-## What I ran (all logs in `~/.config/kads/zene/state/runs/new-p16-30.r1/logs`)
+`tests/src/gui/RecordingRecoveryMenuTest.cpp:515-558`,
+`aTakeWithMoreAudioThanTheJournalGuaranteesIsPlacedBounded`: a WAV of `2 * kFrames` (44100) frames journalled as
+`kFrames` (22050) — the state the crash window leaves — placed through the real command. It asserts
 
-| Step | Command | Exit |
+- the reply reports `frames_in_file = 44100` and `frames_recoverable = 22050`;
+- the clip's buffer really holds 44100 frames (`clip->sample().sampleSize()`), so the two numbers below are not
+  equal by accident;
+- `clip->sampleWindow()` is `[0, 22050)`, and `clip->sampleLength().getTicks() ==
+  clip->windowTicksFor(SampleWindow::full(22050))` — the timeline length follows the guarantee, not the file;
+- after `control.undo` + `control.redo` the re-placed clip carries the same window and the same timeline length.
+
+Deterministic: the WAV and the journal count are injected; nothing reads the clock, sleeps, or starts a thread.
+`control.undo`/`control.redo` are synchronous command calls.
+
+## Test matrix
+
+| Path | Result |
+| --- | --- |
+| Normal path: journal count == file frames (no surplus) | `anInterruptedTakeIsPlacedOrDismissed`, `aPlaceUndoRedoIsOneStep` — pass; `limit == whole.length()`, no window written |
+| Failure path: no audio, undecodable file, redo that cannot place | `aTakeWithNoAudioCannotBePlaced`, `aTakeThatDoesNotDecodeIsNotPlaced`, `aRedoThatCannotPlaceKeepsTheOffer` — pass |
+| Exhaustion / reconfiguration: journal larger than the file (truncated take) | `aTruncatedTakeIsOfferedWhatIsActuallyOnDisk` — pass; the bound is a no-op there, the clip is the file |
+| The defect: file decodes more than the journal guarantees | the new test — fails without the fix, passes with it |
+| Redo | the new test re-checks the bound after undo + redo |
+| Audio thread | placement runs on the control thread; no new per-period code. `setSampleWindow` emits the same `sampleChanged()` a `setSampleFile` on this path already emitted |
+| Undo | still one step: `addUndoStep` unchanged, `aPlaceUndoRedoIsOneStep` passes |
+| Platforms | no Qt-6-only API, no `std::filesystem`, no platform ifdefs added; `SampleWindow`/`f_cnt_t`/`std::uint64_t` are already used across the tree |
+
+## Commands and EXIT codes (logs in `~/.config/kads/zene/state/runs/new-p16-30.r2/logs`)
+
+| Step | Command | EXIT |
 | --- | --- | --- |
-| Build the recovery-menu test (unmodified branch) | `cmake --build build --target RecordingRecoveryMenuTest -j4 > logs/build-1.log 2>&1` | 0 |
-| Run it from `build/tests` | `cd build/tests && ctest -R '^RecordingRecoveryMenuTest$' --output-on-failure > logs/test-1.log 2>&1` | 0 (1/1 passed, 0.72 s) |
-| libsndfile bound probe, build | `c++ -std=c++20 -O0 logs/probe-declared-vs-present.cpp -o $WORK/probe $(pkg-config --cflags --libs sndfile) >> logs/probe-1.log 2>&1` | 0 |
-| libsndfile bound probe, run | `$WORK/probe $WORK >> logs/probe-1.log 2>&1` | 0 (output above) |
-| Gates, as instructed | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gates-1.log 2>&1` | 1 (did not reach the gates: its base listing is not cached and it cannot create one — `bunny-guard: 'git -C …/gate-baselines/tree checkout -q --detach 9913d36d5…' is not allowed in a Bunny lane`, then `OSError: [Errno 30] Read-only file system` on that cache) |
-| Gates, same functions, logs in the log folder | `python3 logs/gates_driver.py <worktree> logs > logs/gates-2.log 2>&1` | 0 (8/8 rows PASS) |
+| RED build (test only, no product change) | `cmake --build build --target RecordingRecoveryMenuTest -j4 > build-red-1.log 2>&1` | 0 |
+| RED test | `cd build/tests && ctest -R '^RecordingRecoveryMenuTest$' --output-on-failure > test-red-1.log 2>&1` | 8 (`FAIL!` at test line 540, `Totals: 14 passed, 1 failed`) |
+| GREEN build (fix + `zene`) | `cmake --build build --target RecordingRecoveryMenuTest zene -j4 > build-green-1.log 2>&1` | 0 |
+| GREEN test | `ctest -R '^RecordingRecoveryMenuTest$' … > test-green-1.log 2>&1` | 0 (15/15) |
+| Family build | `cmake --build build -j4 --target ControlRecordingRoutesTest DataFileContainerRecoveryTest MultiTrackRecorderTest RecordingInputPathTest ProjectRecoveryTest RecordingCrashLossTest RecordingRealtimeTest RecordingPassTest RecordingLatencyTest TwoTrackRecordingHarness StepRecorderWidgetTest SessionAudioRecorderTest AudioAlsaResumeRecoveryTest > build-family-1.log 2>&1` | 0 |
+| Family test | `ctest -R 'Recovery\|Recorder\|Recording' --output-on-failure > test-family-2.log 2>&1` | 0 (15/15 passed, incl. `ControlRecordingRecovery`) |
+| 4b: write the product diff | `git diff -- src/core/ControlCommandsRecordingPlace.cpp > fix.patch` | 0 |
+| 4b: reverse it | `git apply -R fix.patch` | 0 |
+| 4b: rebuild without the fix | `cmake --build build --target RecordingRecoveryMenuTest -j4 > build-proof-red-1.log 2>&1` | 0 |
+| 4b: run without the fix | `ctest -R '^RecordingRecoveryMenuTest$' … > test-proof-red-1.log 2>&1` | 8 (`FAIL!` at line 540, `14 passed, 1 failed`) |
+| 4b: re-apply | `git apply fix.patch` | 0 |
+| 4b: rebuild with the fix | `cmake --build build --target RecordingRecoveryMenuTest zene -j4 > build-proof-green-1.log 2>&1` | 0 |
+| 4b: run with the fix | `ctest -R '^RecordingRecoveryMenuTest$' … > test-proof-green-1.log 2>&1` | 0 (15/15) |
+| Gates, as instructed | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > gates-1.log 2>&1` | 1 (no table: its base listing for `3436a808b` is not cached, computing it needs `git checkout --detach` in the read-only `gate-baselines/tree`, refused by the lane guard, `CalledProcessError … exit status 97`) |
+| Gates, same functions, logs in the log folder | `git archive <base> \| tar -x -C $TMPDIR/np1630-base` then `python3 logs/gates_driver.py <worktree> logs $TMPDIR/np1630-base > gates-2.log 2>&1` | 0 (8/8 rows PASS) |
 
-`gates_driver.py` imports `feature_check` and reuses its `SIMPLE`, `RATCHET`, `REG`, `run`, `key` and
-`item_file` unchanged, with the base listing measured in the base tree — which here *is* this worktree
-(`merge-base HEAD 050/m0-train-52` = `HEAD` = `9913d36d5`, tree clean, 0 changed files). No gate limit, baseline
-entry or script is edited. Table (`logs/gates-2.log`):
+Gate table (`gates-2.log`; base `3436a808b` measured on a `git archive` extraction, 3 changed files):
 
 ```
   PASS  fork-sources            exit 0
@@ -88,71 +115,49 @@ entry or script is edited. Table (`logs/gates-2.log`):
 RESULT: PASS
 ```
 
-Caveat on the complexity row: the gate binary is not installed on this box —
-`complexity-gate: lizard is not installed — run: pip install lizard` (`logs/gate-complexity.log`, exit 2), so it
-measured nothing. It cannot hide a regression from this job because no `src/`, `include/` or `plugins/` file is
-changed by it.
-
-Because no product file changed, `tests/fork-sources.txt` and `tests/upstream-modifications.txt` need no entry;
-the registration and no-upstream-regression gates agree.
-
-## Test matrix considered (no test added — nothing to regress against)
-
-| Path | State |
-| --- | --- |
-| Normal path: place a take, one undo step, redo | covered and green by `RecordingRecoveryMenuTest` (`logs/test-1.log`, exit 0) |
-| Failure: a take with no audio, or an unreadable file, is refused and the offer kept | `RecordingRecoveryMenuTest::aTakeWithNoAudioCannotBePlaced` |
-| Truncated header (declares more than the disk holds) | `RecordingRecoveryMenuTest::aTruncatedTakeIsOfferedWhatIsActuallyOnDisk`; `framesInDataChunk` |
-| Exhaustion / reconfiguration | not on this path (placement is one clip, one track, no buffer sizing) |
-| Audio thread | placement runs on the control thread (`recoveryPlace`); no code added, so nothing new allocates, locks, waits or logs |
-| Supported platforms | no code added; the probe is a local diagnostic, not committed |
+Registration: `src/core/ControlCommandsRecordingPlace.cpp` is already in `tests/fork-sources.txt` (line 1882) and
+`tests/all-sources.txt` (line 1843); no product file is new and no inherited file changed, so neither list needed
+an edit (`fork-sources` and `no-upstream-regression` exit 0).
 
 ## Self-check
 
-- **The regression test FAILS with your product change reverted and PASSES with it.** No product change exists:
-  the verdict is FALSE-POSITIVE, so a red/green pair would be a test of nothing. The proof is the contract and
-  the mechanism above, plus the libsndfile measurement (`probe-1.log`, BUILD_EXIT=0, RUN_EXIT=0) and the existing
-  family green on the unmodified branch (`test-1.log`, exit 0). `submit_check.py` records this as claim-only
-  closure, which is the branch it takes for ALREADY-FIXED / FALSE-POSITIVE.
-- **The test is deterministic.** The evidence is a static probe with no clock, thread or sleep: it writes two WAV
-  files whose data-chunk size is patched, then reads `SF_INFO.frames`. `RecordingRecoveryMenuTest` drives the
-  registry with injected journals and WAVs (`writeWav`/`writeTruncatedWav`), no wall-clock timing.
-- **The fix is at the cause and complete: every caller and sibling checked.** There is no fix. All three entry
-  points (agent command, `File > Recover Recordings`, the startup offer) reach the one handler `recoveryPlace`
-  (`src/gui/RecordingRecoveryMenu.cpp:65-72`, `:163-167`); the sibling verb `record.recovery_place`'s only
-  same-family neighbour, `record.recovery_restore`, resolves the offer and never places audio
-  (`ControlCommandsRecordingRecovery.cpp:124-131`). Nothing is left inconsistent because nothing changed.
-- **No collateral damage.** Zero files changed outside this report, so old projects load and render exactly as
-  before and no limit or check was added that could reject another caller. Had I added the proposed clamp, it
-  would have shortened every recovered clip by up to `lossBoundFrames` (8896 frames, 0.185 s at 48 kHz) and
-  broken the documented `audio_untouched` contract — which is why I did not.
-- **Verdict cites the code or the intended contract.** Yes: `include/RecordingJournal.h:122-128`,
-  `src/core/ControlRecordingSupport.cpp:77-83`, `src/core/audio/TrackRecorder.cpp:262-272`,
-  `src/core/RecordingJournal.cpp:310-319`, `src/core/SampleDecoder.cpp:144-151`,
-  `src/core/ControlCommandsRecordingPlace.cpp:148` and `:173-178`, plus the measurement in `logs/probe-1.log`.
-- **Gates: 8/8 rows PASS through `gates_driver.py`, but `submit_check.py`'s own row is FAIL, and that is the one
-  unfixable item in this lane.** `feature_check.py` exits 1 without printing a table (`logs/gates-1.log`): its
-  base listing for `9913d36d5` is not cached, computing it needs `git checkout --detach` in
-  `~/.local/share/zene-bunny-fix/qwen/gate-baselines/tree` (refused by the lane guard, exit 97), and that tree is
-  mounted read-only for this session — `touch` there answers `Read-only file system`
-  (`findmnt`: the whole `zene-bunny-fix` tree is `ro`), so the tool cannot write the cache either way. That is why
-  `submit-check-1.log` shows `FAIL gates (feature_check.py)`. I did not edit the gate, the guard, the baseline
-  limits or the cache; the driver above reuses the unmodified gate functions and prints the same eight rows. To
-  settle the row, run `feature_check.py` from a lane whose `gate-baselines/` cache is writable.
-- **Git state.** One commit on `bugs/qwen-new-p16-30` (`efdef674f3`), this report only; `git status --porcelain`
-  prints nothing. `git diff --stat 050/m0-train-52...HEAD` is this file alone, so no product file, no
-  `tests/fork-sources.txt` and no `tests/upstream-modifications.txt` entry is involved.
+- **The regression test FAILS with the product change reverted and PASSES with it.** Yes, run in that order:
+  `git apply -R fix.patch` (EXIT 0) → build (EXIT 0) → test EXIT **8**, `FAIL!
+  aTakeWithMoreAudioThanTheJournalGuaranteesIsPlacedBounded … Compared values are not the same`, `Loc:
+  [../../tests/src/gui/RecordingRecoveryMenuTest.cpp(540)]`, `14 passed, 1 failed` (`test-proof-red-1.log`);
+  `git apply fix.patch` (EXIT 0) → build (EXIT 0) → test EXIT **0**, 15/15 (`test-proof-green-1.log`).
+- **Deterministic.** No clock, sleep, thread or timer: the take is a WAV the test writes (`writeWav`), the journal
+  count is the injected `frames_on_disk` of `record.journal_update`, and the assertions read the clip the command
+  placed. Undo and redo are synchronous command invocations.
+- **At the cause and complete.** The bound lives in `landRecoveredTake()`, the one function both the placement and
+  the redo reach (`:131`, `:147`); the count is read once (`:104-112`). The other verbs of the group are not
+  affected: `record.recovery_restore` never places audio, `record.recovery_discard` removes only the journal, and
+  `record.recovery_get_state` still reports `frames_recoverable` as before. No control command, params schema or
+  result schema changed, so the `ControlCommandsSnapshot` canary is untouched.
+- **No collateral damage.** A take whose journal already matches its file (`limit == whole.length()`) writes no
+  window and serialises exactly as before; a project whose clips have no trim writes neither `srcin` nor `srcout`
+  (`src/core/SampleClip.cpp:1051-1055`), so old projects load unchanged, and a trimmed recovered clip round-trips
+  through save/load (`:1053-1054`, `:1129-1137`). The limit only applies to the clip this command creates — no
+  other caller or existing clip can hit it. The whole recovery/recorder family passed (15/15).
+- **One undo step, nothing new on the audio thread.** `addUndoStep` is unchanged (the undo still removes the
+  placed track and rewrites the journal as `in_progress`), `aPlaceUndoRedoIsOneStep` passes; the placement code
+  runs on the control thread and adds no allocation, lock, wait or log to any per-period path.
+- **Verdict cites evidence.** REAL: `src/core/audio/TrackRecorder.cpp:262-272` (the crash window),
+  `src/core/RecordingJournal.cpp:310-319` (the count is the smaller number), and round-1 placement at
+  `src/core/ControlCommandsRecordingPlace.cpp:62-69`, now bounded at `:81-89`.
+- **Gates.** The official tool cannot print its table in a lane (`gates-1.log`, guard refusal + read-only cache).
+  The driver reuses `feature_check`'s unchanged `SIMPLE`/`RATCHET`/`REG`/`key`/`item_file` with the base listing
+  measured on a `git archive` extraction of `3436a808b`, and all eight rows pass. The complexity row is vacuous on
+  this box because `tests/complexity-gate.sh` reports `lizard is not installed` (exit 2, 0 items on both sides);
+  the changed file is 229 lines with two small added blocks, and no new function was introduced.
 
 ## Other findings
 
-- `feature_check.py` cannot run in a lane when the base commit's listing is not already cached: the lane guard
-  refuses its own `git checkout --detach` in `gate-baselines/tree` (exit 97) and that directory is read-only for
-  the session (`OSError: [Errno 30] Read-only file system`). Same shape as `cluster-ci-28572f865f7a738c`. Handled
-  here with the driver above; the tool itself still exits 1 (`logs/gates-1.log`).
-- `tests/complexity-gate.sh` reports `lizard is not installed` (exit 2), so the complexity ratchet measures
-  nothing on this box.
-- `src/core/SampleDecoder.cpp:144-151` refuses a sample whose header declares more frames than the disk holds
-  (short read → empty buffer → `landRecoveredTake` removes the track and `record.recovery_place` reports "could
-  not create a sample track"). A crashed take cannot reach that state (`commitTake` syncs the header), but an
-  OS-level crash that loses only the tail of the data chunk would make the offer unplaceable. Out of scope here;
-  noted for triage.
+- `tests/complexity-gate.sh` cannot measure anything here: `complexity-gate: lizard is not installed — run: pip
+  install lizard` (`gate-complexity.log`, `gate-base-complexity.log`, exit 2).
+- `feature_check.py` still cannot run under the lane guard/read-only `gate-baselines/` (same shape as
+  `cluster-ci-28572f865f7a738c`); `submit_check.py`'s gates row therefore reads FAIL even though every gate passes
+  through the driver.
+- Unrelated, unchanged by this fix: a WAV whose header declares more frames than the disk holds makes
+  `SampleDecoder` refuse the file (`src/core/SampleDecoder.cpp:144-151`), and placement then reports "could not
+  create a sample track". Not a regression from this change; worth triage on its own.

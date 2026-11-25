@@ -28,7 +28,9 @@
  * Boston, MA 02110-1301 USA.
  */
 
+#include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <memory>
 
 #include <QFileInfo>
@@ -58,8 +60,10 @@ namespace
 std::atomic<bool> g_recoveredTakeFailsForTest{false};  // the test seam: setRecoveredTakeFailsForTest()
 
 //! A new sample track named after the take, holding \a audio in a clip at bar 1; its stable id, or empty. The track is
-//! removed again unless its clip holds the file: a track reported as placed must carry the recovered audio.
-QString landRecoveredTake(Song* song, const QString& audio)
+//! removed again unless its clip holds the file: a track reported as placed must carry the recovered audio. The clip
+//! plays at most \a framesGuaranteed frames of its source: a crash between commitTake()'s header refresh and its
+//! journal write leaves a WAV that decodes past the journalled count, and the count is what this command promises.
+QString landRecoveredTake(Song* song, const QString& audio, std::uint64_t framesGuaranteed)
 {
 	if (g_recoveredTakeFailsForTest.load()) { return QString(); }
 	Track* track = Track::create(Track::Type::Sample, song);
@@ -72,6 +76,15 @@ QString landRecoveredTake(Song* song, const QString& audio)
 	{
 		removeTrack(track);
 		return QString();
+	}
+	// The play range, not the file: a window of the guaranteed frames. A clip shorter than its source still names the
+	// take's WAV (`audio_untouched`), and the window is part of the clip's saved state, so a reload keeps the bound.
+	const SampleWindow whole = clip->sampleWindow();
+	const auto limit = static_cast<f_cnt_t>(
+		std::min<std::uint64_t>(framesGuaranteed, static_cast<std::uint64_t>(whole.length())));
+	if (limit > 0 && limit < whole.length())
+	{
+		clip->setSampleWindow(SampleWindow{whole.sourceIn, static_cast<f_cnt_t>(whole.sourceIn + limit)});
 	}
 	return trackIdOf(track);
 }
@@ -88,11 +101,15 @@ ControlResult recoveryPlace(const QJsonObject& args)
 				.arg(journal.takePath, journal.state));
 	}
 	const QJsonObject before = takeJson(journal);
-	if (before.value(QStringLiteral("frames_recoverable")).toDouble() <= 0)
+	const double recoverable = before.value(QStringLiteral("frames_recoverable")).toDouble();
+	if (recoverable <= 0)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused,
 			QStringLiteral("'%1' holds no recoverable audio, so there is nothing to place").arg(journal.takePath));
 	}
+	// The guaranteed count, read once: it decides both the refusal above and how much of the take the placed clip
+	// plays, so the two can never disagree.
+	const auto guaranteed = static_cast<std::uint64_t>(recoverable);
 
 	const TakeJournal offered = journal;
 	TakeJournal restored = journal;
@@ -111,7 +128,7 @@ ControlResult recoveryPlace(const QJsonObject& args)
 	Song* song = Engine::getSong();
 	const QString audio = journal.takePath;
 	auto placed = std::make_shared<QString>();
-	*placed = landRecoveredTake(song, audio);
+	*placed = landRecoveredTake(song, audio, guaranteed);
 	if (placed->isEmpty())
 	{
 		write(journalPath, offered);
@@ -126,8 +143,8 @@ ControlResult recoveryPlace(const QJsonObject& args)
 			placed->clear();
 			write(journalPath, offered);
 		},
-		[placed, offered, restored, journalPath, song, audio]() {
-			*placed = landRecoveredTake(song, audio);
+		[placed, offered, restored, journalPath, song, audio, guaranteed]() {
+			*placed = landRecoveredTake(song, audio, guaranteed);
 			// A redo that places nothing leaves the take offered, as the first placement's failure does above, and
 			// declines the redo: the step goes back on the redo stack instead of being recorded as an applied undo step.
 			if (placed->isEmpty())

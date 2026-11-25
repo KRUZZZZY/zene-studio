@@ -508,6 +508,58 @@ private slots:
 		QFile::remove(take);
 	}
 
+	//! BUG new-p16-30: a crash between the writer's header refresh and its journal write leaves a WAV that decodes
+	//! MORE frames than the journal guarantees - TrackRecorder::commitTake() refreshes the data chunk, syncs, and
+	//! only then writes the journal. The placed clip plays the guaranteed count, not the file's length, and the
+	//! redo of the placement keeps the same bound.
+	void aTakeWithMoreAudioThanTheJournalGuaranteesIsPlacedBounded()
+	{
+		const QString dir = run(QStringLiteral("record.recovery_get_state")).result.value(QStringLiteral("dir")).toString();
+		const QString take = QDir(dir).filePath(QStringLiteral("zene-test-take-newer-header.wav"));
+		QVERIFY(writeWav(take, 2 * kFrames));
+		QVERIFY(run(QStringLiteral("record.journal_begin"), {{QStringLiteral("take"), take},
+			{QStringLiteral("sample_rate"), kRate}, {QStringLiteral("channels"), 1}}).ok);
+		// The journal's last count is HALF the file: the window commitTake() leaves open to a crash.
+		QVERIFY(run(QStringLiteral("record.journal_update"), {{QStringLiteral("take"), take},
+			{QStringLiteral("frames_on_disk"), kFrames}}).ok);
+		const auto tracksBefore = Engine::getSong()->tracks().size();
+
+		const ControlResult placed = run(QStringLiteral("record.recovery_place"), {{QStringLiteral("take"), take}});
+		QVERIFY2(placed.ok, qPrintable(placed.errorMessage));
+		QCOMPARE(placed.result.value(QStringLiteral("frames_in_file")).toInt(), 2 * kFrames);
+		QCOMPARE(placed.result.value(QStringLiteral("frames_recoverable")).toInt(), kFrames);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore + 1);
+
+		auto* track = dynamic_cast<SampleTrack*>(Engine::getSong()->tracks().back());
+		QVERIFY(track != nullptr);
+		auto* clip = dynamic_cast<SampleClip*>(track->getClip(0));
+		QVERIFY(clip != nullptr);
+		// The file really is longer than the promise, so the two numbers below are not the same by accident ...
+		QCOMPARE(static_cast<int>(clip->sample().sampleSize()), 2 * kFrames);
+		// ... and the clip plays only the guaranteed count, on the timeline too.
+		QCOMPARE(static_cast<int>(clip->sampleWindow().length()), kFrames);
+		QCOMPARE(static_cast<int>(clip->sampleWindow().sourceIn), 0);
+		const auto guaranteedTicks =
+			static_cast<qint64>(clip->windowTicksFor(SampleWindow::full(static_cast<f_cnt_t>(kFrames))));
+		QVERIFY(guaranteedTicks > 0);
+		QCOMPARE(static_cast<qint64>(clip->sampleLength().getTicks()), guaranteedTicks);
+
+		// The redo places the take again, and places it with the same bound.
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore);
+		QVERIFY(run(QStringLiteral("control.redo")).ok);
+		QCOMPARE(Engine::getSong()->tracks().size(), tracksBefore + 1);
+		auto* again = dynamic_cast<SampleTrack*>(Engine::getSong()->tracks().back());
+		QVERIFY(again != nullptr);
+		auto* reclip = dynamic_cast<SampleClip*>(again->getClip(0));
+		QVERIFY(reclip != nullptr);
+		QCOMPARE(static_cast<int>(reclip->sampleWindow().length()), kFrames);
+		QCOMPARE(static_cast<qint64>(reclip->sampleLength().getTicks()), guaranteedTicks);
+
+		QVERIFY(run(QStringLiteral("record.recovery_discard"), {{QStringLiteral("take"), take}}).ok);
+		QFile::remove(take);
+	}
+
 	//! A take the header measures but no decoder loads is refused, typed, and leaves nothing behind: no track, no undo
 	//! step, the journal still offered. The clip took a file that did not load, so the track used to be reported as
 	//! placed with no audio in it.
