@@ -7,9 +7,11 @@
 #include <cstdlib>
 #include <new>
 #include <vector>
+// zene-portable-aligned-include: begin
 #if defined(_WIN32)
 #include <malloc.h>
 #endif
+// zene-portable-aligned-include: end
 #include "sfizz/effects/Disto.h"
 #include "sfizz/Synth.h"
 #include "sfizz/AudioSpan.h"
@@ -48,6 +50,7 @@ void *operator new[](std::size_t s, std::nothrow_t) noexcept
 	noteA();
 	return std::malloc(s != 0 ? s : 1);
 }
+// zene-portable-aligned-new: begin
 void *operator new(std::size_t s, std::align_val_t a)
 {
 	noteA();
@@ -61,6 +64,7 @@ void *operator new(std::size_t s, std::align_val_t a)
 #endif
 	throw std::bad_alloc();
 }
+// zene-portable-aligned-new: end
 void *operator new[](std::size_t s, std::align_val_t a) { return ::operator new(s, a); }
 void *operator new(std::size_t s, std::align_val_t a, std::nothrow_t) noexcept
 {
@@ -76,6 +80,7 @@ void operator delete(void *p, std::size_t) noexcept { ::operator delete(p); }
 void operator delete[](void *p, std::size_t) noexcept { ::operator delete(p); }
 void operator delete(void *p, std::nothrow_t) noexcept { ::operator delete(p); }
 void operator delete[](void *p, std::nothrow_t) noexcept { ::operator delete(p); }
+// zene-portable-aligned-delete: begin
 void operator delete(void *p, std::align_val_t) noexcept
 {
 	noteF(p);
@@ -85,6 +90,7 @@ void operator delete(void *p, std::align_val_t) noexcept
 	std::free(p);
 #endif
 }
+// zene-portable-aligned-delete: end
 void operator delete[](void *p, std::align_val_t a) noexcept { ::operator delete(p, a); }
 void operator delete(void *p, std::size_t, std::align_val_t a) noexcept { ::operator delete(p, a); }
 void operator delete[](void *p, std::size_t, std::align_val_t a) noexcept { ::operator delete(p, a); }
