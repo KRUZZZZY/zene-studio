@@ -69,7 +69,21 @@ Load-time code only. No audio-thread code, no undo state, no control command add
 
 ## Self-check
 
-See the end of this file once the completion check has been run.
+- Red/green: with the product change reverted the test exits 8 (`test-3-red.log`); with it applied it exits 0
+  (`test-4-green.log`); table above.
+- Deterministic: no timing, sleeps or threads. The inputs are fixed bytes (`0xF0000000` header + 64 `Z`). The checks are
+  the DOM state, a captured-message scan for `qUncompress`, and a 1 GiB bound on `VmPeak` growth against a ~3.75 GB
+  request (skipped when `/proc` is unreadable). The message scan alone already fails red.
+- Complete: `qUncompress` appears in `DataFile.cpp` only in `decompressesAsRecoverableDocument` (already guarded, :327)
+  and `loadData` (now guarded); all three constructors go through `loadData`. The fix reuses the recovery limit and its
+  seam, so the two paths stay consistent.
+- No collateral damage: payloads at or under the limit take the unchanged `qUncompress` path (`validCompressedProjectStillLoads`
+  and the 5-test family `DataFile*|ProjectOpenIntegrity|ProjectVersion` pass, `test-5-family.log`). The only newly refused
+  input is a compressed project that declares more than 256 MiB uncompressed, the same bound recovery has always applied.
+- Verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE.
+- Gates: BLOCKED in this lane. `feature_check.py` (also run by `submit_check.py`) fails at its own
+  `git -C .../gate-baselines/tree checkout --detach` step, refused by bunny-guard (`gates-1.log`, `submit-1.log`). I did not
+  work around it; the gate result is unverified.
 
 ## Other findings
 
