@@ -205,3 +205,85 @@ existence, and steps 5-14 are the runs that matter.
   binaries had never been built, so the first family run reported them as "Not
   Run" rather than building them. Not a product defect; noted because a reader
   of `test-2-green-family.log` will see a failure that the next run clears.
+
+## Self-check
+
+Answers to every ASK item the pre-submit check prints, with the evidence it asks
+for. (Logs are in
+`/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-222-port.r8/logs`.)
+
+1. **"The regression test FAILS with your product change reverted and PASSES with
+   it (exit codes)."** Run twice, §4b. Reverted, with the patch reversed by
+   `git apply -R` (EXIT=0) and the target rebuilt (`logs/build-9-reverted-final.log`
+   EXIT=0): `cd build/tests && ctest -R "^SampleClipWindowRemainderTest$"
+   --output-on-failure` → **EXIT=8**, "3 failed", including "the loop played past
+   the window at frame 100: 0.5" (`logs/test-7-red-final.log`). Restored with
+   `git apply` (EXIT=0) and rebuilt (`logs/build-10-restored-final.log` EXIT=0):
+   the same command → **EXIT=0**, "1/1 Test #663 ... Passed"
+   (`logs/test-8-green-final.log`). The identical RED at first contact, before the
+   product change existed at all, is `logs/test-1-red.log` (EXIT=8).
+
+2. **"The test is deterministic: no wall-clock timing, sleeps or races."** The test
+   has no clock, no sleep, no thread and no real audio device: it constructs
+   `SampleTrack`/`SampleClip` on the test thread, hands `SamplePlayHandle` a
+   `std::vector<SampleFrame>` of a fixed size (256) and calls `play()` directly.
+   Its values are injected, not measured: a source that is exactly 0.5 on every
+   frame, a window of exactly 100 source frames, a first-period offset of exactly
+   10 frames, and a loop of exactly `[0, 50)` source frames — all set through the
+   normal setters (`setSampleBuffer`, `setSampleWindow`, `setClipEdits`,
+   `setOffset`) before the handle is constructed, so the handle's snapshot is the
+   fixture and nothing can move underneath it. The rates are read once from
+   `Engine::audioEngine()->outputSampleRate()` because the fixture's source is
+   created at that rate, which makes `totalFrames() == 100` exactly on every
+   supported configuration; the assertions are exact equality (`framesDone()`,
+   zeros past the window) or `fabs(x - 0.5) < 1e-6`.
+
+3. **"The fix is at the cause and complete: every caller and sibling checked."**
+   §3 above, on this line: `SampleTrack::play` (the live schedule, window derived
+   at `src/tracks/SampleTrack.cpp:294-295` and handed over at `:315`),
+   `ClipConsolidate.cpp:80-101` (the only offline caller, already bounded by
+   `handle.totalFrames()` at `:86` and copying `min(BlockFrames, length - done)`
+   at `:93`), `PreviewPlayHandle`
+   (`src/core/ControlCommandsBrowserMedia.cpp:163`) and `TestTonePlayHandle`
+   (`src/core/ControlCommandsAudioTestTone.cpp:82`), which use the `Sample*`
+   constructor whose window is the whole sample, and the muted-pass
+   `advanceSourceSilently(frames)` added by the sibling cluster new-p12-223, which
+   receives the clamped count. All render branches inside `play()`
+   (`renderTransientRepeat`, `renderPreservingPitch`, `Sample::play`) take the same
+   clamped `frames`, so no sibling path is left unbounded. Their suites pass:
+   14/14 (`logs/test-3-green-family.log`, EXIT=0) and 7/7
+   (`logs/test-6-family2.log`, EXIT=0, `ControlAudioTestTone` included).
+
+4. **"No collateral damage: old projects and saved data load as before, and any
+   limit you added does not hit other callers that legitimately exceed it."** No
+   serialisation, save/load, model or schema code is touched: the diff is one
+   function body in `src/core/SamplePlayHandle.cpp` (22 added lines) and the new
+   test, so a saved project loads through exactly the code it did before. The
+   "limit" added is per handle and derived from the handle's own `totalFrames()`,
+   the same number `isFinished()` already used; a caller that renders beyond the
+   window was already rendering a handle the engine had declared finished, so no
+   legitimate caller is cut short:
+   - a period that fits inside the window is untouched (`renderFrames == frames`,
+     no `fill`, same render, same advance);
+   - `ClipConsolidate` never asks for more than `totalFrames()` (`:86`);
+   - playback/monitor handles whose window is the whole source keep playing the
+     whole source (`totalFrames()` is that source length), and
+     `AudioTestToneTest` / `ControlAudioTestTone` / `ClipConsolidateTest` /
+     `SampleClipRubberBandTest` pass;
+   - the only behaviour that changes is the one the finding names: frames past the
+     window are now silence instead of source audio, and `framesDone()` stops at
+     `totalFrames()`.
+
+5. **"If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line)."**
+   Not applicable: the verdict is FIXED, and §1 shows the defect's sites
+   (`src/core/SamplePlayHandle.cpp:570`, `:573-578`, `:580`, `:888-901`;
+   `src/core/Sample.cpp:100`, `:211-226`; `src/core/ClipAudioLoop.cpp:197-210`) as
+   they were before the change, with the RED run as proof that they were live on
+   this branch.
+
+Realtime note, since the change is in process code: the added statements are two
+integer comparisons, a `std::min` and a `std::fill` over frames the callback
+already owns — no allocation, free, lock, wait, log or Qt call, so I8 holds. TSan
+does not run on this box (brief, Facts), so nothing here claims a TSan run; the
+soundness rests on the statements being branch-free arithmetic on already-owned
+memory.
