@@ -132,6 +132,9 @@ def main():
     ap.add_argument("--timeout", type=int, default=300)
     ap.add_argument("--only", nargs="*", default=None)
     args = ap.parse_args()
+    # the test binary is run from <build>/tests, so a relative path must be resolved first
+    args.build_dir = os.path.abspath(args.build_dir)
+    args.scratch = os.path.abspath(args.scratch)
     os.makedirs(args.scratch, exist_ok=True)
 
     backup = os.path.join(args.scratch, "MidiWinMMOutput.h.orig")
