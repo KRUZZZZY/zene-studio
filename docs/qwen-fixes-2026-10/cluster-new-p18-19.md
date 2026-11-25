@@ -59,3 +59,11 @@ reasoned by hand: `addBand` has CCN 3; `processImpl` lost four `if` branches.
 - `tests/reference/CrossoverEQ/` is a frozen reference copy and still has the old behaviour (intentional).
 
 Delegation: Haiku ran the RED build/test and the GREEN/revert/reapply build-and-test sequence (all exit codes above were re-checked against its logs' reported values and the test-family run was done directly).
+
+## Self-check
+- Fails reverted, passes with the fix: RED `ctest -R CrossoverEQMuteHistoryTest` EXIT=8 (`test-red-1.log`, and again with `git apply -R fix.patch`, `test-revert-1.log`, EXIT=8, `peak=1`); GREEN EXIT=0 (`test-green-1.log`, `test-reapply-1.log`).
+- Deterministic: the test renders fixed-size blocks of constant input (1.0 then 0.0) through the effect via `processAudioBuffer`; no clock, sleep, thread or random value. The seam is the engine-less call into the compiled-in plugin; the only variable is the engine's period size and sample rate, which the assertion (a 1.0-versus-1e-3 gap) does not depend on.
+- Complete at the cause: the only place the four band filters were gated on the on/off flag was the four loops in `CrossoverEQEffect::processImpl`; all four now go through `addBand`. `clearFilterHistories()` (called from `loadSettings`, `CrossoverEQControls.cpp:93`) and `sampleRateChanged()` are unchanged, and the two pre-band filters (`m_lp2`, `m_hp3`) were already unconditional.
+- No collateral damage: saved settings keys and defaults are unchanged (`CrossoverEQControls.cpp:59-91` untouched); with all bands on, per-sample arithmetic is the same (each band's filter output times its gain, summed in the same order). Only behaviour while a band is off changes: its filter state tracks the input instead of freezing. Off bands cost filter CPU; no allocation, lock or logging added.
+- Verdict is FIXED, so the ALREADY-FIXED/FALSE-POSITIVE item does not apply.
+- Gates: `feature_check.py` cannot run here (its internal `git checkout --detach` is refused by bunny-guard, `gates-1.log`); `submit_check.py` therefore reports that gate FAIL. Reported as BLOCKED for that gate, not worked around.
