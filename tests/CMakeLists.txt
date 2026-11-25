@@ -910,6 +910,9 @@ set(LMMS_TESTS
 	# cluster new-p17-271: a collection store write the kernel cuts short is refused, and the store keeps what it had.
 	# The short write is provoked by capping RLIMIT_FSIZE, so it is deterministic: no disk, no timing, no race.
 	src/core/BrowserCollectionStoreWriteTest.cpp
+	# cluster new-p15-286: the same short write for the library's index store - a save the kernel cuts
+	# short is refused, the previous index stays on disk, and the scan reports the failure.
+	src/core/BrowserIndexStoreWriteTest.cpp
 	# Focused regressions for track preset command replies.
 	src/core/TrackPresetCommandsTest.cpp
 	# R2.4: the punch region's frame-accurate audio gate (include/PunchWindow.h).
