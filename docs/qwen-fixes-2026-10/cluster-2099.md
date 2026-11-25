@@ -154,16 +154,18 @@ file was changed, so `tests/upstream-modifications.txt` is untouched.
   `main`), so no device, no timing. The assertion is a directory listing of the project's `-subprojects`
   folder; `QVERIFY(renders.exists())` shows the render ran.
 - **The fix is at the cause and complete; every caller and sibling was checked.** Callers of `landAudioTrack`:
-  `bounce.land`/`range.bounce`/`track.flatten` (`src/core/ControlCommandsRenderBounce.cpp:220,253,296`) and
-  `project.subproject_refresh` are unchanged and stay consistent — each of them lands a file whose path the
-  caller either chose (`out`) or still learns from the link (`refresh`), and the subproject add was the only
-  path where a *fresh, internally named* render could be abandoned. `refreshSubproject` needs no cleanup: it
-  renders, then always points the existing track's clips at the new file, keeping the old one for its undo
-  step (correct by design). `track.flatten` (`ControlCommandsTrackFlatten.cpp:120-160`) is likewise not the
-  same shape: there the render is the flatten's artifact and the failure leaves the source track untouched.
-  The redo closure still lands the same file through `place`, so a failed redo keeps the file the undo step
-  needs to retry; the delete is scoped to the first placement only.
-- **No collateral damage.** No saved format, section, schema, command id, reversibility row or undo profile
+  `bounce.land`/`range.bounce` (`src/core/ControlCommandsRenderBounce.cpp:220,253,296`),
+  `track.flatten` (`src/core/ControlCommandsTrackFlatten.cpp:137`) and `project.subproject_refresh` are
+  unchanged and stay consistent — `refreshSubproject` renders, then always points the existing track's clips
+  at the new file, keeping the old one for its undo step, so no failure sits between its render and its
+  reference; `track.flatten` never returns a failure after its render: the render's path is what the structural
+  undo step it pushes (`ControlCommandsTrackFlatten.cpp:122-137`) replays. `bounce.land`/`range.bounce` are the
+  same *shape* but not the same ownership: their render path is the caller's `out` argument or the documented
+  `<project>-bounces/` default, so the file is an artifact a user can find and use, and deleting it would be a
+  second behaviour change (see Other findings). The subproject add was the only path where a fresh,
+  internally named render could be abandoned. The redo closure still lands the same file through `place`, so a
+  failed redo keeps the file the undo step needs to retry; the delete is scoped to the first placement only.
+- **No collateral damage.** No saved format, section, schema, command id, reversibility row or undo shape
   changed; `<subprojects>` is written and read exactly as before. The guard covers only the placement, so a
   track that did land always keeps the file its clip plays (an allocation failure in `entries.push_back` cannot
   delete it). Existing slots, including save/reload of the link and the undo/redo pair, still pass
