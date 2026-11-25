@@ -4,7 +4,7 @@ ALREADY-FIXED
 
 new-p14-39-port: ALREADY-FIXED
 
-## Verdict: ALREADY-FIXED on this branch
+## Verdict: ALREADY-FIXED behaviour, and the ported coverage is now in the tree
 
 The finding names `note.transpose`, `note.velocity_offset` and `note.velocity_scale`
 (`src/core/ControlCommandsNoteTransform.cpp`): they changed notes, checkpointed the clip and
@@ -12,18 +12,23 @@ emitted `dataChanged()`, but never called `Song::setModified()`, so a project ed
 of them was announced clean and the edit could be lost without a prompt.
 
 The accepted fix for cluster `new-p14-39` is `396b7a5046` ("Mark project modified after note
-transforms change notes"), on branch `bugs/qwen-new-p14-39` (not an ancestor of this branch).
-The *content* of that fix is already on this branch from a later, wider fix: `b663f21b0c`
-("fix(note): every note edit that changes state marks the project modified (new-p17-14)"),
-which is an ancestor of HEAD (`git merge-base --is-ancestor b663f21b0c HEAD` EXIT=0). That
-commit replaced the per-file helper with one shared finalizer, `control::markProjectEdited`,
-and every note-edit path on this branch calls it with its own "did this change anything?"
-answer - the same conditional the ported fix used (`markModifiedIfChanged`), so a no-op still
-leaves the project clean.
+transforms change notes", branch `bugs/qwen-new-p14-39`, not an ancestor of this branch). Two
+halves of it exist here in another form:
 
-There is therefore nothing left to port: the behaviour the accepted fix produced is present,
-and a test on this branch fails when that marking is removed and passes when it is there
-(step 4b proof below).
+- The **product behaviour** is already on this branch from a later, wider fix, `b663f21b0c`
+  ("fix(note): every note edit that changes state marks the project modified", new-p17-14), an
+  ancestor of HEAD (`git merge-base --is-ancestor b663f21b0c HEAD` **EXIT=0**). It replaced the
+  per-file helper with one shared finalizer, `control::markProjectEdited`, called by every
+  note-edit path with its own "did this change anything?" answer - the same conditional the
+  accepted fix used (`markModifiedIfChanged`), so a no-op still leaves the project clean.
+- The **second test the accepted commit added** (a no-op transform leaves the project clean) was
+  genuinely missing here: the existing `noOpTransposeAdvertisesNoUndo` /
+  `noOpVelocityOffsetAdvertisesNoUndo` / `noOpVelocityScaleAdvertisesNoUndo` slots
+  (`tests/src/core/ControlNoteNoOpUndoTest.cpp:246`, `:259`, `:272`) count transactions only and
+  never read `Song::isModified()`. This round adds that coverage as one slot,
+  `noteTransformsTrackProjectDirtyState` (`tests/src/core/ControlNoteNoOpUndoTest.cpp:289`),
+  which asserts both halves for all three verbs. No product file, command, registration list or
+  build file changed.
 
 ### Code evidence (read this session)
 
@@ -34,71 +39,74 @@ and a test on this branch fails when that marking is removed and passes when it 
 | `note.velocity_scale` dirties | `src/core/ControlCommandsNoteTransform.cpp:336` (same call, third handler) |
 | the shared finalizer's contract ("every verb that changes note state has to say so ... cluster new-p17-14") | `include/ControlNoteShared.h:112-130`; declaration `void markProjectEdited(bool changed = true);` at `:130` |
 | the implementation: a changed edit calls `Song::setModified()`, a no-op returns early | `src/core/ControlNoteShared.cpp:80-88`, `setModified()` at `:86` |
-| the sibling note commands that end in the shared `notes::finish()` dirties too, and `finish(..., changed=false)` skips it | `src/core/ControlCommandsNoteShared.h:77` (`markProjectEdited();` at `:77`) |
+| the sibling note commands that end in the shared `notes::finish()` dirty too; `finish(..., changed=false)` skips it | `src/core/ControlCommandsNoteShared.h:77` |
 | `note.randomize` (the GUI "Randomize velocities..." / "Humanize timing..." items) dirties | `src/core/ControlCommandsNoteRandom.cpp:385` `if (changed) { song->setModified(); }` |
-| the regression test that covers the three transforms | `tests/src/core/ControlNoteNoOpUndoTest.cpp:459` `directNoteEditsMarkProjectDirty()`, the three calls at `:466`, `:468`, `:470` |
+| **the new test, both halves** | `tests/src/core/ControlNoteNoOpUndoTest.cpp:289` `noteTransformsTrackProjectDirtyState()` |
+| the pre-existing dirty test for the same three verbs | `tests/src/core/ControlNoteNoOpUndoTest.cpp:501` `directNoteEditsMarkProjectDirty()` |
 
 GUI path: the piano roll's note tools (`src/gui/NoteTransformActions.cpp:191`
 `makeNoteTransformActions`, added to the toolbar at `src/gui/editors/PianoRoll.cpp:5471`) run
 `note.randomize` / `note.velocity_scale` through `ControlRegistry::invoke`, i.e. the same
-handlers above - so the user-facing path is covered by the same marking. No product file was
-changed by this job, so `tests/fork-sources.txt` and `tests/upstream-modifications.txt` are
-untouched.
+handlers above, so the user-facing path is covered by the same marking.
 
-## Step 4b proof: the existing test catches exactly this bug
+### What the new test asserts
 
-The product change to revert is the marking already in the tree (there is no change of mine to
-revert). I removed the three `markProjectEdited(...)` lines from
-`src/core/ControlCommandsNoteTransform.cpp`, built, ran the test, then restored them with
-`git apply -R` of the recorded patch and re-ran.
+`noteTransformsTrackProjectDirtyState` builds one note (key 60, velocity 100) and then:
 
-Commands and their EXIT codes (logs in
-`/home/kruzzzzy/.config/kads/zene/state/runs/new-p14-39-port.r2/logs`):
+- changed half - `checkProjectDirtyAfter` (which marks the project clean first) for
+  `note.transpose {semitones: 2}`, `note.velocity_offset {delta: -10}` and
+  `note.velocity_scale {factor: 0.5}`; each must leave `Song::isModified()` true;
+- no-op half - `markProjectClean()`, then `{semitones: 0}`, `{delta: 0}`, `{factor: 1.0}`; each
+  must report `notes_changed: 0` and leave `Song::isModified()` false.
 
-1. `cmake --build build --target ControlNoteNoOpUndoTest -j4` - build-1.log - **EXIT=0**
-2. `cd build/tests && ctest -R ControlNoteNoOpUndoTest --output-on-failure` - test-1.log -
-   **EXIT=0** (1/1 passed) - the tree as it stands
-3. temporarily removed the three `markProjectEdited(...)` calls;
-   `git diff -- src/core/ControlCommandsNoteTransform.cpp > logs/red-revert.patch` -
-   **EXIT=0**, `1 file changed, 3 deletions(-)`
-4. `cmake --build build --target ControlNoteNoOpUndoTest -j4` - build-red.log - **EXIT=0**
-5. `cd build/tests && ctest -R ControlNoteNoOpUndoTest --output-on-failure` - test-red.log -
-   **EXIT=8**, `0% tests passed, 1 tests failed out of 1`, and the failure names exactly the
-   three transforms:
-   ```
-   FAIL!  : ControlNoteNoOpUndoTest::directNoteEditsMarkProjectDirty() 'failures.isEmpty()' returned FALSE. (note.transpose left the project clean
-   note.velocity_offset left the project clean
-   note.velocity_scale left the project clean)
-      Loc: [../../tests/src/core/ControlNoteNoOpUndoTest.cpp(502)]
-   Totals: 19 passed, 1 failed, 0 skipped, 0 blacklisted, 641ms
-   ```
-6. `git apply -R logs/red-revert.patch` - **EXIT=0**; `git status --short` empty and
-   `md5sum src/core/ControlCommandsNoteTransform.cpp` =
-   `209f1dded6257b12ed77ad7d49a98ab8`, the same digest as before step 3
-7. `cmake --build build --target ControlNoteNoOpUndoTest -j4` - build-green.log - **EXIT=0**
-8. `cd build/tests && ctest -R ControlNoteNoOpUndoTest --output-on-failure` - test-green.log -
-   **EXIT=0** (1/1 passed, 100%)
-9. `cmake --build build --target ControlNoteNoOpUndoTest NoteTransformTest
-   NoteNoOpEditUndoStepTest NoteEditingCommandsTest ControlNoteScaleVerbsTest
-   NoteTransformActionsTest -j4` - build-family2.log - **EXIT=0**
-10. `cd build/tests && ctest -R
-    'ControlNoteNoOpUndo|NoteTransform|NoteNoOpEditUndoStep|NoteEditingCommands|ControlNoteScaleVerbs|NoteTransformActions'
-    --output-on-failure` - test-family.log - **EXIT=0**, `100% tests passed out of 6`
-11. `cmake --build build --target zene -j4` - build-zene.log - **EXIT=0** (the object the
-    temporary revert touched is rebuilt from the restored source)
+Values are injected arguments, the dirty flag is reset through the product's own
+`Song::noteProjectSaved()` seam (`:117`); no timing, sleeps or threads.
 
-One failed step, recorded for honesty: an earlier family build (`build-family.log`) exited
-**EXIT=2** with `make: *** No rule to make target 'ControlNoteEditor'` - `ControlNoteEditor`
-is the Python control test `tests/control-note-editor.py`, not a CMake target. The rerun
-without it is step 9 above.
+## Step 4b proof: RED without the marking, GREEN with it
 
-## Gates
-
-`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` - gates.log -
-**EXIT=0**:
+The product change under test is the three `markProjectEdited(changes)` calls already in the
+tree. `logs/fix.patch` is the diff that REMOVES them (3 deletions, one file):
 
 ```
-feature-check kads-new-p14-39-port (base 3436a808b, 0 changed files; logs in .../build/feature-check)
+git diff -- src/core/ControlCommandsNoteTransform.cpp > logs/fix.patch   # PATCH_EXIT=0, 28 lines
+```
+
+Commands and their EXIT codes (logs in
+`/home/kruzzzzy/.config/kads/zene/state/runs/new-p14-39-port.r3/logs`):
+
+1. `cmake --build build --target ControlNoteNoOpUndoTest -j4` + `cd build/tests && ctest -R
+   ControlNoteNoOpUndoTest --output-on-failure` - build-1.log / test-1.log - **BUILD_EXIT=0
+   TEST_EXIT=0**, 1/1 passed (the tree as it stands, with the new slot)
+2. `./ControlNoteNoOpUndoTest noteTransformsTrackProjectDirtyState` - test-slot-1.log -
+   **EXIT=0**, `PASS : ControlNoteNoOpUndoTest::noteTransformsTrackProjectDirtyState()`,
+   `Totals: 3 passed, 0 failed`
+3. removed the three calls, recorded `logs/fix.patch`; `md5sum` of the product file became
+   `d61ae05a9fd212151bb3a1b49cf4f409`; `cmake --build build --target ControlNoteNoOpUndoTest
+   -j4` + `ctest -R ControlNoteNoOpUndoTest` - build-red.log / test-red.log - **BUILD_EXIT=0
+   TEST_EXIT=8**:
+   ```
+   FAIL!  : ControlNoteNoOpUndoTest::noteTransformsTrackProjectDirtyState() 'failures.isEmpty()' returned FALSE. (note.transpose left the project clean
+   FAIL!  : ControlNoteNoOpUndoTest::directNoteEditsMarkProjectDirty() 'failures.isEmpty()' returned FALSE. (note.transpose left the project clean
+   Totals: 19 passed, 2 failed, 0 skipped, 0 blacklisted, 583ms
+   0% tests passed, 1 tests failed out of 1
+   ```
+4. `git apply -R logs/fix.patch` - **APPLY_REVERSE_EXIT=0**; `md5sum` back to
+   `209f1dded6257b12ed77ad7d49a98ab8`; `git status --short` = `M tests/src/core/ControlNoteNoOpUndoTest.cpp`
+   only
+5. `cmake --build build --target ControlNoteNoOpUndoTest NoteTransformTest
+   NoteNoOpEditUndoStepTest NoteEditingCommandsTest ControlNoteScaleVerbsTest
+   NoteTransformActionsTest -j4` + `ctest -R ControlNoteNoOpUndoTest` +
+   `ctest -R 'ControlNoteNoOpUndo|NoteTransform|NoteNoOpEditUndoStep|NoteEditingCommands|ControlNoteScaleVerbs|NoteTransformActions'`
+   - build-green.log / test-green.log / test-family.log - **BUILD_EXIT=0 TEST_EXIT=0
+   FAMILY_EXIT=0**, `100% tests passed out of 6` (ControlNoteScaleVerbsTest, NoteTransformTest,
+   NoteEditingCommandsTest, NoteNoOpEditUndoStepTest, NoteTransformActionsTest,
+   ControlNoteNoOpUndoTest)
+6. `cmake --build build --target zene -j4` - build-zene.log - **ZENE_BUILD_EXIT=0**
+7. `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` -
+   gates.log - **GATES_EXIT=0**:
+
+```
+feature-check kads-new-p14-39-port (base 3436a808b, 2 changed files; logs in .../build/feature-check)
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
@@ -113,18 +121,21 @@ RESULT: PASS
 ## Self-check
 
 **ASK: The regression test FAILS with your product change reverted and PASSES with it (exit codes).**
-There is no product change of mine; I reverted the marking that is in the tree. RED: test-red.log,
-`ctest -R ControlNoteNoOpUndoTest` **EXIT=8**, `directNoteEditsMarkProjectDirty` failing with
-"note.transpose / note.velocity_offset / note.velocity_scale left the project clean". GREEN after
-restoring (`git apply -R` EXIT=0): test-green.log **EXIT=0**, 1/1 passed. Family: test-family.log
-**EXIT=0**, 6/6.
+RED: with `fix.patch` applied (the three `markProjectEdited(changes)` calls removed), rebuild
+BUILD_EXIT=0, `ctest -R ControlNoteNoOpUndoTest` **TEST_EXIT=8**, and the failure is the new
+slot: `FAIL! : ControlNoteNoOpUndoTest::noteTransformsTrackProjectDirtyState() 'failures.isEmpty()'
+returned FALSE. (note.transpose left the project clean ...)` (test-red.log). GREEN after
+`git apply -R fix.patch` (APPLY_REVERSE_EXIT=0): rebuild BUILD_EXIT=0, **TEST_EXIT=0**, 1/1
+passed (test-green.log), and the slot alone passes (`PASS`, EXIT=0, test-slot-1.log). Family:
+FAMILY_EXIT=0, 6/6.
 
 **ASK: The test is deterministic - no wall-clock timing, sleeps or races.**
-`directNoteEditsMarkProjectDirty` (`tests/src/core/ControlNoteNoOpUndoTest.cpp:459`) uses no
-timing at all: `markProjectClean()` (`:117`) calls `Song::noteProjectSaved(song->projectFileName())`,
-then the command runs and the assertion reads `Engine::getSong()->isModified()` (`:132`). All
-values are injected args (`semitones`, `delta`, `factor`), the fixture is one note built by
-`makeOneNoteFixture`, and every assertion is a Qt Test `QVERIFY`/`QCOMPARE` on that state.
+The new slot (`tests/src/core/ControlNoteNoOpUndoTest.cpp:289`) uses no timing at all. The
+dirty-state seam is the product's own: `markProjectClean()` (`:117`) calls
+`Song::noteProjectSaved(song->projectFileName())`, the assertion reads
+`Engine::getSong()->isModified()`. Every input is an injected argument (`semitones`, `delta`,
+`factor`), the fixture is one note built by `makeOneNoteFixture` (key 60, velocity 100), and
+each assertion is `QVERIFY`/`QCOMPARE` on that state. No thread, no event loop, no sleep.
 
 **ASK: The fix is at the cause and complete - every caller and sibling checked and consistent.**
 The cause (the three transform handlers not saying "this changed") and its siblings were walked
@@ -144,30 +155,32 @@ in the command family that owns note edits:
 `src/core/ControlCommandsNoteClipboard.cpp:111`, `:160`, `:224`, `:279`, `:309`;
 `src/core/ControlCommandsNoteShared.h:77`). So every note edit that changes state dirties the
 project, through one of two paths that agree on the same conditional ("no change, no step, no
-dirty").
+dirty"), and the new test pins both halves for the three verbs the finding names.
 
 **ASK: No collateral damage - old projects and saved data load as before, no new limit.**
-No product code was changed by this job (`git diff` empty; the only commit adds this report), so
-loading, saving, undo depth and every command's behaviour are byte-for-byte what the branch
-already shipped. Nothing was added to the audio thread; the marking is in command handlers on
-the control/UI thread, and no control command was added (nothing moved in the
-ControlCommandsSnapshot canary).
+No product code was changed this round (`git diff` on the commit touches only
+`tests/src/core/ControlNoteNoOpUndoTest.cpp` and this report), so loading, saving, undo depth and
+every command's behaviour are what the branch already shipped. The new slot only drives the
+registry and reads the song's dirty flag; it adds no command, no argument schema and no limit.
+Nothing new runs on the audio thread - the marking it exercises lives in a command handler on
+the control/UI thread - and no control command was added, so the ControlCommandsSnapshot canary
+does not move.
 
 **ASK: ALREADY-FIXED - the code (file:line) or the intended contract that shows it.**
 `src/core/ControlCommandsNoteTransform.cpp:250`, `:294`, `:336` call
 `control::markProjectEdited(changes)`; that helper is declared with its rule at
 `include/ControlNoteShared.h:112-130` and defined at `src/core/ControlNoteShared.cpp:80-88`
 (`Song::setModified()` at `:86`). The commit that put it there, `b663f21b0c` (new-p17-14), is an
-ancestor of HEAD (`git merge-base --is-ancestor b663f21b0c HEAD` EXIT=0). The step-4b run above
+ancestor of HEAD (`git merge-base --is-ancestor b663f21b0c HEAD` EXIT=0), and step 4b above
 shows the behaviour depends on exactly those three calls.
 
 ## Other findings
 
-- `note.scale` refuses a no-op with a failed transaction but takes a checkpoint before asking
-  (`control::checkpointNoteEdit(clip, shape.changes)` at `src/core/ControlCommandsNoteShape.cpp:131`
-  - the conditional is there, `addJournalCheckPoint()` at `:157`, `:235`, `:255` is unconditional).
-  Out of scope for this cluster and already covered by clusters new-p14-41 / new-p14-72; noted,
-  not changed.
+- `note.scale`, `note.ratchet`, `note.add_many` and `note.restore_timing` take a
+  `clip->addJournalCheckPoint()` unconditionally (`src/core/ControlCommandsNoteShape.cpp:157`,
+  `:235`, `:255`) and rely on their command's own refusal for a no-op; only `note.scale` asks
+  first (`control::checkpointNoteEdit(clip, shape.changes)` at `:131`). Out of scope for this
+  cluster and already covered by clusters new-p14-41 / new-p14-72; noted, not changed.
 - `build/tests` has no CMake target `ControlNoteEditor`; the note editor is exercised by the
-  Python control test `tests/control-note-editor.py`. Cost me one failed build invocation, not a
-  defect.
+  Python control test `tests/control-note-editor.py`. Cost me one failed build invocation in the
+  previous round, not a defect.
