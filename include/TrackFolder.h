@@ -141,6 +141,12 @@ public:
 	//! may not (a folder may not hold itself, and two folders may not hold each
 	//! other).
 	bool canHold( const Track* child, QString * reason ) const;
+	//! The routing folder that sums a track placed directly in this folder: this
+	//! folder when it is routing, else the nearest routing ancestor, else nullptr.
+	//! A folder has no mixer channel of its own to hand a nested track, so a
+	//! routing folder owns the channel of every track below it down to the next
+	//! routing folder (which owns its own subtree).
+	TrackFolder * routingOwner() const;
 
 	// ---- state ----------------------------------------------------------
 	Mode mode() const { return m_mode; }
@@ -219,6 +225,14 @@ signals:
 
 private:
 	void routeChild( Track * child );
+	//! routeChild()/unrouteChild() for \a subject, or - when it is a folder - for
+	//! the tracks it passes on to this folder (see routedMembers()).
+	void routeSubtree( Track * subject );
+	void unrouteSubtree( Track * subject );
+	//! The tracks this folder routes: its direct children, with every nested
+	//! GROUP folder replaced by its own members, recursively. A nested ROUTING
+	//! folder contributes nothing: it owns its own subtree.
+	std::vector<Track*> routedMembers() const;
 	//! Records where \a childId's own channel is now, REPLACING any binding it
 	//! already has (a child that rejoins a routing folder brings the old one with
 	//! it, and two entries for one child would leave savedChannelFor() answering

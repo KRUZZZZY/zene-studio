@@ -20,6 +20,14 @@ Qt 6 aliases QStringList to QList<QString>, whose initializer_list assignment is
 better match, so every Qt 6 host here compiled the same line.  The portable spelling
 is an explicit `QStringList{...}` (or QList<QString>{...}), which both versions accept.
 
+Cluster ci-48dcc062d04c645f (fix 6474195bd6, hosted `build / linux-x86_64`): the
+fake RecordingMidiClient in ControllerScriptTest, ExternalMidiDeviceTest and
+ExternalDeviceCardTest declares its members brace-initialised
+(`QStringList readable{QStringLiteral("Pad:in")};`), and the tests assigned
+`m_client.readable = {...}`.  The member index only recognised `;`, `=`, `,` and `[`
+after a QStringList member name, so those members were never indexed and the nine
+assignments passed the scan.  A brace initialiser now records the member too.
+
 The check has two deterministic halves:
 
   * a source scan of every first-party C/C++ file for an assignment of a bare braced
@@ -67,7 +75,7 @@ SKIP_DIRS = {".git", "build", "__pycache__"}
 # Comments and string/char literals are blanked before the shape scan (line numbers kept).
 NON_CODE = re.compile(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'', re.S)
 CLASS = re.compile(r'\b(?:class|struct)\s+([A-Za-z_]\w*)[^;{]*\{')
-MEMBER = re.compile(r'\bQStringList\s+(?:const\s+)?[&*]?\s*([A-Za-z_]\w*)\s*(?:[;=,\[])')
+MEMBER = re.compile(r'\bQStringList\s+(?:const\s+)?[&*]?\s*([A-Za-z_]\w*)\s*(?:[;=,\[{])')
 DECLARATION = re.compile(
     r'\b(?:const\s+)?(?:[A-Za-z_]\w*::)*([A-Za-z_]\w*)\s*'
     r'(?:const\s*)?(?:[&*]\s*)?([A-Za-z_]\w*)\s*(?=[;=,(\[)])')
@@ -84,12 +92,16 @@ BAD_FIXTURE = """\
 struct Plan { QStringList documents; };
 void bad(Plan& plan) { plan.documents = {QStringLiteral("a")}; }
 void badLocal() { QStringList names; names = {QStringLiteral("a")}; }
+struct Client { QStringList readable{QStringLiteral("x")}; };
+void badInit(Client& c) { c.readable = {QStringLiteral("a")}; }
 """
 
 GOOD_FIXTURE = """\
 struct Plan { QStringList documents; };
 void good(Plan& plan) { plan.documents = QStringList{QStringLiteral("a")}; }
 void goodLocal() { QStringList names = {QStringLiteral("a")}; }
+struct Client { QStringList readable{QStringLiteral("x")}; };
+void goodInit(Client& c) { c.readable = QStringList{QStringLiteral("a")}; }
 """
 
 QT5_BAD_PROBE = """\
@@ -197,7 +209,7 @@ def scan_tree(root):
 
 def self_test_fixtures():
     failures = []
-    for path, text, expected in (("bad.cpp", BAD_FIXTURE, 2), ("good.cpp", GOOD_FIXTURE, 0)):
+    for path, text, expected in (("bad.cpp", BAD_FIXTURE, 3), ("good.cpp", GOOD_FIXTURE, 0)):
         found = scan_text(path, text, class_members(blank_non_code(text)))
         if len(found) != expected:
             failures.append(f"scan fixture {path}: expected {expected}, found {len(found)}")

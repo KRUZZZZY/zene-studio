@@ -27,10 +27,14 @@
 
 #include <QtTest>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <vector>
 
 #include <QJsonObject>
 #include <QTemporaryDir>
+#include <sndfile.h>
 
 #include "Clip.h"
 #include "ControlEdit.h"
@@ -43,6 +47,7 @@
 #include "MidiClip.h"
 #include "ProjectJournal.h"
 #include "SampleClip.h"
+#include "SampleDecoder.h"
 #include "SampleTrack.h"
 #include "SmfNoteRead.h"
 #include "Song.h"
@@ -150,6 +155,28 @@ QByteArray wav(int seconds, int rate = 44100)
 	le32(static_cast<quint32>(data.size()));
 	out.append(data);
 	return out;
+}
+
+//! \a frames of silence in a mono FLAC at \a rate. A compressed file is tiny on disk however long it
+//! decodes to - the fixture the memory-before-refusal regression needs (cluster new-p16-7). False when this
+//! build's libsndfile cannot write FLAC, so the test can skip rather than fail for a missing encoder.
+bool writeSilentFlac(const QString& path, int rate, qint64 frames)
+{
+	SF_INFO info{};
+	info.samplerate = rate;
+	info.channels = 1;
+	info.format = SF_FORMAT_FLAC | SF_FORMAT_PCM_16;
+	SNDFILE* file = sf_open(path.toLocal8Bit().constData(), SFM_WRITE, &info);
+	if (file == nullptr) { return false; }
+	const std::vector<short> silence(4096, 0);
+	bool ok = true;
+	for (qint64 done = 0; done < frames && ok;)
+	{
+		const auto n = static_cast<sf_count_t>(std::min<qint64>(static_cast<qint64>(silence.size()), frames - done));
+		ok = sf_writef_short(file, silence.data(), n) == n;
+		done += n;
+	}
+	return sf_close(file) == 0 && ok;
 }
 
 //! Everything a refused import must leave alone: tracks, each one's clips and notes, the undo and redo stacks.
@@ -394,6 +421,77 @@ private slots:
 		root.appendChild(element);
 		clip->saveSettings(doc, element);
 		QVERIFY(!element.attribute(QStringLiteral("data")).isEmpty());
+	}
+
+	//! Cluster new-p16-7: the 512 MiB limit bounds the ENCODED file, not the audio it decodes to - a compressed
+	//! file of a few kilobytes can hold a clip longer than the whole song. The import must refuse it from the
+	//! decoder's reported length before the full sample buffer is allocated; the decoder's own test seam counts
+	//! every full decode, so "no full decode" is checked, not inferred from timing or memory.
+	void aLongCompressedFileIsRefusedBeforeItIsFullyDecoded()
+	{
+		const int rate = 1000;  // the song limit is in ticks; a low rate keeps the fixture quick and its buffer small
+		struct RestoreTempo
+		{
+			int tempo = Engine::getSong()->getTempo();
+			~RestoreTempo() { Engine::getSong()->setTempo(tempo); }
+		} restoreTempo;
+		Engine::getSong()->setTempo(MaxTempo);
+		const auto framesPerTick = Engine::framesPerTick(rate);
+		QVERIFY(framesPerTick > 0.0f);
+		const auto frames = static_cast<qint64>(std::ceil((MaxSongLength + 1) * static_cast<double>(framesPerTick))) + 1;
+
+		const QString longFile = m_dir.filePath(QStringLiteral("long.flac"));
+		if (!writeSilentFlac(longFile, rate, frames)) { QSKIP("this build's libsndfile cannot write FLAC"); }
+		QVERIFY(QFileInfo(longFile).size() < 512LL * 1024 * 1024);  // it passes the encoded-size limit, as the finding says
+
+		const QString before = stateOf();
+		SampleDecoder::resetDecodeCallCountsForTesting();
+		const ControlResult refused = run(QStringLiteral("clip.import_file"),
+			{{QStringLiteral("path"), longFile}, {QStringLiteral("loop_mode"), QStringLiteral("keep_unstretched")}});
+		QVERIFY2(!refused.ok, "a clip longer than the whole song was imported");
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(!refused.errorMessage.isEmpty(), "the refusal must say why");
+		QCOMPARE(stateOf(), before);  // no clip, no track, no undo step
+		const auto calls = SampleDecoder::decodeCallCountsForTesting();
+		QCOMPARE(calls.full, std::uint64_t{0});  // the length was answered without allocating the whole file
+		QVERIFY(calls.limited > 0);              // ...by the bounded decoder
+	}
+
+	//! Cluster new-p16-7 (round 2): the preflight must use the same position-plus-length limit as
+	//! validateImport. A short compressed file that fits the song on its own, placed at the song's end, used to
+	//! be fully decoded and then refused by the post-decode check; it must be refused before that decode.
+	void anAudioFilePastTheSongEndIsRefusedBeforeItIsFullyDecoded()
+	{
+		const int rate = 1000;
+		const qint64 frames = 2 * rate;  // a clip far shorter than the whole song
+		const QString file = m_dir.filePath(QStringLiteral("at-the-end.flac"));
+		if (!writeSilentFlac(file, rate, frames)) { QSKIP("this build's libsndfile cannot write FLAC"); }
+		const auto length = static_cast<qint64>(static_cast<double>(frames) / Engine::framesPerTick(rate));
+		QVERIFY(length > 0 && length < static_cast<qint64>(MaxSongLength));
+
+		const QString before = stateOf();
+		SampleDecoder::resetDecodeCallCountsForTesting();
+		const ControlResult refused = run(QStringLiteral("clip.import_file"),
+			{{QStringLiteral("path"), file}, {QStringLiteral("position"), static_cast<int>(MaxSongLength)},
+				{QStringLiteral("loop_mode"), QStringLiteral("keep_unstretched")}});
+		QVERIFY2(!refused.ok, "a clip that ends past the song was imported");
+		QCOMPARE(refused.errorKind, ControlErrorKind::InvalidArgs);
+		QVERIFY2(!refused.errorMessage.isEmpty(), "the refusal must say why");
+		QCOMPARE(stateOf(), before);  // no clip, no track, no undo step
+		QCOMPARE(SampleDecoder::decodeCallCountsForTesting().full, std::uint64_t{0});  // refused before the full decode
+
+		// The same compressed file still imports where it fits: the position-aware check rejects only the song's
+		// end, and the compressed path itself stays a normal, accepted import.
+		const auto room = static_cast<int>(static_cast<qint64>(MaxSongLength) - length);
+		const int tracks = static_cast<int>(Engine::getSong()->tracks().size());
+		SampleDecoder::resetDecodeCallCountsForTesting();
+		const ControlResult made = run(QStringLiteral("clip.import_file"),
+			{{QStringLiteral("path"), file}, {QStringLiteral("position"), room},
+				{QStringLiteral("loop_mode"), QStringLiteral("keep_unstretched")}});
+		QVERIFY2(made.ok, qPrintable(made.errorMessage));
+		QCOMPARE(made.result.value(QStringLiteral("position")).toInt(), room);
+		QCOMPARE(static_cast<int>(Engine::getSong()->tracks().size()), tracks + 1);
+		QCOMPARE(SampleDecoder::decodeCallCountsForTesting().full, std::uint64_t{1});
 	}
 
 	//! A file outside the temporary folder is referenced by path, as the browser's drag does: no copy of the audio in the clip.

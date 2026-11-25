@@ -41,6 +41,7 @@
 
 #include "ClipLinks.h"
 #include "ControlEdit.h"
+#include "ControlNoteShared.h"
 #include "ControlRegistry.h"
 #include "MidiClip.h"
 #include "Note.h"
@@ -459,6 +460,9 @@ ControlResult editNotes(const QJsonObject& args)
 	clip->updateLength();
 	clip->dataChanged();
 	if (clip->linkId() > 0) { ClipLinks::mirrorContent(clip); }
+	// The batch is past the no-change guard above, so it moved at least one note:
+	// the edit is project state and the project is marked modified (new-p17-14).
+	markProjectEdited();
 
 	QJsonObject result{{QStringLiteral("clip"), clipId(ref.id)},
 		{QStringLiteral("edited"), static_cast<int>(edits.size())}, {QStringLiteral("notes"), ids}};

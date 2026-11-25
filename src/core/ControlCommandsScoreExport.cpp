@@ -62,6 +62,11 @@ ControlResult exportMusicXml(const QJsonObject& args)
 	const MeterModel& meter = Engine::getSong()->getTimeSigModel();
 	const QString title = clip->name().isEmpty() ? QFileInfo(path).completeBaseName() : clip->name();
 	const QString score = musicXmlOf(*clip, meter.getNumerator(), meter.getDenominator(), title);
+	// An empty score is musicXmlOf's refusal: a note or time signature too large for the score's tick range (3471).
+	if (score.isEmpty())
+	{
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("a note lies beyond the tick range a score can hold"));
+	}
 	// Written whole or not at all: a short write must not leave a truncated score reported as written.
 	const QByteArray bytes = score.toUtf8();
 	QSaveFile file(path);

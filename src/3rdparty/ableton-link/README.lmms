@@ -63,16 +63,25 @@ Verify with:
     while IFS=$'\t' read -r path repo up sha; do \
       [ "$(git hash-object "$path")" = "$sha" ] || echo "DIFFERS: $path"; done
 
-Local modifications: two, deliberate, both in the ESP32 port (which no Zene target compiles).
+Local modifications: three, deliberate.
+In the ESP32 port (which no Zene target compiles):
 - link/include/ableton/platforms/esp32/Context.hpp: a failed xTaskCreatePinnedToCore is
   reported (the service runner throws std::runtime_error) instead of ignored; the task
   handle starts null, and the destructor deletes only a task that was created.
 - link/include/ableton/platforms/esp32/LockFreeCallbackDispatcher.hpp: the task handle
   starts null, start() reports a failed xTaskCreate with std::runtime_error, and
   stop() deletes only a task that was created.
-Both files therefore differ from their MANIFEST.tsv blobs, which still record upstream.
 Regression test: tests/src/core/AbletonLinkEsp32RunnerTest.cpp (host FreeRTOS stand-in in
-tests/src/core/esp32-freertos-host/). Every other file is a byte-identical copy.
+tests/src/core/esp32-freertos-host/).
+In the asio port:
+- link/include/ableton/platforms/asio/Context.hpp: stop() called from a handler running
+  on the context's own worker thread used to join that thread from itself (join() throws
+  std::system_error, which the worker's loop does not catch, so the process terminated).
+  stop() now stops the service and returns in that case, and the destructor joins a
+  worker that is still joinable - a different thread ends up joining it.
+  Regression test: tests/src/core/AbletonLinkContextStopTest.cpp.
+Those three files therefore differ from their MANIFEST.tsv blobs, which still record
+upstream. Every other file is a byte-identical copy.
 The configuration upstream's CMake applies
 (cmake_include/ConfigureAbletonLink.cmake, ConfigureAsioStandalone.cmake) is
 re-stated in CMakeLists.txt here, with this tree's own asio inline namespace

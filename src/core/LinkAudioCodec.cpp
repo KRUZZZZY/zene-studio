@@ -39,6 +39,8 @@ namespace
 {
 
 constexpr std::uint8_t Magic[4] = {'Z', 'L', 'A', '1'};
+//! Byte 15 of the header: 0 is the legacy 16-byte header, 1 the 20-byte header with the frame position.
+constexpr std::uint8_t HeaderVersion = 1;
 
 void put32(std::uint8_t* p, std::uint32_t v)
 {
@@ -58,6 +60,26 @@ std::uint32_t get32(const std::uint8_t* p)
 bool isValidPacketShape(std::size_t frames, std::uint32_t sampleRate)
 {
 	return frames != 0 && frames <= AudioMaxPacketFrames && sampleRate != 0;
+}
+
+//! The header length of the version in byte 15: 16 (legacy) or 20; 0 for a version this build does not know.
+std::size_t headerBytesOfVersion(std::uint8_t version)
+{
+	if (version == HeaderVersion) { return AudioHeaderBytes; }
+	return version == 0 ? AudioLegacyHeaderBytes : 0;
+}
+
+//! \a floats samples at \a samples; the peer is untrusted and the samples are summed into the master mix, so
+//! NaN or an infinity would poison it: a non-finite sample becomes silence and its neighbours are kept.
+void decodeSamples(const std::uint8_t* samples, std::size_t floats, float* out)
+{
+	for (std::size_t i = 0; i < floats; ++i)
+	{
+		const std::uint32_t bits = get32(samples + i * 4);
+		float sample;
+		std::memcpy(&sample, &bits, 4);
+		out[i] = std::isfinite(sample) ? sample : 0.f;
+	}
 }
 
 std::size_t roundUpPowerOfTwo(std::size_t v)
@@ -95,7 +117,8 @@ std::size_t encodeAudioPacket(const AudioPacketHeader& header, const float* inte
 	out[12] = static_cast<std::uint8_t>(header.frames);
 	out[13] = static_cast<std::uint8_t>(header.frames >> 8);
 	out[14] = static_cast<std::uint8_t>(AudioChannels);
-	out[15] = 0;
+	out[15] = HeaderVersion;
+	put32(out + 16, header.framePosition);
 	for (std::size_t i = 0; i < floats; ++i)
 	{
 		std::uint32_t bits;
@@ -108,11 +131,12 @@ std::size_t encodeAudioPacket(const AudioPacketHeader& header, const float* inte
 bool decodeAudioPacket(const std::uint8_t* data, std::size_t size, AudioPacketHeader& header,
 	float* interleavedOut, std::size_t outCapacityFloats)
 {
-	if (size < AudioHeaderBytes || std::memcmp(data, Magic, 4) != 0 || data[14] != AudioChannels) { return false; }
+	if (size < AudioLegacyHeaderBytes || std::memcmp(data, Magic, 4) != 0 || data[14] != AudioChannels) { return false; }
+	const std::size_t headerLen = headerBytesOfVersion(data[15]);
 	const std::size_t frames = static_cast<std::size_t>(data[12]) | (static_cast<std::size_t>(data[13]) << 8);
 	const std::size_t floats = frames * AudioChannels;
 	const std::uint32_t sampleRate = get32(data + 8);
-	if (!isValidPacketShape(frames, sampleRate) || size != AudioHeaderBytes + floats * 4
+	if (headerLen == 0 || !isValidPacketShape(frames, sampleRate) || size != headerLen + floats * 4
 		|| floats > outCapacityFloats)
 	{
 		return false;
@@ -120,15 +144,9 @@ bool decodeAudioPacket(const std::uint8_t* data, std::size_t size, AudioPacketHe
 	header.sequence = get32(data + 4);
 	header.sampleRate = sampleRate;
 	header.frames = static_cast<std::uint16_t>(frames);
-	for (std::size_t i = 0; i < floats; ++i)
-	{
-		const std::uint32_t bits = get32(data + AudioHeaderBytes + i * 4);
-		float sample;
-		std::memcpy(&sample, &bits, 4);
-		// The peer is untrusted and the samples are summed into the master mix: NaN or an infinity
-		// would poison it, so a non-finite sample becomes silence and its neighbours are kept.
-		interleavedOut[i] = std::isfinite(sample) ? sample : 0.f;
-	}
+	header.hasFramePosition = headerLen == AudioHeaderBytes;
+	header.framePosition = header.hasFramePosition ? get32(data + 16) : 0;
+	decodeSamples(data + headerLen, floats, interleavedOut);
 	return true;
 }
 
