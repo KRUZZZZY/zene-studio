@@ -3679,12 +3679,26 @@ endif()
 # allocator and memcpy/memmove interceptors cover them, so a read past a decoded buffer aborts
 # the run and GraphWaveformLoadTest's explicit leak checks see every plug-in allocation.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-	foreach(ASAN_TEST WaveformDataTest GraphWaveformLoadTest)
+	# cluster new-p9-530-port: the expression hand-off's text is pinned by a note worker and
+	# copied after the pin is released, so AddressSanitizer is what turns "the editor recycled
+	# a text a note was copying" into an immediate use-after-free report rather than a silently
+	# different expression.
+	foreach(ASAN_TEST WaveformDataTest GraphWaveformLoadTest XpressiveExpressionHandoffTest)
 		target_compile_options(${ASAN_TEST} PRIVATE -fsanitize=address -fno-omit-frame-pointer)
 		target_link_options(${ASAN_TEST} PRIVATE -fsanitize=address)
 	endforeach()
+	# The sanitizer's inlining makes GCC warn about the bounded copy in the plug-in's
+	# recordPendingError() (strncpy of sizeof-1 bytes, NUL written by hand on the next
+	# line), which the plug-in target without ASan does not warn about. The product file
+	# stays as it is and the warning stays non-fatal in this instrumented test only.
+	if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+		target_compile_options(XpressiveExpressionHandoffTest PRIVATE
+			-Wno-error=stringop-truncation)
+	endif()
 	set_tests_properties(GraphWaveformLoadTest PROPERTIES
 		ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ASAN_OPTIONS=detect_leaks=1:leak_check_at_exit=0:use_sigaltstack=0")
+	set_tests_properties(XpressiveExpressionHandoffTest PROPERTIES
+		ENVIRONMENT "QT_QPA_PLATFORM=offscreen;ASAN_OPTIONS=detect_leaks=0:use_sigaltstack=0")
 endif()
 
 # The expression clock crosses the 32-bit frame boundary in one rendered

@@ -11,17 +11,26 @@
  * during an edit parsed storage the GUI thread had freed.
  *
  * The contract this test pins down: the GUI thread PUBLISHES an immutable copy
- * of the text and the audio thread parses what was published. The proof is a
- * product-level contract, not a source check:
+ * of the text and the audio thread parses what was published, and it keeps the
+ * text it publishes alive for every note worker that is copying it. The audio
+ * engine runs one play handle per worker (`AudioEngine::renderStageInstruments`
+ * fills the job queue, `startAndWaitForJobs` drains it on the pool) and they all
+ * call the same track instrument, so several notes of one track initialise at
+ * once and each of them holds its own text. The proof is a product-level
+ * contract, not a source check:
  *
- *  - a text a reader took is not rewritten by later publications, so a note
- *    that starts mid-edit parses one whole expression;
+ *  - a text a note holds is not rewritten by later publications, so a note that
+ *    starts mid-edit parses one whole expression;
+ *  - a second note reading a newer publication does not free the text the first
+ *    note is still copying;
  *  - a publication reaches the next note;
  *  - an edit of the GUI thread's own copy reaches no note at all.
  *
  * The plug-in's own sources are compiled into this test (the Vibed shape), so
  * the note-start path under test is the shipping one, and every step is a
- * direct call: no threads, no sleeps, no timing.
+ * direct call: no threads, no sleeps, no timing. The pin interleaving is
+ * reported on stdout ("pin sequence: ...") so the run itself records which text
+ * each note held while the editor kept publishing.
  */
 
 #include <QByteArray>
@@ -80,6 +89,53 @@ struct HasExpressionHandOff<T, std::void_t<typename T::ExpressionSnapshot>> : st
 {
 };
 
+/*! Whether the hand-off hands a note worker a PINNED read.
+ *
+ * The audio engine runs each note play handle on a worker (`AudioEngine::
+ * renderStageInstruments` fills the job queue, `startAndWaitForJobs` drains it
+ * on the pool) and every one of them calls the same track instrument, so
+ * several notes of one track initialise at the same time. A single
+ * announcement per expression cannot cover that: the second note would replace
+ * the first note's announcement, and the next publication could recycle the
+ * text the first note is still copying. The fixed hand-off therefore keeps a
+ * per-slot reader count and hands out a pin, and this trait is how the file
+ * compiles against the reverted product (a borrowed pointer and no pin).
+ */
+template <typename Snapshot, typename = void>
+struct HasPinnedRead : std::false_type
+{
+};
+
+template <typename Snapshot>
+struct HasPinnedRead<Snapshot,
+	std::void_t<decltype(std::declval<const Snapshot&>().read().text())>> : std::true_type
+{
+};
+
+//! The text one note worker holds while it parses it.
+template <typename Snapshot, bool Pinned = HasPinnedRead<Snapshot>::value>
+struct HeldText;
+
+//! The fixed hand-off: an RAII pin, released when the copy is done.
+template <typename Snapshot>
+struct HeldText<Snapshot, true>
+{
+	explicit HeldText(Snapshot& snapshot) : m_read(static_cast<const Snapshot&>(snapshot).read()) {}
+	const char* text() const { return m_read.text(); }
+
+	typename Snapshot::Read m_read;
+};
+
+//! The reverted product: a borrowed pointer that nothing protects.
+template <typename Snapshot>
+struct HeldText<Snapshot, false>
+{
+	explicit HeldText(Snapshot& snapshot) : m_borrowed(snapshot.text()) {}
+	const char* text() const { return m_borrowed; }
+
+	const char* m_borrowed;
+};
+
 /*! Hand `text` over as the output expression, the way the editor does.
  *
  * Only the fixed plug-in has the publishing setter; without it the text is
@@ -111,21 +167,80 @@ void checkHeldExpression()
 	snapshot.publish(QByteArray{"0.5"});
 
 	// The audio thread takes the published text and keeps it while it parses it.
-	const char* held = snapshot.text();
+	HeldText<typename Instrument::ExpressionSnapshot> held{snapshot};
 
 	// The GUI thread publishes three more texts meanwhile.
 	snapshot.publish(QByteArray{"0.25"});
 	snapshot.publish(QByteArray{"0.125"});
 	snapshot.publish(QByteArray{"sinew(integrate(f))"});
 
-	QVERIFY2(std::strcmp(held, "0.5") == 0,
+	QVERIFY2(std::strcmp(held.text(), "0.5") == 0,
 		"a text the reader was holding was rewritten by a later publication: "
 		"the reader would parse a half-written expression");
 
 	// The control: the publications did reach the next reader, so the check
 	// above has the power to fail.
-	QVERIFY2(std::strcmp(snapshot.text(), "sinew(integrate(f))") == 0,
+	HeldText<typename Instrument::ExpressionSnapshot> next{snapshot};
+	QVERIFY2(std::strcmp(next.text(), "sinew(integrate(f))") == 0,
 		"the last publication did not reach the reader");
+}
+
+/*! The concurrency the audio engine really produces: two note workers hold a
+ *  text each, the second one after a newer publication, and the editor keeps
+ *  publishing under both of them.
+ *
+ *  This is the deterministic form of the reported race. Nothing here races: the
+ *  first note's pin is held across every later publication, exactly as a note
+ *  worker holds it while `ExprFront` copies the bytes, and the second note's
+ *  read is what used to replace the first note's announcement. The text the
+ *  first note holds must stay whole; a hand-off that tracks one announcement
+ *  instead of one pin per reader lets the third publication recycle it.
+ */
+template <typename Snapshot>
+void checkTwoConcurrentNotes()
+{
+	Snapshot snapshot;
+	snapshot.publish(QByteArray{"0.5"});
+	HeldText<Snapshot> first{snapshot};          // note A starts, and copies
+	qInfo("pin sequence: first note holds \"%s\"", first.text());
+
+	snapshot.publish(QByteArray{"0.25"});
+	HeldText<Snapshot> second{snapshot};         // note B starts mid-copy
+	qInfo("pin sequence: second note holds \"%s\", first note still holds \"%s\"",
+		second.text(), first.text());
+
+	// The editor keeps typing while both notes copy.
+	snapshot.publish(QByteArray{"0.125"});
+	snapshot.publish(QByteArray{"sinew(integrate(f))"});
+	snapshot.publish(QByteArray{"0.75"});
+	HeldText<Snapshot> next{snapshot};
+	qInfo("pin sequence: after 3 more publications first=\"%s\" second=\"%s\" published=\"%s\"",
+		first.text(), second.text(), next.text());
+
+	QVERIFY2(std::strcmp(first.text(), "0.5") == 0,
+		"the text a note was copying was rewritten by a publication that the "
+		"second note's read made look free: a note that starts while another "
+		"copies gets freed storage");
+	QVERIFY2(std::strcmp(second.text(), "0.25") == 0,
+		"the second note's text was rewritten while it copied");
+	QVERIFY2(std::strcmp(next.text(), "0.75") == 0,
+		"the last publication did not reach the next note");
+}
+
+//! Runs the two-concurrent-notes check against the plug-in's hand-off.
+template <typename T>
+void runTwoConcurrentNotesCheck()
+{
+	if constexpr (HasExpressionHandOff<T>::value)
+	{
+		checkTwoConcurrentNotes<typename T::ExpressionSnapshot>();
+	}
+	else
+	{
+		QFAIL("the plug-in publishes no immutable expression: a note that "
+			"starts while the expression editor rewrites the text parses the "
+			"buffer the GUI thread is freeing");
+	}
 }
 
 //! Runs the held-expression check against the plug-in's hand-off.
@@ -202,6 +317,15 @@ private slots:
 	void aHeldExpressionSurvivesLaterPublications()
 	{
 		runHeldExpressionCheck<Xpressive>();
+	}
+
+	/*! Two notes of one track initialise at the same time (the audio engine runs
+	 *  each play handle on a worker), so the second note's read must not make the
+	 *  first note's text recyclable. This is the multi-reader half of the
+	 *  hand-off, held across every later publication. */
+	void everyConcurrentNoteKeepsItsOwnText()
+	{
+		runTwoConcurrentNotesCheck<Xpressive>();
 	}
 
 	/*! The reported race. Notes keep starting while the editor is rewriting the

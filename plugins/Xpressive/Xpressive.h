@@ -30,8 +30,8 @@
 #include <QTextEdit>
 #include <QTimer>
 
+#include <array>
 #include <atomic>
-#include <vector>
 
 #include "AutomatableModel.h"
 #include "Graph.h"
@@ -67,7 +67,8 @@ class Xpressive : public Instrument
 {
 	Q_OBJECT
 public:
-	/*! An output expression text the audio thread is allowed to read.
+	/*! An output expression text the audio thread may read (cluster
+	 * new-p9-530-port).
 	 *
 	 * m_outputExpression is GUI-thread storage: every keystroke in the expression
 	 * editor rewrites it in place, and a QByteArray assignment releases the buffer
@@ -75,23 +76,30 @@ public:
 	 * synthesiser from the text (playNoteImpl), so reading that member there races
 	 * the editor and can parse freed storage.
 	 *
-	 * The GUI thread publishes an immutable copy instead. A publication fills a
-	 * text nobody can see yet and hands it over with one atomic store; a published
-	 * text is never written again, so the audio thread parses one whole expression
-	 * however many publications pass while it does.
+	 * The GUI thread publishes immutable copies instead and a note reads one through
+	 * a PIN: four fixed slots, one reader count per slot and one published slot. This
+	 * is the repo's multi-reader publication (PublishedTransients,
+	 * include/TransientRepeat.h), and it has to be multi-reader here: the audio engine
+	 * runs one note play handle per worker (AudioEngine::renderStageInstruments fills
+	 * the job queue, AudioEngineWorkerThread::startAndWaitForJobs drains it on the
+	 * pool) and every one of them calls the track's single instrument, so several
+	 * notes of one track initialise at the same time. One announcement per expression
+	 * would not do: the second note's read would replace the first note's
+	 * announcement, and the next publication could then recycle the text the first
+	 * note is still copying. A pin keeps its own slot out of the writer's reach for as
+	 * long as its reader holds it.
 	 *
-	 * The audio thread announces the text it took, so the GUI thread sees which
-	 * published text it must not reuse: the announced one stays out of the free
-	 * list until the reader takes another one (the reader parses the text before it
-	 * takes another one). While the reader is between taking a text and announcing
-	 * it, the GUI thread cannot tell which one it took, so it reuses none of them.
-	 * The two flags are read and written with sequentially consistent ordering,
-	 * which is what makes that hand-over race free: the reader's "I am reading"
-	 * store and the writer's "is it reading" load cannot both miss each other.
-	 *
-	 * One writer (the GUI thread), one reader (the audio thread), no lock, no
-	 * allocation and no logging on the audio thread: it takes the published text
-	 * with one atomic load and parses it exactly as before.
+	 * A reader pins the published slot (increments its count), checks the slot is
+	 * still the published one, and only then copies; it unpins afterwards. The single
+	 * writer writes only a slot that is neither published nor pinned, then publishes
+	 * it. All the atomics are sequentially consistent: the reader's pin-then-check and
+	 * the writer's publish-then-scan are a Dekker pair, which needs the single total
+	 * order. The reader never waits - it makes at most ReadAttempts tries (each one
+	 * lost only to a publication that happened in between) and otherwise reports no
+	 * text, so a note started at that instant renders silence instead of blocking the
+	 * audio thread. It never allocates either. The writer, which is never on the audio
+	 * thread, yields until a slot is free; with four slots that needs three other notes
+	 * copying at that instant.
 	 *
 	 * The class is public so the regression test can drive the hand-off itself;
 	 * nothing outside the plug-in uses it.
@@ -99,39 +107,63 @@ public:
 	class ExpressionSnapshot
 	{
 	public:
-		ExpressionSnapshot();
-		~ExpressionSnapshot();
+		static constexpr int Slots = 4;
+		static constexpr int ReadAttempts = 16;
+
+		//! The text one note worker holds while it copies it. The slot stays pinned
+		//! until this object dies, so no publication can recycle the text in between.
+		class Read
+		{
+		public:
+			Read() = default;
+			Read(const ExpressionSnapshot* snapshot, int slot)
+				: m_snapshot(snapshot), m_slot(slot)
+			{
+			}
+			Read(const Read&) = delete;
+			Read& operator=(const Read&) = delete;
+			Read(Read&& other) noexcept
+				: m_snapshot(other.m_snapshot), m_slot(other.m_slot)
+			{
+				other.m_snapshot = nullptr;
+				other.m_slot = -1;
+			}
+			~Read();
+			//! The pinned text, or "" when no slot could be pinned.
+			const char* text() const;
+			//! The slot this read pinned, or -1.
+			int slot() const { return m_slot; }
+
+		private:
+			const ExpressionSnapshot* m_snapshot = nullptr;
+			int m_slot = -1;
+		};
+
+		ExpressionSnapshot() = default;
 		ExpressionSnapshot(const ExpressionSnapshot&) = delete;
 		ExpressionSnapshot& operator=(const ExpressionSnapshot&) = delete;
 
-		//! The published text: the audio thread takes it and parses it.
-		const char* text();
-		//! Hands off @a expression as the current text.
+		//! Control thread (the one writer): publish @a expression.
 		void publish(const QByteArray& expression);
+		//! Any thread, lock-free and non-waiting: a pin on the published text, or one
+		//! that holds nothing when every attempt raced a publication.
+		Read read() const;
+		//! Test seam: the slot currently published.
+		int publishedSlot() const { return m_published.load(); }
 
 	private:
-		//! One immutable expression text.
-		struct Expression
-		{
-			QByteArray text;
-		};
+		friend class Read;
+		void unpin(int slot) const;
 
-		//! A text nobody can be reading: a free one, or a new one.
-		Expression* takeFree();
-		//! Return the published texts the reader cannot be using any more.
-		void reclaim();
-
-		//! The text the audio thread reads.
-		std::atomic<Expression*> m_published{nullptr};
-		//! The text the reader last took: it may still be parsing it.
-		std::atomic<Expression*> m_readerExpression{nullptr};
-		//! True while the reader is between taking a text and announcing it.
-		std::atomic_bool m_readerReading{false};
-		//! Published texts waiting to be reused. GUI thread only.
-		std::vector<Expression*> m_retired;
-		//! Texts that may be written into. GUI thread only.
-		std::vector<Expression*> m_free;
+		//! The immutable texts: written only by publish(), and only into a slot that
+		//! is neither published nor pinned.
+		std::array<QByteArray, Slots> m_texts{};
+		//! One count per slot: the note workers copying that slot.
+		mutable std::array<std::atomic<int>, Slots> m_readers{};
+		//! The slot a new reader starts from.
+		std::atomic<int> m_published{0};
 	};
+
 
 	Xpressive(InstrumentTrack* instrument_track );
 
@@ -185,6 +217,10 @@ protected slots:
 
 private:
 	void playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) override;
+	//! Audio thread: the published text pinned for the whole ExprFront copy. Several
+	//! note workers start notes at once, so each note holds its own pin and no
+	//! publication can recycle the text it is copying. Non-waiting, allocation-free.
+	static ExprFront* makeExprFront(const ExpressionSnapshot& snapshot);
 	//! Audio thread: records a render error, the main thread reports it.
 	void recordPendingError(const char* message);
 	//! Main thread: reports the render error the audio thread recorded.

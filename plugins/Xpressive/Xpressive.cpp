@@ -26,6 +26,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <thread>
 
 #include <QDomElement>
 #include <QPlainTextEdit>
@@ -123,58 +124,71 @@ Xpressive::Xpressive(InstrumentTrack* instrument_track) :
 	m_errorReportTimer.start();
 }
 
-Xpressive::ExpressionSnapshot::ExpressionSnapshot()
+Xpressive::ExpressionSnapshot::Read::~Read()
 {
-	m_published.store(new Expression{}, std::memory_order_release);
+	if (m_snapshot != nullptr) { m_snapshot->unpin(m_slot); }
 }
 
-Xpressive::ExpressionSnapshot::~ExpressionSnapshot()
+const char* Xpressive::ExpressionSnapshot::Read::text() const
 {
-	delete m_published.load(std::memory_order_relaxed);
-	for (auto* expression : m_retired) { delete expression; }
-	for (auto* expression : m_free) { delete expression; }
-}
-
-const char* Xpressive::ExpressionSnapshot::text()
-{
-	// Announce the text before the writer may reuse it: the writer keeps the
-	// announced one out of the free list until the next read.
-	m_readerReading.store(true, std::memory_order_seq_cst);
-	Expression* const published = m_published.load(std::memory_order_seq_cst);
-	m_readerExpression.store(published, std::memory_order_seq_cst);
-	m_readerReading.store(false, std::memory_order_seq_cst);
-	return published->text.constData();
+	if (m_snapshot == nullptr || m_slot < 0) { return ""; }
+	return m_snapshot->m_texts[static_cast<std::size_t>(m_slot)].constData();
 }
 
 void Xpressive::ExpressionSnapshot::publish(const QByteArray& expression)
 {
-	Expression* const fresh = takeFree();
-	fresh->text = expression;
-	Expression* const old = m_published.exchange(fresh, std::memory_order_seq_cst);
-	m_retired.push_back(old);
-	reclaim();
-}
-
-Xpressive::ExpressionSnapshot::Expression* Xpressive::ExpressionSnapshot::takeFree()
-{
-	if (m_free.empty()) { return new Expression{}; }
-	Expression* const expression = m_free.back();
-	m_free.pop_back();
-	return expression;
-}
-
-void Xpressive::ExpressionSnapshot::reclaim()
-{
-	// While the reader is between taking a text and announcing it, the writer
-	// cannot tell which one it took, so it reuses none.
-	if (m_readerReading.load(std::memory_order_seq_cst)) { return; }
-	Expression* const held = m_readerExpression.load(std::memory_order_seq_cst);
-	for (auto it = m_retired.begin(); it != m_retired.end(); )
+	// The one writer: fill a slot that is neither published nor pinned, then publish
+	// it. Two notes copying at once leave a third slot free, so this normally finds
+	// one at the first scan; the yield is the control thread's, never a reader's.
+	const int current = m_published.load(std::memory_order_seq_cst);
+	for (;;)
 	{
-		if (*it == held) { ++it; continue; }
-		m_free.push_back(*it);
-		it = m_retired.erase(it);
+		for (int slot = 0; slot < Slots; ++slot)
+		{
+			const std::size_t index = static_cast<std::size_t>(slot);
+			if (slot == current || m_readers[index].load(std::memory_order_seq_cst) != 0)
+			{
+				continue;
+			}
+			m_texts[index] = expression;
+			m_published.store(slot, std::memory_order_seq_cst);
+			return;
+		}
+		// Every other slot is pinned by a note worker that is mid-copy: wait for one
+		// on THIS (control) thread - a reader never waits for the writer.
+		std::this_thread::yield();
 	}
+}
+
+Xpressive::ExpressionSnapshot::Read Xpressive::ExpressionSnapshot::read() const
+{
+	// Pin the published slot, then check it is still the published one; a slot the
+	// writer had already chosen reads as unpublished here and is dropped untouched.
+	for (int attempt = 0; attempt < ReadAttempts; ++attempt)
+	{
+		const int slot = m_published.load(std::memory_order_seq_cst);
+		const std::size_t index = static_cast<std::size_t>(slot);
+		m_readers[index].fetch_add(1, std::memory_order_seq_cst);
+		if (m_published.load(std::memory_order_seq_cst) == slot)
+		{
+			return Read{this, slot};
+		}
+		m_readers[index].fetch_sub(1, std::memory_order_seq_cst);
+	}
+	// Every attempt lost to a publication in between: this note starts silent rather
+	// than making the audio thread wait.
+	return Read{};
+}
+
+void Xpressive::ExpressionSnapshot::unpin(int slot) const
+{
+	m_readers[static_cast<std::size_t>(slot)].fetch_sub(1, std::memory_order_seq_cst);
+}
+
+ExprFront* Xpressive::makeExprFront(const ExpressionSnapshot& snapshot)
+{
+	const ExpressionSnapshot::Read text = snapshot.read();
+	return new ExprFront(text.text(), Engine::audioEngine()->outputSampleRate());
 }
 
 void Xpressive::setOutputExpression(int i, const QByteArray& expression)
@@ -272,12 +286,12 @@ void Xpressive::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) {
 
 	if (!nph->m_pluginData) {
 
-		// The text is the GUI thread's published copy, never m_outputExpression: a
-		// note that starts while the expression editor rewrites that member would
-		// otherwise parse the buffer the editor is freeing (cluster new-p9-530-port).
-		auto exprO1 = new ExprFront(m_outputExpressionSnapshot[0].text(),
-			Engine::audioEngine()->outputSampleRate()); // give the "last" function a whole second
-		auto exprO2 = new ExprFront(m_outputExpressionSnapshot[1].text(), Engine::audioEngine()->outputSampleRate());
+		// Each note pins the published text for its own copy, never m_outputExpression:
+		// several note workers start notes at once and all of them read this one
+		// instrument, so the text must stay pinned until it has been copied
+		// (cluster new-p9-530-port).
+		auto exprO1 = makeExprFront(m_outputExpressionSnapshot[0]);
+		auto exprO2 = makeExprFront(m_outputExpressionSnapshot[1]);
 
 		auto init_expression_step1 = [this, nph](ExprFront* e) { //lambda function to init exprO1 and exprO2
 			//add the constants and the variables to the expression.
