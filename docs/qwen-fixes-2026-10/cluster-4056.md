@@ -159,6 +159,18 @@ added under `src/` or `include/`.
 - **Not applicable here (non-feature unit):** no GUI path, no command id and no reversibility class were changed, so
   no `ControlCommandsSnapshot` canary, manual or GUI harness evidence is due. No `src/core/Song*`, `*Record*`,
   `*Undo*`, `*Transport*`, `Take*` or `AudioEngine*` file was touched, so no state-sequence artifact is due.
+- **`submit_check.py`'s one FAIL, answered: `gates (feature_check.py)`.** `submit_check.py` reports
+  `FAIL  gates (feature_check.py)` because that script exits 1 in this lane, and it exits 1 for a reason outside the
+  change: `feature_check.py:58-60` runs `git -C .../qwen/gate-baselines/tree checkout -q --detach 9913d36d…` to
+  compute the ratchet baselines, and the lane guard refuses it (`bunny-guard: 'git -C ... checkout ...' is not allowed
+  in a Bunny lane`); the cache it would otherwise read (`gate-baselines/<base>.json` for
+  `9913d36d5397025d1b7092097f50f6d50c652dc4`) does not exist, and it cannot be created because
+  `/home/kruzzzzy/.local/share/zene-bunny-fix` is mounted read-only (`mount`: `type btrfs (ro,…)`; writing a probe
+  there returns `Read-only file system`). Logs: `gate-feature-1.log`, `submit-check-1.log`. The six SIMPLE rows and
+  both ratchet rows were run directly instead (table above): six PASS at EXIT 0, file-length PASS at EXIT 0, and
+  complexity could not be measured at all because `lizard` is not installed (EXIT 2, setup error). I did not
+  fabricate a baseline file to turn this row green: an empty baseline would make every pre-existing item look new and
+  hide a real regression, which is exactly what the ratchet exists to prevent.
 
 ## Other findings
 
