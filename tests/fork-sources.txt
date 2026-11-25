@@ -790,6 +790,7 @@ tests/src/core/HardwareIoTestParts2.h
 tests/src/core/InstrumentRoutingTestParts1.h
 tests/src/core/LinkAudioStreamTestParts1.h
 tests/src/core/LinkAudioStreamTestParts2.h
+tests/src/core/LinkAudioStreamTestParts3.h
 tests/src/core/NotePlaybackTestParts1.h
 tests/src/core/NotePlaybackTestParts2.h
 tests/src/core/ProjectContainerSaveTestParts1.h
