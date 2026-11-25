@@ -161,7 +161,8 @@ obstacle is its own cache fetch:
 - complexity: no tool, hence no `REGRESSION:` lines, so the same rule yields PASS (vacuous — stated, not
   hidden);
 - `submit_check.py` therefore reports `FAIL gates (feature_check.py)` for this reason alone
-  (`submit-check-2.log`), with the wrapper's exit 97 refusal as the output.
+  (`submit-check-2.log`, and `submit-check-3.log` at this commit), with the wrapper's exit 97 refusal as
+  the output; its four mechanical items PASS.
 
 ## Self-check
 
