@@ -133,6 +133,15 @@ An earlier run (`gates-1.log`, EXIT=1) failed file-length on
 - **REAL, not already fixed.** The round-2 RED reproduced the truncated file at
   `out`. The round-3 RED (`test-7-red.log`, EXIT=8) shows the round-2 product still
   replacing the intermediate link and ignoring the timeout path.
+- **Fails without the fix, passes with it.** With the product patch reversed,
+  `ctest -R ControlRenderOutputPublish` gave EXIT=8 (`test-7-red.log`). With it
+  re-applied, the test Passed (`test-8-green.log`); the direct run gave EXIT=0
+  (`test-4-green-direct.log`).
+- **Old projects and limits.** No project load or save code changed; the change is
+  confined to where a control render writes its output file. The new 40-hop limit
+  matches the kernel's own MAXSYMLINKS on Linux, so a chain the OS would follow is
+  never refused. The timeout seam applies only when the env var is set.
+- **ALREADY-FIXED / FALSE-POSITIVE.** Not claimed (verdict FIXED).
 - **Deterministic test.** No sleeps and no wall-clock waits in the test. Failures are
   injected with RLIMIT_FSIZE and the timeout seam (1 ms against a 64-bar render); the
   `/proc` scan runs right after the reply. Exit 77 is reserved for a host that cannot
