@@ -41,6 +41,35 @@ void paintWithZeroStepLength()
 	recorder.render(&image);
 }
 
+void paintWithZeroPixelsPerBar()
+{
+	QWidget parent;
+	parent.resize(320, 200);
+	lmms::gui::StepRecorderWidget recorder(&parent, 192, 0, 0, 0, 0);
+	recorder.setStepsLength(lmms::TimePos(48));
+	recorder.setPixelsPerBar(0);
+	recorder.resize(parent.size());
+	QImage image(recorder.size(), QImage::Format_ARGB32);
+	recorder.render(&image);
+}
+
+void runChildAndExpectExit(const char* mode, const char* what)
+{
+	QProcess painter;
+	painter.start(QCoreApplication::applicationFilePath(), {QString::fromLatin1(mode)});
+	QVERIFY2(painter.waitForStarted(5000), qPrintable(painter.errorString()));
+
+	const bool finished = painter.waitForFinished(5000);
+	if (!finished)
+	{
+		painter.kill();
+		painter.waitForFinished();
+	}
+	QVERIFY2(finished, what);
+	QCOMPARE(painter.exitStatus(), QProcess::NormalExit);
+	QCOMPARE(painter.exitCode(), 0);
+}
+
 } // namespace
 
 class StepRecorderWidgetTest : public QObject
@@ -64,16 +93,21 @@ private slots:
 		QCOMPARE(painter.exitStatus(), QProcess::NormalExit);
 		QCOMPARE(painter.exitCode(), 0);
 	}
+
+	void zeroPixelsPerBarDoesNotHangPainting()
+	{
+		runChildAndExpectExit("--paint-zero-ppb", "painting with zero pixels-per-bar did not finish");
+	}
+
 };
 
 int main(int argc, char** argv)
 {
-	const bool paintChild = argc > 1 && qstrcmp(argv[1], "--paint-zero-step") == 0;
 	QApplication app(argc, argv);
-	if (paintChild)
+	if (argc > 1)
 	{
-		paintWithZeroStepLength();
-		return 0;
+		if (qstrcmp(argv[1], "--paint-zero-step") == 0) { paintWithZeroStepLength(); return 0; }
+		if (qstrcmp(argv[1], "--paint-zero-ppb") == 0) { paintWithZeroPixelsPerBar(); return 0; }
 	}
 
 	StepRecorderWidgetTest test;
