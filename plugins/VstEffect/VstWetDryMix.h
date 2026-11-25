@@ -40,8 +40,7 @@ inline void mixVstWetDry(PlanarBufferView<const float> dry, PlanarBufferView<flo
 {
 	if (dry.channels() == 0) { return; }
 
-	const auto mixableOutputs = std::min<ch_cnt_t>(wet.channels(), 2);
-	for (ch_cnt_t channel = 0; channel < mixableOutputs; ++channel)
+	for (ch_cnt_t channel = 0; channel < wet.channels(); ++channel)
 	{
 		auto wetBuffer = wet.buffer(channel);
 		auto dryBuffer = dry.buffer(std::min(channel, static_cast<ch_cnt_t>(dry.channels() - 1)));

@@ -23,10 +23,12 @@
 
 #include "../../../plugins/VstBase/VstPlugin.h"
 #include "../../../plugins/VstEffect/VstEffectControls.h"
+#include "../../../plugins/VstEffect/VstWetDryMix.h"
 
 #include <QDomDocument>
 #include <QMap>
 #include <QtTest>
+#include <array>
 
 #include "Engine.h"
 
@@ -57,6 +59,8 @@ private slots:
 	void labelContainingColonKeepsValueField();
 	void missingParameterEntryKeepsSavedValue();
 	void savedRestoreKeepsColonLabelsAndSkipsMalformedEntries();
+	void dryOnlyMixSilencesEveryOutputChannel();
+	void wetDryMixMapsExtraOutputsToLastInput();
 };
 
 void VstEffectControlsTest::initTestCase()
@@ -152,6 +156,55 @@ void VstEffectControlsTest::savedRestoreKeepsColonLabelsAndSkipsMalformedEntries
 	QVERIFY(qAbs(values[0].value - 0.25f) < 1e-4f);
 	QCOMPARE(values[1].index, 1);
 	QVERIFY(qAbs(values[1].value - 0.5f) < 1e-4f);
+}
+
+void VstEffectControlsTest::dryOnlyMixSilencesEveryOutputChannel()
+{
+	// Dry-only (wet 0, dry 1) with 4 outputs: every output channel, including
+	// those above stereo, must carry the dry input and none of the wet signal.
+	constexpr f_cnt_t frames = 4;
+	std::array<std::array<float, frames>, 4> wetData;
+	std::array<std::array<float, frames>, 2> dryData;
+	std::array<float*, 4> wetPtrs;
+	std::array<const float*, 2> dryPtrs;
+	for (auto& plane : wetData) { plane.fill(9.f); }
+	dryData[0].fill(0.25f);
+	dryData[1].fill(0.5f);
+	for (std::size_t c = 0; c < wetPtrs.size(); ++c) { wetPtrs[c] = wetData[c].data(); }
+	for (std::size_t c = 0; c < dryPtrs.size(); ++c) { dryPtrs[c] = dryData[c].data(); }
+
+	mixVstWetDry(PlanarBufferView<const float>{dryPtrs.data(), 2, frames},
+		PlanarBufferView<float>{wetPtrs.data(), 4, frames}, 0.f, 1.f);
+
+	// Output c takes input c; outputs 2 and 3 have no input of their own and use the last one.
+	const float expected[4] = {0.25f, 0.5f, 0.5f, 0.5f};
+	for (std::size_t c = 0; c < 4; ++c)
+	{
+		for (f_cnt_t f = 0; f < frames; ++f) { QCOMPARE(wetData[c][f], expected[c]); }
+	}
+}
+
+void VstEffectControlsTest::wetDryMixMapsExtraOutputsToLastInput()
+{
+	// Mono input, 3 outputs, 50/50: every output is 0.5 * wet + 0.5 * the one dry channel.
+	constexpr f_cnt_t frames = 2;
+	std::array<std::array<float, frames>, 3> wetData;
+	std::array<float, frames> dryData{1.f, 1.f};
+	std::array<float*, 3> wetPtrs;
+	std::array<const float*, 1> dryPtrs{dryData.data()};
+	for (std::size_t c = 0; c < wetPtrs.size(); ++c)
+	{
+		wetData[c].fill(static_cast<float>(c)); // wet 0, 1, 2
+		wetPtrs[c] = wetData[c].data();
+	}
+
+	mixVstWetDry(PlanarBufferView<const float>{dryPtrs.data(), 1, frames},
+		PlanarBufferView<float>{wetPtrs.data(), 3, frames}, 0.5f, 0.5f);
+
+	for (std::size_t c = 0; c < 3; ++c)
+	{
+		for (f_cnt_t f = 0; f < frames; ++f) { QCOMPARE(wetData[c][f], 0.5f * static_cast<float>(c) + 0.5f); }
+	}
 }
 
 } // namespace lmms
