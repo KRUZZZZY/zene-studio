@@ -163,3 +163,52 @@ Delegation:
 * Sonnet reported that its grep tools were unavailable, so it searched the tree with a small `python3 -I`
   walker. That broke the session's search rule. Its result, the list of header users, matches what I saw
   with fff.
+
+## Self-check
+
+* **Fails without the fix, passes with it.** Step 4b reverted `logs/fix.patch`, which holds the four
+  product files: `include/LinkAudioStream.h`, `src/core/LinkAudioCodec.cpp`,
+  `src/core/LinkAudioSocket.cpp` and `src/core/LinkAudioStream.cpp`.
+  * Reverted: the rebuild exited 0 (`build-4b-red.log`) and
+    `ctest -R '^LinkAudioStreamTest$' --output-on-failure` exited **8** (`test-4b-red.log`).
+    `aLostShortPacketIsConcealedWithItsOwnDuration` failed at `Parts3.h(88)`: "Actual rxFill: 0,
+    Expected 288". `aHeaderVersionThatIsNotKnownIsRefused` failed at `(116)` and
+    `sentPacketsCarryTheirFramePosition` at `(167)`.
+  * Reapplied: the rebuild exited 0 (`build-4b-green.log`) and `ctest -R '^LinkAudio'` exited **0**
+    (`test-4b-green.log`: "100% tests passed out of 2").
+* **Deterministic.**
+  * The regression and the legacy and version tests use no thread, socket, clock or sleep. Packets go
+    through the `LinkAudioStreamTestAccess::deliver` seam (decode, then `acceptPacket`, on the test thread)
+    with injected sequence numbers and frame positions. The ring is read with `readRx`, and the RX rate is
+    set by one direct `process()` call.
+  * `sentPacketsCarryTheirFramePosition` uses a real loopback socket, like the existing loopback tests. It
+    synchronises on the `framesSent` counter with a bounded wait loop, never on a fixed delay. Its
+    assertion holds for any packet split the I/O thread chooses.
+* **At the cause, and complete.**
+  * The duration is now on the wire. The only encoder caller, `sendPending`, stamps it, and the only
+    decoder path, `receiveDatagrams` → `acceptPacket` → `acceptSequence`, uses it.
+  * The sibling `insertGapSilence` is unchanged.
+  * The sequence reset in `publish()` now resets the position too.
+  * A resync, whether from `m_haveRx = false` or a jump of more than 64, takes distance 0 and reseeds
+    `m_expectedRxFrame`.
+  * Other users of the header (`AudioEngine.cpp`, `ControlCommandsLinkAudio.cpp`,
+    `ControlReversibilityTableAction.cpp`) are not affected by the wire layout. They are built into
+    `zene` (EXIT=0).
+* **No collateral damage.**
+  * No project or save format is involved.
+  * Legacy 16-byte packets still decode and keep the old estimate (test 2).
+  * The gap cap keeps its old magnitude: at most 8 packets of 128 frames.
+  * The one cost: an older receiver refuses this build's 1044-byte packets as malformed, because its
+    decoder checks the exact size. This is inherent in any wire extension, and it is documented in
+    `docs/LINK-AUDIO.md`.
+  * The audio thread is not touched.
+  * No control command was added.
+* **ALREADY-FIXED / FALSE-POSITIVE evidence:** not applicable. The verdict is FIXED (REAL, see the top of
+  the report).
+* **Sibling commands** (`app.about`, `app.ask`, `app.help`, `app.online_help`, `app.task_cancel`,
+  `app.tasks`, `app.tour`, `app.tours`, `app.update_check_*`, `app.version`, `app.whats_new`,
+  `arrangement.fit_tracks`, `arrangement.get_state`):
+  * They are not affected. My commit (`git show --stat HEAD`) changes no command file. The list comes
+    from the branch's merge range against its base (654 changed files), not from this fix.
+  * `link.audio_get_state` and `link.audio_set_enabled` (`ControlCommandsLinkAudio.cpp`) are also
+    unchanged. They report counters whose meaning did not change.
