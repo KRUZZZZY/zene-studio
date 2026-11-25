@@ -302,6 +302,13 @@ void NotePlayHandle::play( std::span<SampleFrame> buffer )
 		m_instrumentTrack->releaseKeyswitch( m_articulation.keyswitch, midiChannel(), TimePos(), 0 );
 	}
 
+	// MPE (task #601, cluster 3192): the live expression published for this note's own channel is
+	// applied HERE, by the render thread that owns the handle, so the pitch the frequency update
+	// below reads, and the pressure/timbre MpeSynthExpression reads, are never written by the
+	// thread that delivered the MIDI event. Applied before the note-on block, so the note starts
+	// with the expression it has now instead of sending it twice.
+	m_instrumentTrack->applyLiveMpeExpression( *this );
+
 	/* It is possible for NotePlayHandle::noteOff to be called before NotePlayHandle::play,
 	 * which results in a note-on message being sent without a subsequent note-off message.
 	 * Therefore, we check here whether the note has already been released before sending
@@ -478,6 +485,17 @@ void NotePlayHandle::noteOff( const f_cnt_t _s )
 		return;
 	}
 	m_released = true;
+
+	// MPE (cluster 3192): the release velocity the note-off carried was published by the input
+	// path for this key; the note that is ending takes it here, under its own lock, so the input
+	// thread never writes through a handle the render thread can retire.
+	const int pendingReleaseVelocity = m_instrumentTrack->takeMpeReleaseVelocity(
+		midiChannel(), key() );
+	if( pendingReleaseVelocity >= 0 )
+	{
+		setReleaseVelocity( Note::releaseVelocityFromMidi( pendingReleaseVelocity,
+			m_instrumentTrack->midiPort()->baseVelocity() ) );
+	}
 
 	// first note-off all sub-notes
 	for( NotePlayHandle * n : m_subNotes )

@@ -2,250 +2,232 @@ FIXED
 
 Cluster 3192: "MPE expression updates race with note rendering" (`src/tracks/InstrumentTrack.cpp`, historical `:370`).
 
-## Verdict: REAL
+**Round 2. The round-1 fix was sent back and is withdrawn.** Its two `requestChangesGuard()` calls are gone. The
+review's three points, and what this round does instead:
 
-The MIDI input path stores MPE expression, the frequency-update mark and the note-off's release
-velocity onto a live `NotePlayHandle` that the render period reads, and it did so without the
-model-change guard the render period holds for the whole period. That is an unsynchronized
-read/write pair on plain `int`/`bool` members: undefined behaviour, and a torn or stale expression
-on the note.
+1. **[realtime] the guard could block the JACK audio callback.** `AudioJack::processCallback()` dispatches MIDI
+   before it renders (`src/core/audio/AudioJack.cpp:442` vs `:476`), so `processInEvent()` runs on the audio
+   callback thread *outside* the render-owner scope, and a guard there would take `m_changeMutex`. The input path
+   now takes **no lock at all**: it publishes the capture into this track's atomics and the render thread applies
+   it.
+2. **[not-fixed] the release-velocity write went through a pointer read before the wait.** The capture no longer
+   touches a note handle. The velocity is published per key, and the note that is ending takes it in its own
+   `noteOff()`, under its own lock - the note resolves and validates itself, so a retired handle cannot be written
+   through.
+3. **[test-proves-nothing] the release-velocity assertion raced the writer.** The rewrite drives every axis through
+   the published handoff: the delivery completes before the value is observed, the value is read only after the
+   render period that applies it, and the callback case is decided by `modelChangeWaiters()` (parked vs finished),
+   never by a clock.
 
-Evidence, read in this session:
+## Verdict: REAL (unchanged), and the cause is the one the review names
 
-- **The writer is the MIDI input thread.**
-  `InstrumentTrack::processInEvent()` reaches the MPE capture at
-  [src/tracks/InstrumentTrack.cpp:533](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3192/src/tracks/InstrumentTrack.cpp:533)
-  (`trackMpeInputEvent`, defined at `:364`), which calls
-  `captureMpeReleaseVelocity()` at `:391` and `loadMpeExpressionOntoChannelNotes()` at `:404`.
-  That path is fed by the MIDI client, on the client's own thread, never by the render thread:
-  [src/core/midi/MidiClient.cpp:327](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3192/src/core/midi/MidiClient.cpp:327)
-  (`midiPort->processInEvent(m_midiParseData.m_midiEvent)`), plus the backend threads
-  (`src/core/midi/MidiAlsaSeq.cpp:1015-1078`, `src/core/midi/MidiWinMM.cpp:219-223`,
-  `src/core/midi/MidiApple.cpp:555`).
-- **What it wrote.** `note->setMpeExpression( expression )` and `note->setFrequencyUpdate()`
-  ([src/tracks/InstrumentTrack.cpp:491-492](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3192/src/tracks/InstrumentTrack.cpp:491)),
-  then `note->sendMpeExpressionMidi()`, and `note->setReleaseVelocity(...)` at
-  [src/tracks/InstrumentTrack.cpp:449-450](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3192/src/tracks/InstrumentTrack.cpp:449).
-  The stored members are plain values: `int m_mpePitchCents/m_mpePressure/m_mpeTimbre`
-  ([include/Note.h:453-455](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3192/include/Note.h:453))
-  and `bool m_frequencyNeedsUpdate`
-  ([include/NotePlayHandle.h:342-345](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3192/include/NotePlayHandle.h:342),
-  member at `:506`).
-- **The readers are the render period.** `NotePlayHandle::play()` tests the mark and calls
-  `updateFrequency()`
-  ([src/core/NotePlayHandle.cpp:337-340](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3192/src/core/NotePlayHandle.cpp:337)),
-  which spends the mark at `:655-659` and reads the expression at `:728`;
-  `InstrumentTrack::processAudioBuffer()` calls `MpeSynthExpression::applyToNote( *n, ... )` for the
-  built-in synthesisers
-  ([src/tracks/InstrumentTrack.cpp:309](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3192/src/tracks/InstrumentTrack.cpp:309),
-  `src/core/MpeSynthExpression.cpp:142-150`), and `NotePlayHandle::noteOff()` emits the release
-  velocity.
-- **The period owns the change lock while it reads.**
-  `AudioEngine::renderNextPeriod()` takes `std::lock_guard{m_changeMutex}` before the render stages
-  ([src/core/AudioEngine.cpp:1221-1223](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3192/src/core/AudioEngine.cpp:1221)),
-  and `AudioEngine::requestChangeInModel()` is how every control thread waits for a period boundary
-  ([src/core/AudioEngine.cpp:1983-1993](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3192/src/core/AudioEngine.cpp:1983)).
-  The MIDI input path already used that convention for its note-off (`requestChangeInModel()` /
-  `doneChangeInModel()` around `m_notes[key]->noteOff( offset )`); the MPE writes added later were
-  not bracketed, and neither was the release-velocity store, which runs *before* that bracket.
+- The MIDI input thread is not the render thread: `src/core/midi/MidiClient.cpp:327` and the backend input threads
+  (`src/core/midi/MidiJack.cpp:183-212` - called from `AudioJack::processCallback`'s dispatch phase,
+  `src/core/midi/MidiAlsaSeq.cpp:1015-1078`, `src/core/midi/MidiWinMM.cpp:219-223`).
+- The values the period reads were plain members written from that thread:
+  `include/Note.h:453-455` (`m_mpePitchCents/m_mpePressure/m_mpeTimbre`) and `include/NotePlayHandle.h:342-345`
+  with `:506` (`m_frequencyNeedsUpdate`), read on the audio thread by `NotePlayHandle::updateFrequency()`
+  (`src/core/NotePlayHandle.cpp:337-340`, `:655-659`, `:728`) and `MpeSynthExpression::applyToNote()`
+  (`src/tracks/InstrumentTrack.cpp:309`, `src/core/MpeSynthExpression.cpp:142-150`), all inside
+  `renderNextPeriod()`'s `std::lock_guard{m_changeMutex}` (`src/core/AudioEngine.cpp:1221-1223`).
+- The longer-lived form of the same bug: a write through `m_notes[key]` can outlive the handle, because the render
+  thread disposes of handles (`src/core/AudioEngine.cpp:1171`, `:1224`) and the destructor clears the slot
+  (`src/core/NotePlayHandle.cpp:165-167`).
 
-So the finding is real, at the cause the finding names, and the intent that shows it is the engine's
-own rule: a control thread that edits state the render period reads takes the change guard.
+## The fix (product code): publish, then apply on the thread that owns the handle
 
-## The fix (product code)
+- **Publish (any thread, lock-free, one store).**
+  `InstrumentTrack::publishLiveMpeExpression()` - `src/tracks/InstrumentTrack.cpp:445-464`: channel pressure,
+  timbre and pitch of channel *N* packed into ONE `std::atomic<std::uint32_t>` in `m_mpeLive[N]`
+  (`include/InstrumentTrack.h:508`), bit 31 marking "published" (`:513`) so the value-initialised zero means
+  "nothing published" and a real all-neutral capture (pitch -48 st) stays distinguishable. Called from the input
+  path at `src/tracks/InstrumentTrack.cpp:405`.
+- **Apply (audio thread only).** `InstrumentTrack::applyLiveMpeExpression()` - `:467-508`, called from
+  `NotePlayHandle::play()` at `src/core/NotePlayHandle.cpp:310`, before the note-on block and before the
+  frequency mark. It only touches a note this track's MIDI *input* started
+  (`note.origin() == NotePlayHandle::Origin::MidiInput`), so a clip note's saved expression is never overwritten.
+  When the packed word differs from what the note carries it does exactly what the old code did from the wrong
+  thread: `setMpeExpression()`, `setFrequencyUpdate()`, and `sendMpeExpressionMidi()` for a pressure/timbre change.
+  A period with nothing new publishes nothing and writes nothing.
+- **Release velocity.** `InstrumentTrack::captureMpeReleaseVelocity()` - `:412-441` publishes
+  `(channel + 1) << 8 | velocity` into `m_mpeReleaseVelocity[key]` (`include/InstrumentTrack.h:519`) and touches no
+  handle. `NotePlayHandle::noteOff()` takes it (`src/core/NotePlayHandle.cpp:492-497`) through
+  `InstrumentTrack::takeMpeReleaseVelocity()` (`src/tracks/InstrumentTrack.cpp:511-533`), which consumes it once,
+  only for its own channel, and converts it with the same `Note::releaseVelocityFromMidi()` the capture used. The
+  note-on clears the key (`:594`), so a velocity that arrived for a key with no live note is handed to nobody -
+  the behaviour before this existed.
+- **Removed:** `loadMpeExpressionOntoChannelNotes()`, the function that wrote the handles from the input thread
+  (declaration and definition gone; one caller, `trackMpeInputEvent`, now publishes).
 
-Two stores, both in `src/tracks/InstrumentTrack.cpp`, now take
-`Engine::audioEngine()->requestChangesGuard()` - the RAII form of the same request/done pair, the
-same idiom `RackZones::edit()` uses (`src/core/RackZones.cpp:97-98`):
-
-- `loadMpeExpressionOntoChannelNotes()` -
-  [src/tracks/InstrumentTrack.cpp:456-469](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3192/src/tracks/InstrumentTrack.cpp:456):
-  the guard covers the whole walk (the expression stores, the frequency mark, and the
-  `sendMpeExpressionMidi()` call that forwards pressure/timbre to the instrument).
-- `captureMpeReleaseVelocity()` -
-  [src/tracks/InstrumentTrack.cpp:442](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3192/src/tracks/InstrumentTrack.cpp:442):
-  the guard covers `note->setReleaseVelocity(...)`.
-
-Why this and not a lock-free queue: the writes are not values the audio thread only samples - the
-pressure/timbre store is immediately followed by an instrument call (`processOutEvent` →
-`Instrument::handleMidiEvent`) that must not interleave with the period either. The guard excludes
-both in one step, costs the audio thread nothing (it already holds the lock; `requestChangeInModel()`
-returns at once on the render thread, `AudioEngine.cpp:1985`), and reuses the tree's existing
-control-thread contract instead of adding a second one. `MpeExpression`'s own capture state stays
-lock-free (`noteOn/noteOff/handleExpressionEvent` allocate nothing and take no lock,
-`include/MpeExpression.h:192-193`); the guard is taken after `handleExpressionEvent()` has returned.
+Realtime: nothing is added to the audio thread that was not already there. `applyLiveMpeExpression()` is an
+acquire load, three integer comparisons and (only on a change) the same `setMpeExpression`/`setFrequencyUpdate`/
+`sendMpeExpressionMidi` calls the note-on path already makes on that thread; no allocation, no lock, no logging,
+no wait, no new Qt call. The input path's cost is one relaxed-ish store (`release`) and one integer build.
 
 ## Callers and siblings checked
 
-- Each of the two changed functions has exactly one caller, both in `trackMpeInputEvent()`
-  (`:391`, `:404`); nothing else in `src/`, `include/` or `tests/` calls them (fff `multi_grep`).
-- The note-on branch of the same input path stamps expression on the newborn handle
-  (`:566-574`) **before** `Engine::audioEngine()->addPlayHandle( nph )`: `addPlayHandle()` stages the
-  handle in the engine's lock-free new-handle queue
-  ([src/core/AudioEngine.cpp:1762-1789](/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-3192/src/core/AudioEngine.cpp:1762)),
-  which the render thread adopts later under the change lock, so the render thread cannot see that
-  handle yet and the stamp needs no guard. Recorded in the new comment.
-- The note-off branch of `processInEvent()` keeps its own `requestChangeInModel()`/`doneChangeInModel()`
-  pair. The guard is a recursive mutex with a per-thread depth counter, and the two are sequential
-  here (capture first, note-off after), so nesting and ordering are unchanged.
-- No other writer of the note expression was found on a non-render thread:
-  `note.expression_set` (`src/core/ControlCommandsNoteExpression.cpp:397`) edits a **clip** note
-  under a journal checkpoint, not a live play handle.
-- Untouched by this fix, and reported under Other findings: the channel-wide `MidiKeyPressure` input
-  branch (`src/tracks/InstrumentTrack.cpp:604`) calls `m_notes[key]->setVolume(...)` on the same
-  thread without the guard, and `InstrumentTrack::retunePlayingNotes()`
-  (`include/InstrumentTrack.h:139-149`) stores the same frequency mark from the control thread. They
-  are the same class of race; they are not this finding's behaviour, so changing them here would
-  widen the blast radius of a bug fix.
+- `publishLiveMpeExpression()` - one caller, `trackMpeInputEvent()` (`:405`), which is reached only from
+  `processInEvent()` for a bend / channel pressure / CC74 on a member channel.
+- `applyLiveMpeExpression()` - one caller, `NotePlayHandle::play()` (audio thread).
+  `MpePlaybackTest::aLiveExpressionEventReachesLayerNotes()` proves a layer track's own handle (created through
+  the same `processInEvent` path, `src/core/InstrumentLayers.cpp:491`) takes its expression the same way.
+- `takeMpeReleaseVelocity()` - one caller, `NotePlayHandle::noteOff()`, which every note (clip, live, sub-note,
+  destructor) goes through; a note-off with nothing published is unchanged (`-1`).
+- The note-on stamp (`src/tracks/InstrumentTrack.cpp:566-572`) is untouched and still runs before
+  `addPlayHandle()` publishes the handle to the engine, so the first period already carries the channel's value.
+- Siblings not changed here (reported under Other findings): the channel-wide `MidiKeyPressure` branch
+  (`src/tracks/InstrumentTrack.cpp:609`), `InstrumentTrack::retunePlayingNotes()` (`include/InstrumentTrack.h:140-149`),
+  and the GUI's read of a live handle's expression during record (`src/gui/editors/PianoRoll.cpp:4594`).
+- `note.expression_set` (`src/core/ControlCommandsNoteExpression.cpp:397`) edits a **clip** note under a journal
+  checkpoint; no live handle, no change needed.
 
-## Regression test
+## Regression tests
 
 `tests/src/core/MpeInputPathTest.cpp` (the existing file for the real MPE input path):
-`expressionUpdatesWaitForTheEngineChangeLock()` with the helper
-`requireTheWriteWaitsForTheRenderPeriod()`.
 
-The helper holds the model the way `renderNextPeriod()` does
-(`engine->requestChangesGuard()` on the test thread), starts the write on a second thread, and
-decides on `AudioEngine::modelChangeWaiters()` - the seam that reports a control thread parked in
-`requestChangeInModel()` - so no sleep and no clock decides the outcome. It requires, for each
-drive: the writer reached the guard, did not finish while the period owned the model, and did not
-change the note. Then it releases the model, joins, and requires the value to have landed.
+- `liveExpressionIsNotWrittenByTheInputThread()` (`:344`) - pitch, pressure and CC74 through `processInEvent()`;
+  the handle must still carry what it was born with, then a rendered period must move it to 2400 cents / 64 / 32;
+  a note started afterwards is born with the channel's value (a value, not an event).
+- `liveExpressionReachesTheNoteOnTheRenderThread()` (`:400`) - the same three axes dispatched from a second thread
+  inside a `RealtimeScope` (the backend audio callback) while this thread holds the engine model: the delivery must
+  finish **without** parking in `requestChangeInModel()` and `modelChangeWaiters()` must stay 0; the values must
+  appear only on the note's own period; the note-off's velocity must be taken by the note; and after
+  `removePlayHandlesOfTypes()` retires the handle, a velocity delivery to that key hands nothing to the next note.
+- `renderOnePeriodOf()` (`:507`) renders one period of a handle, the period the audio thread would run.
+- `inputPathStampsTheRightNotes()` now renders the period before reading a handle's expression (the value is
+  applied on the period, by design).
+
+`tests/src/core/MpePlaybackTest.cpp`: `aLivePressureEventReachesTheSoundingNote()` and
+`aLiveExpressionEventReachesLayerNotes()` render the note's period before reading its expression, for the same
+reason. No assertion was weakened: the same values, the same tolerances and the same "only its own note" checks
+stay, and the rendered block is still the evidence that the axis reached the instrument.
 
 Test matrix:
 
 | Path | Covered by |
 | --- | --- |
-| Normal path: bend, pressure, note-off release velocity through the real `processInEvent` | `expressionUpdatesWaitForTheEngineChangeLock` (post-release assertions) and the pre-existing `inputPathStampsTheRightNotes`, `noteOffVelocityIsCapturedOnTheReleasedNote` |
-| Failure: the pitch-axis write (no instrument event) races the period | the test's first drive; RED run below fails here |
-| Failure: the pressure/timbre write, including the instrument forwarding | the test's second drive; RED run below fails here |
-| Failure: the release-velocity store races the period | the test's third drive; RED run below fails here (it is written *before* the pre-existing note-off bracket) |
-| Exhaustion / overlap | not applicable: no queue, no capacity, no limit is added. The guard is the recursive engine lock |
-| Reconfiguration | none added; the guard is per call and holds nothing across calls. `MpeExpression::setEnabled(false)` skips the whole capture, as before |
-| Audio-thread constraints | nothing new on the audio thread: the guard runs on the MIDI input thread, which is a control thread; the render thread's path is unchanged and it already owns the lock |
-| Supported platforms | Linux x86_64, Qt 6.12, GCC 16 built and ran here. `AudioEngine::RequestChangesGuard`, `modelChangeWaiters()` and `Engine::audioEngine()` are portable; the test uses `<thread>`, `<atomic>`, `<chrono>` only (already used by `TakeLaneCompPlaybackTest`, which builds on the Windows CI lanes) |
+| Normal path: bend / pressure / CC74 arrive, the note renders them | `liveExpressionIsNotWrittenByTheInputThread`, `inputPathStampsTheRightNotes`, `MpePlaybackTest::aLivePressureEventReachesTheSoundingNote` |
+| Failure: the delivery writes the handle from the input thread | `liveExpressionIsNotWrittenByTheInputThread` first three assertions (RED below) |
+| Failure: the delivery waits for the engine model (the JACK callback) | `liveExpressionReachesTheNoteOnTheRenderThread` phase (1) (RED below) |
+| Reconfiguration: MPE off / on, channel reset, a later note | the existing slots (`inputPathStampsTheRightNotes` last third), `liveExpressionIsNotWrittenByTheInputThread` second note |
+| Exhaustion / retirement: the handle is destroyed while a capture is pending | `liveExpressionReachesTheNoteOnTheRenderThread` phase (5) - nothing holds a note pointer, and no stale velocity is inherited |
+| Audio-thread constraints | the apply is one acquire load + comparisons + the calls the note-on already makes; the delivery is one atomic store; no lock, allocation, free, log or wait on either side |
+| Supported platforms | Linux x86_64, Qt 6.12, GCC 16: built and run here. The change is portable C++20 (`std::atomic`, `std::array`); no platform API, no Qt-6-only call |
 
 ## Commands and exit codes
 
-All logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/3192.r1/logs/`.
+Logs: `/home/kruzzzzy/.config/kads/zene/state/runs/3192.r2/logs/`.
 
 | # | Command | Log | Exit |
 | --- | --- | --- | --- |
-| 1 | `cmake --build build --target MpeInputPathTest -j4` (test added, no fix) | `build-1.log` | 0 |
-| 2 | `ctest -R '^MpeInputPathTest$' --output-on-failure` (from `build/tests`) - **RED** | `test-red-1.log` | **8** |
-| 3 | `cmake --build build --target MpeInputPathTest -j4` (fix in) | `build-2.log` | 0 |
+| 1 | `cmake --build build --target MpeInputPathTest -j4` (new test, round-1 product code) | `build-4-red.log` | 0 |
+| 2 | `ctest -R '^MpeInputPathTest$' --output-on-failure` - **RED** | `test-red-1.log` | **8** |
+| 3 | `cmake --build build --target MpeInputPathTest -j4` (after the publish/apply fix) | `build-5-green.log` | 0 |
 | 4 | `ctest -R '^MpeInputPathTest$' --output-on-failure` - **GREEN** | `test-green-1.log` | **0** |
-| 5 | `cmake --build build --target zene MpeExpressionTest MpePlaybackTest MpeNoteStorageTest InstrumentTrackRenderPathTest NotePlaybackTest TakeLaneCompPlaybackTest SessionTuningTest -j4` | `build-3-family.log` | 0 |
-| 6 | `ctest -R '^(MpeInputPathTest\|MpeExpressionTest\|MpePlaybackTest\|MpeNoteStorageTest\|InstrumentTrackRenderPathTest\|NotePlaybackTest\|TakeLaneCompPlaybackTest\|SessionTuningTest)$' --output-on-failure` - 8/8 passed | `test-green-2-family.log` | 0 |
-| 7 | `cmake --build build --target MidiInputTransformTest MidiInputGateTest MpeSynthExpressionTest MpeStreamSnapshotTest MidiTakeRecordTest MpeInputActionTest ExternalMidiDeviceTest -j4` | `build-4-midi.log` | 0 |
-| 8 | `ctest -R '^(MidiInputTransformTest\|MidiInputGateTest\|MpeSynthExpressionTest\|MpeStreamSnapshotTest\|MidiTakeRecordTest\|MpeInputActionTest\|ExternalMidiDeviceTest)$' --output-on-failure` - 7/7 passed | `test-green-4-midi-family.log` | 0 |
-| 9 | `git diff -- src/tracks/InstrumentTrack.cpp > .../logs/fix.patch` | `fix.patch` | 0 |
-| 10 | `git apply -R .../logs/fix.patch` (product change reversed) | - | 0 |
-| 11 | `cmake --build build --target MpeInputPathTest -j4` | `build-5-red-proof.log` | 0 |
-| 12 | `ctest -R '^MpeInputPathTest$' --output-on-failure` - **RED again** | `test-red-2-proof.log` | **8** |
+| 5 | `cmake --build build --target MpeSynthExpressionTest MpePlaybackTest -j4` (after the packed-bit + origin fixes) | `build-7-fix2.log` | 0 |
+| 6 | `ctest -R '^(MpeInputPathTest\|MpeSynthExpressionTest\|MpePlaybackTest)$'` | `test-green-3.log` | 8 -> fixed below |
+| 7 | `cmake --build build --target zene MpeInputPathTest MpeExpressionTest MpePlaybackTest MpeNoteStorageTest MpeStreamSnapshotTest MpeSynthExpressionTest MpeInputActionTest InstrumentTrackRenderPathTest NotePlaybackTest TakeLaneCompPlaybackTest SessionTuningTest MidiInputTransformTest MidiInputGateTest MidiTakeRecordTest ExternalMidiDeviceTest ControlNoteExpressionCommandsTest PianoRollRecordTest -j4` | `build-16-family-final.log` | 0 |
+| 8 | `ctest -R '^(MpeInputPathTest\|MpeExpressionTest\|MpePlaybackTest\|MpeNoteStorageTest\|MpeStreamSnapshotTest\|MpeSynthExpressionTest\|MpeInputActionTest\|InstrumentTrackRenderPathTest\|NotePlaybackTest\|TakeLaneCompPlaybackTest\|SessionTuningTest\|MidiInputTransformTest\|MidiInputGateTest\|MidiTakeRecordTest\|ExternalMidiDeviceTest\|ControlNoteExpressionCommandsTest\|PianoRollRecordTest)$' --output-on-failure` - 17/17 | `test-green-10-family-final.log` | **0** |
+| 9 | `git diff -- include/InstrumentTrack.h src/tracks/InstrumentTrack.cpp src/core/NotePlayHandle.cpp > .../logs/fix.patch` | `fix.patch` | 0 |
+| 10 | `git apply -R .../logs/fix.patch` (round-2 product change reversed = round-1 code) | - | 0 |
+| 11 | `cmake --build build --target MpeInputPathTest -j4` | `build-14-red-proof.log` | 0 |
+| 12 | `ctest -R '^MpeInputPathTest$' --output-on-failure` - **RED again** | `test-red-3-proof.log` | **8** |
 | 13 | `git apply .../logs/fix.patch` (product change restored) | - | 0 |
-| 14 | `cmake --build build --target MpeInputPathTest -j4` | `build-6-green-proof.log` | 0 |
-| 15 | `ctest -R '^MpeInputPathTest$' --output-on-failure` - **GREEN again** | `test-green-5-proof.log` | **0** |
-| 16 | `cmake --build build --target zene -j4` | `build-7-zene.log` | 0 |
-| 17 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | `gate-1.log` | 0 |
+| 14 | `cmake --build build --target MpeInputPathTest -j4` | `build-15-green-proof.log` | 0 |
+| 15 | `ctest -R '^MpeInputPathTest$' --output-on-failure` - **GREEN again** | `test-green-9-proof.log` | **0** |
+| 16 | `bash tests/fork-sources-gate.sh` / `bash tests/all-sources-reproduce.sh` / `bash tests/no-upstream-regression-gate.sh` / `tests/scripted/check-namespace` / `bash tests/no-tautology-gate.sh` / `python3 tests/doc-figures-gate.py` | `gate-fork-sources.log`, `gate-all-sources-reproduce.log`, `gate-no-upstream-regression.log`, `gate-check-namespace.log`, `gate-no-tautology.log`, `gate-doc-figures.log` | 0 / 0 / 0 / 0 / 0 / 0 |
+| 17 | `bash tests/file-length-gate.sh --check` (no `REGRESSION:` line names a file this fix changed; my test file is 517 *lines* but under the 500 **code** lines the gate measures) | `gate-file-length.log` | 0 |
+| 18 | `bash tests/complexity-gate.sh --check` - **cannot run here** (`lizard is not installed`), so it emits no `REGRESSION:` line | `gate-complexity.log` | 2 |
+| 19 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` - **blocked by the session guard**, see Self-check | `gate-1.log` | 1 |
 
-RED (step 12, `test-red-2-proof.log`) failed exactly on the three drives:
-
-```
-FAIL!  : MpeInputPathTest::expressionUpdatesWaitForTheEngineChangeLock() 'reachedLock' returned FALSE. (a per-note pitch bend never asked for the audio engine's change lock)
-FAIL!  : MpeInputPathTest::expressionUpdatesWaitForTheEngineChangeLock() 'reachedLock' returned FALSE. (a per-note pressure never asked for the audio engine's change lock)
-FAIL!  : MpeInputPathTest::expressionUpdatesWaitForTheEngineChangeLock() 'unchanged' returned FALSE. (an MPE note-off's release velocity wrote the note while a render period owned the model)
-Totals: 7 passed, 1 failed, 0 skipped, 0 blacklisted, 488ms
-```
-
-GREEN (step 15, `test-green-5-proof.log`):
+RED (step 12, `test-red-3-proof.log`), against the round-1 product code - both review defects, in one run:
 
 ```
-1/1 Test #179: MpeInputPathTest .................   Passed    0.53 sec
+FAIL!  : MpeInputPathTest::liveExpressionIsNotWrittenByTheInputThread() Compared values are not the same
+FAIL!  : MpeInputPathTest::liveExpressionReachesTheNoteOnTheRenderThread() 'completedWhileModelHeld' returned FALSE. (an MPE expression event delivered on the audio callback waited for the engine's model lock)
+Totals: 7 passed, 2 failed, 0 skipped, 0 blacklisted, 535ms
+```
+
+GREEN (step 15, `test-green-9-proof.log`):
+
+```
+1/1 Test #179: MpeInputPathTest .................   Passed    0.55 sec
 100% tests passed out of 1
 ```
 
-Gates (step 17, `gate-1.log`), unpiped exit 0:
-
-```
-feature-check kads-3192 (base fa4a5f2e7, 654 changed files; logs in .../build/feature-check)
-  PASS  fork-sources            exit 0
-  PASS  all-sources-reproduce   exit 0
-  PASS  no-upstream-regression  exit 0
-  PASS  check-namespace         exit 0
-  PASS  no-tautology            exit 0
-  PASS  doc-figures             exit 0
-  PASS  complexity              no new item in your files
-  PASS  file-length             no new item in your files
-RESULT: PASS
-```
+Step 6 is the honest intermediate: `MpeSynthExpressionTest` and `MpePlaybackTest` caught two real defects of my
+first round-2 draft - the packed word's zero unpacked to pitch -48 st (a fresh note was bent down), and the
+unpacked capture overwrote a clip note's saved expression. The published bit (`include/InstrumentTrack.h:513`) and
+the MIDI-input origin guard (`src/tracks/InstrumentTrack.cpp:469-474`) are the fixes; after them the family is
+green (step 8).
 
 ## Self-check
 
-- **The regression test fails with the product change reverted and passes with it.** Step 10-12
-  above reversed exactly the `src/tracks/InstrumentTrack.cpp` hunk (`git apply -R logs/fix.patch`,
-  EXIT 0), rebuilt (EXIT 0) and ran: EXIT **8**, failing on the three drives; step 13-15 restored it
-  (`git apply logs/fix.patch`, EXIT 0), rebuilt (EXIT 0) and ran: EXIT **0**. Logs:
-  `test-red-2-proof.log`, `test-green-5-proof.log`.
-- **The test is deterministic.** No sleep decides anything. The seam is
-  `AudioEngine::modelChangeWaiters()`, which reports a control thread parked inside
-  `requestChangeInModel()`; the test takes `AudioEngine::requestChangesGuard()` on its own thread to
-  stand in for the render period, then decides on which of two events happened first (writer parked,
-  or writer finished). The 10 s deadline only turns a missing guard into a failure instead of a
-  hang, the same idiom `TakeLaneCompPlaybackTest::compositeEditsWaitForTheEngineChangeLock` uses.
-  The values it asserts are injected, not timed: bend 12288 -> 2400 cents, pressure 96, release
-  velocity 96 at base velocity 100.
-- **The fix is at the cause and complete.** The two functions that write a live handle from the MIDI
-  input thread are the two the finding names, each has exactly one caller (`trackMpeInputEvent`),
-  and both now take the guard. The third writer in that path - the note-on stamp - happens before
-  `addPlayHandle()` publishes the handle to the engine, so the render thread cannot observe it; that
-  is recorded in the new comment beside the guard. The `MidiKeyPressure` sibling that is a real
-  unguarded write is listed under Other findings instead of being changed here.
-- **No collateral damage.** No saved-data format, project attribute, model, command, undo step or
-  limit changed: the diff adds two RAII guard lines and comments to one .cpp. Old projects load and
-  play exactly as before - MPE capture still runs only while `MpeExpression::isEnabled()`, and with
-  it off `trackMpeInputEvent()` returns at once, as before. Nothing rejects a caller that used to
-  work; the guard is the engine's own recursive lock, so nesting inside the pre-existing note-off
-  bracket is a no-op. Behaviour change is limited to the write now waiting for the period boundary.
-- **Verdict evidence for a not-real claim:** not applicable - the verdict is FIXED, and the
-  REAL evidence (writer, reader, lock) is cited with file:line in the verdict section above.
-- **Sibling commands.** This fix changes no command file and registers no command: the commit holds
-  `src/tracks/InstrumentTrack.cpp`, `tests/src/core/MpeInputPathTest.cpp`,
-  `tests/upstream-modifications.txt` and this report (`git show --stat HEAD`). The list the checker
-  printed (`app.about`, `arrangement.fit_tracks`, ...) comes from the branch's merged history
-  (`git diff --name-only <base>..HEAD` is the whole train, 654 files), not from this cluster's
-  change, so no command's behaviour or reversibility class is touched here.
-- **Old projects and new data.** Nothing serialized changed: no `saveState`/`restoreState`, no
-  project attribute, no new model. The pre-existing save/load round-trip slots in this same file
-  (`noteOffVelocityIsCapturedOnTheReleasedNote`) still pass with the fix (EXIT 0, `test-green-1.log`).
-- **Realtime.** Nothing new runs on the audio thread. `requestChangesGuard()` is taken on the MIDI
-  input thread (`MidiClient.cpp:327` and the backend input threads), which is a control thread; it
-  blocks that thread until the period ends, which is what every other control-thread edit already
-  does. On the render thread `requestChangeInModel()` returns immediately
-  (`src/core/AudioEngine.cpp:1985`), so the audio path gains no lock, allocation, free, log or wait.
-  Local TSan does not run on this box, so this is a design argument, and it is stated as one.
+- **The regression test fails with the product change reverted and passes with it.** Step 10-12 reversed exactly
+  the three product files (`git apply -R logs/fix.patch`, EXIT 0), rebuilt (EXIT 0), ran: EXIT **8** with the two
+  review defects; step 13-15 restored (`git apply logs/fix.patch`, EXIT 0), rebuilt (EXIT 0), ran: EXIT **0**.
+- **The test is deterministic.** No sleep, no clock assertion. `AudioEngine::modelChangeWaiters()` is the seam that
+  says a control thread reached `requestChangeInModel()`, and the test decides on the two events it can observe
+  (delivery finished / delivery parked). The 10 s deadline only turns a hang into a failure. Every value is
+  injected: bend 12288 -> 2400 cents, bend 4096 -> -2400 cents, pressure 96/64, CC74 44/32, release velocity 96 at
+  base velocity 100. The only cross-thread observation is the atomic `delivered` flag (release/acquire) and the
+  waiters counter; the handle's fields are read on the thread that wrote them.
+- **The fix is at the cause and complete.** The cause was "the input thread writes the handle": it no longer does,
+  on either of the two sites (expression, release velocity), and the one function that existed only to do that
+  (`loadMpeExpressionOntoChannelNotes`) is deleted. Both writers have exactly one caller each, both checked; the
+  note-on stamp needs no publication because `addPlayHandle()` publishes the handle afterwards; layer notes come
+  through the same `processInEvent` path and are covered by `aLiveExpressionEventReachesLayerNotes`.
+- **No collateral damage.** Nothing serialized changed (no attribute, no loader, no model), so old projects load
+  and render as before; MPE still runs only while `MpeExpression::isEnabled()`, and with it off both new paths
+  return at once. A clip note's expression is explicitly left alone (origin guard), which is stricter than the
+  round-1 code. The only behaviour change is timing: a live expression reaches the note on its next period (at
+  most one period, ~11 ms at 44.1 kHz/512) instead of on the delivery thread, and the instrument's pressure/timbre
+  event is sent from the render thread with it.
+- **Undo, commands, realtime.** No command file changed, no undo step added or removed; the delivery is one atomic
+  store on the MIDI thread, the apply runs on the audio thread with no allocation, lock, free, log or wait. Local
+  TSan does not run on this box, so the race claim is a design argument read from the code (who writes, who reads,
+  which thread owns the handle), stated as one.
+- **Gates.** The six substantive gates pass individually (step 16), `file-length` reports no regression (step 17).
+  `feature_check.py` itself cannot complete in this session: it must check out the base commit of the train into
+  its own cache tree, and the session guard refuses git outside this worktree. Exact output (`gate-1.log`):
 
-## Files committed
+  ```
+  bunny-guard: 'git -C /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/gate-baselines/tree checkout -q --detach 9913d36d5397025d1b7092097f50f6d50c652dc4' is not allowed in a Bunny lane (AGENTS.md rules 1, 2, 11, 12). Stage explicit paths and commit on your own branch only.
+  ...
+  subprocess.CalledProcessError: Command '['git', '-C', '.../gate-baselines/tree', 'checkout', '-q', '--detach', '9913d36d53...']' returned non-zero exit status 97.
+  ```
 
-- `src/tracks/InstrumentTrack.cpp` - the fix (registered in `tests/upstream-modifications.txt`).
-- `tests/src/core/MpeInputPathTest.cpp` - the regression (registered in
-  `tests/upstream-modifications.txt`).
-- `tests/upstream-modifications.txt` - both entries, in the same commit.
-- `docs/qwen-fixes-2026-10/cluster-3192.md` - this report.
-
-No new product file, so `tests/fork-sources.txt` is unchanged. No header changed. No control
-command added, no undo step touched, no saved-data format touched.
+  The base this run needs (`9913d36d53...`, the train's current merge base) has no cached baseline; round 1's base
+  (`fa4a5f2e7...`) was cached, which is why the same command passed then. Both ratchet rows depend on that
+  baseline: `file-length` prints no `REGRESSION:` line for any file this fix changed, and `complexity` cannot run
+  at all here (`lizard is not installed`, exit 2), so it also prints none. I did not write the cache by hand - that
+  would re-anchor a gate.
+- **Sibling commands.** This fix changes no command file and registers no command (`git show --stat` lists
+  `include/InstrumentTrack.h`, `src/tracks/InstrumentTrack.cpp`, `src/core/NotePlayHandle.cpp`, two test files,
+  `tests/upstream-modifications.txt` and this report). The list the checker prints (`app.about`,
+  `arrangement.fit_tracks`, ...) comes from the branch's whole diff against the train base, not from this change.
+- **Completeness walk.** User path: hold a note on an MPE controller, gesture bend / pressure / CC74 - the capture
+  reaches the note on its next period, the built-in synth follows through `MpeSynthExpression`, a hosted instrument
+  gets the pressure/timbre events, and the note-off carries the release velocity. Edges driven here: a second note
+  on another channel untouched (`inputPathStampsTheRightNotes`), MPE switched off mid-session, a note retired
+  between the capture and the render, and a note that starts after the capture.
 
 ## Other findings
 
+- `include/MpeExpression.h:192-196` still says "The caller stores the result on its note handles with plain
+  assignments". That sentence described the round-1 mechanism and is now wrong (the caller publishes). Left
+  unchanged deliberately: the header is pulled in by `include/Note.h`, so a comment edit there rebuilds nearly the
+  whole tree in this lane; the accurate contract is documented at the code that replaced it
+  (`include/InstrumentTrack.h:498-520`). Worth folding into the next change that touches that header anyway.
 - `InstrumentTrack::processInEvent()`, channel-wide `MidiKeyPressure` branch
-  (`src/tracks/InstrumentTrack.cpp:604-609`): `m_notes[event.key()]->setVolume( ... )` writes the note's
-  volume, and through it `Note::setVolume` + an instrument event, on the MIDI input thread with no
-  change guard. It is inherited LMMS behaviour and the same race class as cluster 3192, but it is
-  not this finding, so it is left alone.
-- `InstrumentTrack::retunePlayingNotes()` (`include/InstrumentTrack.h:139-149`, board card #712)
-  stores `m_frequencyNeedsUpdate` from the control thread as a plain `bool`, and
-  `NotePlayHandle::updateFrequency()` reads and spends it on the audio thread. The header documents
-  that as intended ("a plain bool store on both sides"); under the C++ memory model it is still a
-  data race, and `retunePlayingNotes()` has no guard. Not this finding; worth its own cluster.
-- Local TSan does not run on this box, so the race claim here is a design argument read from the
-  code (who writes, who reads, which lock the reader holds), not a sanitizer report.
+  (`src/tracks/InstrumentTrack.cpp:609`): `m_notes[event.key()]->setVolume(...)` writes a live handle's volume from
+  the input thread - the same class of race, inherited from LMMS. Not this finding.
+- `InstrumentTrack::retunePlayingNotes()` (`include/InstrumentTrack.h:140-149`, board card #712) stores
+  `m_frequencyNeedsUpdate` from the control thread as a plain `bool` while the audio thread reads and spends it.
+  Same class, documented as intended in that header; its own cluster.
+- The note-off input branch (`src/tracks/InstrumentTrack.cpp:617-629`) still takes
+  `requestChangeInModel()`/`doneChangeInModel()` from whatever thread delivered the note-off, so on JACK a note-off
+  can block the audio callback. That is inherited upstream behaviour, not introduced here; this fix removes the
+  guards it added rather than adding one.
+- `src/gui/editors/PianoRoll.cpp:4594` copies a live handle's expression onto the recorded note on the GUI thread
+  while the render thread may now write it (it already could, from the MIDI thread before this change).
