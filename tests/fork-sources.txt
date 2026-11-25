@@ -4084,3 +4084,7 @@ tests/nam-eigen-options-coverage-check.py
 # cluster new-p9-402-port (2026-11): replacing a playing clip's source retires its stale play
 # handles, so the next pass renders the new source through its own window (fork-NEW test).
 tests/src/tracks/SampleClipSourceSwapTest.cpp
+# cluster ci-9b3cdba8549c073f-port (2026-11-24): the linux-arm64 Qt 5 build regression for
+# ScriptClockTest's QJsonValue::toInteger is already fixed by the retained jsonInteger adapter and
+# Qt5JsonIntegerCheck; this port report records that verdict.
+docs/qwen-fixes-2026-10/cluster-ci-9b3cdba8549c073f-port.md
