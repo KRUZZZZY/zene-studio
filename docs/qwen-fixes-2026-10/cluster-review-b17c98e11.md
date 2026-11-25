@@ -78,3 +78,47 @@ target with a full revision set; `project.save` is refused, names the markers, a
 hold the bytes they held before. Without the gate the slot fails at the revision compare
 (`ProjectMarkersTest.cpp:456`, actual `live\n`, expected `rev0\n`); with the whole product change reversed it
 fails at `!saved.ok` (`:447`).
+
+## Round 3 (verification only, no new product code)
+
+The round-2 review's [crash-or-data-loss] entry (project.save rotated the keep-3 revision set before the
+engine's refusal) is **resolved in commit 33495a1610**: `registerProjectSave` now asks
+`ProjectSection::firstSaveRefusal()` right after the `isPartialLoad()` gate and returns
+`ControlErrorKind::Refused` (`"<target>: <refusal>"`) before `control::rotateProjectRevision`
+(src/core/ControlCommandsProjectFiles.cpp:268-277 gate, rotation afterwards at :288). This round adds no
+product code; it rebuilt HEAD 33495a1610 and re-proved both halves of the fix.
+
+Commands (`$L` = /home/kruzzzzy/.config/kads/zene/state/runs/review-b17c98e11.r3/logs; ctest from build/tests):
+- `git status --short` empty, `git rev-parse HEAD` = 33495a16109d1db2ae476c8f484055d2b73d4c45
+- GREEN: `cmake --build build -j4 --target zene ProjectMarkersTest PartialLoadTest ProjectSectionTest > $L/build-1.log 2>&1` EXIT=0;
+  `ctest -R '^(ProjectMarkersTest|PartialLoadTest|ProjectSectionTest)$' --output-on-failure > $L/test-1.log 2>&1` EXIT=0 ("100% tests passed out of 3")
+- RED-A, only the new gate reverted: `git diff 33495a1610~1 33495a1610 -- src/core/ControlCommandsProjectFiles.cpp > $L/fix.patch` EXIT=0; `git apply -R $L/fix.patch` EXIT=0;
+  `cmake --build build -j4 --target zene ProjectMarkersTest > $L/build-2-redA.log 2>&1` EXIT=0;
+  `ctest -R '^ProjectMarkersTest$' --output-on-failure > $L/test-2-redA.log 2>&1` **EXIT=8**:
+  `FAIL! : ProjectMarkersTest::aRefusedOverCapSaveDoesNotRotateTheRevisionSet() Compared values are not the same` (Actual `"live\n"`, Expected `"rev0\n"`), `Loc: [../../tests/src/core/ProjectMarkersTest.cpp(456)]`, `Totals: 13 passed, 1 failed`
+- RED-B, gate AND the 319b074b96 product hunks reverted: `git diff 9913d36d53 319b074b96 -- include/ProjectMarkers.h include/ProjectSection.h src/core/ProjectMarkers.cpp src/core/SongSections.cpp src/core/Song.cpp > $L/fix-319.patch` EXIT=0; `git apply -R $L/fix-319.patch` EXIT=0;
+  `cmake --build build -j4 --target zene ProjectMarkersTest > $L/build-3-redB.log 2>&1` EXIT=0;
+  `ctest -R '^ProjectMarkersTest$' --output-on-failure > $L/test-3-redB.log 2>&1` **EXIT=8**:
+  `aProjectOverTheCapLoadedThenSavedDoesNotLoseMarkersInSilence() 'reported' returned FALSE` at `ProjectMarkersTest.cpp(381)` and
+  `aRefusedOverCapSaveDoesNotRotateTheRevisionSet() '!saved.ok' returned FALSE` at `ProjectMarkersTest.cpp(447)`, `Totals: 12 passed, 2 failed`
+- Restore: `git apply $L/fix-319.patch` EXIT=0; `git apply $L/fix.patch` EXIT=0; `git status --short` and `git diff HEAD --stat` empty
+- GREEN after restore: `cmake --build build -j4 --target zene ProjectMarkersTest PartialLoadTest ProjectSectionTest > $L/build-4-green.log 2>&1` EXIT=0;
+  `ctest -R '^(ProjectMarkersTest|PartialLoadTest|ProjectSectionTest)$' --output-on-failure > $L/test-4-green.log 2>&1` EXIT=0 ("100% tests passed out of 3")
+- Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > $L/gates.log 2>&1` EXIT=0, RESULT: PASS (all 8 rows PASS; complexity and file-length: no new item)
+
+Corrections to earlier rounds:
+- The round-2 state-sequence listed `droppedOnLoad()` = 3 / = 0. No test asserts that accessor (it has no caller in the tree);
+  the states the test actually checks are the marker count (512), the load `errors()` naming markers, the refused save
+  (false, `saveRefusal()` names markers, no output file, original bytes unchanged), and the cleared session saving again.
+  The round-3 manifest lists only those. Asserting `droppedOnLoad() == 3` was left out of this round on purpose, because
+  it would shift the `:456` location the checkpoint asked to re-prove; it stays a non-blocking follow-up.
+- Line numbers cited in round 1 (`ControlCommandsProjectFiles.cpp:242`, `:256/:276/:285`) predate 33495a1610.
+
+Known behaviour, for the release note (not changed here): a session that dropped over-cap markers on load cannot autosave
+(`MainWindow::autoSave` -> refused `saveProjectFile`) and GUI Save returns false without a dialog, the same as the
+existing partial-load refusal. It saves again after `clearProject` or after opening a file that fits the cap.
+Also: `dropped = total - offered`, so markers past the cap with an unparseable tick are counted in the warning/refusal text.
+
+Delegation (round 3): Haiku ran the GREEN build+ctest, both reverse-patch RED runs and the restore; I read
+test-1/test-2-redA/test-3-redB/test-4-green and `git status` myself and ran feature_check myself (one command).
+No Sonnet or DeepSeek use: no code was written this round.
