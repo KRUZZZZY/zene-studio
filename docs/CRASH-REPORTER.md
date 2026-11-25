@@ -308,13 +308,17 @@ Why the walk is safe here, and where the argument stops:
   report.
 - **Bounded, not merely finite.** Every dereference lies in
   `[interrupted SP, recorded stack ceiling]`. The exact ceiling comes from
-  `pthread_getattr_np()`/`pthread_get_stackaddr_np()` in `install()` (main or
+  `pthread_getattr_np()` in `install()` on Linux (main or
   control thread, never the audio callback); the render/JACK paths only raise a
   cheap ceiling to the current frame with `noteThreadStackMarker()` (a local's
   address, no allocation, lock or I/O). Each saved frame pointer must be
   16-byte aligned and strictly increase, so a corrupt or cyclic chain stops
   instead of spinning, and the 24-frame budget caps the report lines so
   `kMaxReportBytes` still holds.
+  On macOS the handler reads the stack top itself with
+  `pthread_get_stackaddr_np(pthread_self())` (a field read for the current
+  thread) and never touches a `thread_local`, because Darwin allocates TLV
+  storage lazily through `malloc` on a thread's first access.
 - **What it cannot promise.** A build compiled with frame pointers omitted
   yields fewer callers (the PC is still frame 0); a crash reached after
   registration returned but above the recorded ceiling (a very shallow frame)
