@@ -53,6 +53,7 @@ All commands ran in `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studi
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | `gates-1.log` | 1 — see "Gates" below |
 | The six simple gates, run one by one in the worktree: `bash tests/fork-sources-gate.sh`, `bash tests/all-sources-reproduce.sh`, `bash tests/no-upstream-regression-gate.sh`, `tests/scripted/check-namespace`, `bash tests/no-tautology-gate.sh`, `python3 tests/doc-figures-gate.py` | `gate-*.log` | 0, 0, 0, 0, 0, 0 |
 | The two ratchet gates by hand: `bash tests/complexity-gate.sh --check`, `bash tests/file-length-gate.sh --check` | `gate-complexity.log`, `gate-file-length.log` | 2 (train-red ratchet, no item in a file this job touched), 0 |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p21-30` | `submit-1.log` | 1 — every row PASS except `gates (feature_check.py)`, which is the blocked baseline step above |
 
 Because no product file changed, the ratchet rows of `feature_check.py` have nothing of mine to compare: they can only report items in files the branch changed, and the branch changes no source file.
 
@@ -81,6 +82,7 @@ I did not bypass the guard and did not edit the gate. Instead I ran the eight co
 - **No collateral damage.** No product file, header, save format or serialized field changed; the only tracked change is this report. Old projects load exactly as before. No limit or check was added, so no other caller can be rejected by it.
 - **FALSE-POSITIVE evidence.** `src/core/Mixer.cpp:1107-1138` (no failure path), `src/core/Mixer.cpp:1118,1120,1137` (index taken before the push, single return), `include/Mixer.h:663-669` (`mixerChannel` contract and the LMMS_TESTING refusal of an out-of-range index), `docs/specs/SPEC-dynamic-routing.md:32` (no channel cap), plus the runtime seam result above and the matching earlier adjudication in `docs/qwen-fixes-2026-10/cluster-new-p21-42.md`.
 - **Realtime, undo, commands.** No audio-thread code touched; `mixer.create_return` keeps its single undo step and its `TrueInverse` entry in `src/core/ControlReversibilityTableDevices.cpp:259-260`; no control command was added, so the `ControlCommandsSnapshot` canary is unchanged.
+- **Gates.** The six simple gates each exit 0 in the worktree (`gate-*.log`). The two ratchet gates were run by hand: `complexity` exits 2 because the ratchet is red on the train on purpose and lists no item in a file this job changed (this job changes no source file), `file-length` exits 0. `submit_check.py` reports exactly one FAIL, its `gates (feature_check.py)` row, and that row is the blocked baseline step quoted above — the script cannot check out the base commit in its cache tree (guard exit 97) and cannot write the missing cache entry (read-only file system). No product gate is red.
 
 ## Other findings
 
