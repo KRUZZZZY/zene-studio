@@ -95,6 +95,8 @@ still succeeds (the read-back only exists to fill a report).
 | 4b restore test (must pass) | `cd build/tests && ctest -R '^DawProjectInterchangeRoundTripTest$' --output-on-failure` (`test-6-green-restored.log`) | 0 |
 | header includers rebuilt | `cmake --build build --target ProjectContainerTest -j4` (`build-6-container.log`) | 0 |
 | whole family | `cd build/tests && ctest -R '^(DawProjectInterchangeRoundTripTest\|DawProjectDeflateImportTest\|ProjectContainerTest)$' --output-on-failure` (`test-7-family.log`) | 0 (3/3) |
+| 4b re-run from the commits (`git diff 916a609f27 8635a276c9 -- src/core/DawProjectWrite.cpp include/DawProjectInterchange.h`) | `git apply -R logs/fix.patch && cmake --build build --target zene DawProjectInterchangeRoundTripTest -j4` (`build-7-red-commit.log`) then `ctest -R '^DawProjectInterchangeRoundTripTest$'` (`test-8-red-commit.log`) | build 0, test 8 |
+| 4b re-run from the commits | `git apply logs/fix.patch && cmake --build ... -j4` (`build-8-green-commit.log`) then `ctest ...` (`test-9-green-commit.log`) | build 0, test 0 |
 
 The RED failure is the finding itself: log `test-2-red.log` has
 `QWARN ... QIODevice::read (QFile, ".../read-back-fault.dawproject"): device not open`
@@ -168,6 +170,17 @@ against my worktree instead:
   `DawProjectDeflateImportTest` and `ProjectContainerTest` (the .mmpz path that
   shares `writeDawProject`). Old projects and saved data are untouched: no read
   path, no format and no model changed.
+- **Every gate re-run at the committed tree.** After the commit, all eight gates
+  were run again against `8635a276c9` with the same commands and the same exit
+  codes as the table above (0 each).
+- **Completion check.** `python3 .../submit_check.py <worktree> new-p15-53`
+  (`submit-check-1.log`) reports PASS for "commits on the branch", "working tree
+  clean", the report file and "tests added or changed", and one FAIL: "gates
+  (feature_check.py)". That row is the environment failure described above — the
+  shared `gate-baselines` directory is read-only for this lane, so
+  `feature_check.py` crashes while building its base listing before it prints any
+  row — and every gate it would run passes individually (table above). It is the
+  only item this environment cannot turn into a PASS.
 - **Verdict is REAL, not a false positive.** The pre-fix code is reproduced in
   this report and the RED run shows the partial read reported as success.
 
