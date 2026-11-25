@@ -47,7 +47,13 @@ arithmetic, nothing Qt-6-only). TSan not run (no threads touched).
 Delegation: Haiku ran the RED build/test, the GREEN and family builds/tests, the 4b revert/re-apply proof and the gates, and reported exit codes; I checked the log tails and git diff myself.
 
 ## Self-check
-(see below, filled in after submit_check)
+submit_check.py: EXIT=0, `RESULT: PASS` (submit.log).
+- Red/green: reverted fix gives ctest EXIT=8 (test-red2.log), re-applied gives EXIT=0 (test-green2.log).
+- Deterministic: a fixed in-memory document with fixed non-ASCII characters; no clocks, sleeps, threads or I/O.
+- Cause and siblings: the only other `characterOffset()` consumer, `scanSectionRanges` in DocumentIndex.cpp, already converts via `bytePositionOf` (DocumentIndex.cpp:389-409). In ProjectContainerEntries.cpp the remaining `indexOf`/`lastIndexOf` calls (`findStartTagEnd`, `walkContentInterior`, `cutEntries`) work on byte positions only.
+- Collateral: for ASCII-only input the converted offset equals the old one; no limits or checks added; only the document-container load/save path changes.
+- Not ALREADY-FIXED / FALSE-POSITIVE: verdict is FIXED.
+- Sibling commands: no command file was changed (only ProjectContainerEntries.cpp, its test and this report), so none of the listed commands is affected.
 
 ## Other findings
 None.
