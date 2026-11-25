@@ -111,6 +111,13 @@ int lastTempoRow(const QJsonArray& events)
 	return -1;
 }
 
+#ifdef LMMS_TESTING
+//! TEST SEAM (cluster new-p12-260): the bar steps the last refresh's barAt() walks took, so a test can
+//! require a row to be reached without visiting every bar on the way. Compiled only into the object
+//! build the tests link (tests/CMakeLists.txt defines LMMS_TESTING there).
+qint64 g_barWalkSteps = 0;
+#endif
+
 //! The bar @a row's event falls in, integrating the map's OWN time-signature events: an event's meter
 //! runs from its own tick to the next, so a 3/4 event shortens every bar after it. Dividing every tick by
 //! one global ticksPerBar ignored the map and showed the wrong bar once the metre changed (cluster 1768).
@@ -133,6 +140,9 @@ int barAt(const QJsonArray& events, int row, int projectNumerator, int projectDe
 		{
 			barStart += perBar;
 			++bar;
+#ifdef LMMS_TESTING
+			++g_barWalkSteps;
+#endif
 		}
 		// The meter from THIS tick on; the bar it interrupts was measured with the previous one.
 		const int eventNumerator = event.value(QStringLiteral("numerator")).toInt();
@@ -280,6 +290,9 @@ TempoMapPanel::TempoMapPanel(QWidget* parent) :
 
 void TempoMapPanel::refresh()
 {
+#ifdef LMMS_TESTING
+	g_barWalkSteps = 0;
+#endif
 	const QJsonObject map = run("transport.tempo_map_get").result;
 	{
 		const QSignalBlocker block(m_active);
@@ -316,6 +329,13 @@ int TempoMapPanel::rowCount() const
 {
 	return m_table->rowCount();
 }
+
+#ifdef LMMS_TESTING
+qint64 TempoMapPanel::barWalkStepsForTest()
+{
+	return g_barWalkSteps;
+}
+#endif
 
 bool TempoMapPanel::addEvent(int tick, int bpm)
 {
