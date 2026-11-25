@@ -293,6 +293,16 @@ DawProjectLossReport lossReportForModel(const DawProjectModel& model)
 	return loss;
 }
 
+//! Test seam, ZENE_TEST_CONTAINER_READ_FAULT: closes the file after its open and
+//! before the read, so the read gives back nothing while the open succeeded. It
+//! is the variable DawProjectZipRead.cpp arms for the container's read paths, so
+//! one fault describes "this container cannot be read" wherever the module reads
+//! it. Closing needs no platform call, so every platform runs the same fault.
+void armTestReadFault(QFile& source)
+{
+	if (!qgetenv("ZENE_TEST_CONTAINER_READ_FAULT").isEmpty()) { source.close(); }
+}
+
 } // namespace
 
 bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QString* error)
@@ -597,6 +607,7 @@ bool writeDawProject(const QString& path, const DawProjectModel& model,
 			}
 			return false;
 		}
+		armTestReadFault(written);
 		container = written.readAll();
 		written.close();
 		const qint64 bytes = container.size();
