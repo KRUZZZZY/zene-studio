@@ -125,6 +125,18 @@ python3 .../feature_check.py <worktree>   # EXIT 0, RESULT: PASS (feature-check-
   TSan-verified.
 - **Control commands.** None changed; no `ControlCommandsSnapshot` canary moves.
 
+## Re-verification (session after round 3, no product change)
+
+```text
+CCACHE_DISABLE=1 cmake --build build --target MidiWinMMShortMessageTest -j4   # EXIT 0 (build-40-green.log)
+cd build/tests && ctest -R '^MidiWinMMShortMessageTest$' --output-on-failure    # EXIT 0, 1/1 passed (test-40-green.log)
+python3 tests/mutations/new-p9-276/run-mutations.py --build-dir build --scratch <logs>/mutations-5 --jobs 4   # EXIT 0 (mutations-run-5.log)
+        RESULT: PASS - every mutant built and failed exactly the predicted slots (same slot sets as above)
+rebuild + ctest after the runner                                                # EXIT 0, EXIT 0, 1/1 passed (build-41-after.log, test-41-after.log)
+python3 .../submit_check.py <worktree> new-p9-276                               # EXIT 0, RESULT: PASS - submit (submit-check-4.log)
+```
+
+
 ## Other findings
 
 - ccache direct mode kept a stale object once when a header was removed and restored, so the
