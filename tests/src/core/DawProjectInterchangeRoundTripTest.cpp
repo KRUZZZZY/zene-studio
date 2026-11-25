@@ -2611,6 +2611,46 @@ void theWriteReportHashesTheFileItWrote()
 	}
 }
 
+//! Cluster new-p15-53: the report's file identity comes from a read-back of the
+//! written file, and a read that gave back less than the file holds still
+//! populated `bytes` and `sha256` and returned SUCCESS - a report describing a
+//! partial object as if it were the file. The container's own reader refuses a
+//! file that gave back less than it holds (DawProjectZipRead.cpp), so the report
+//! must refuse it too: a report that cannot describe the written file is a
+//! failed write, not a successful one.
+void aReadBackThatGivesBackNothingIsNotReportedAsSuccess()
+{
+	const QString file = path(m_directory, QStringLiteral("read-back-fault.dawproject"));
+	DawProjectWriteReport report;
+	QString error;
+	// The seam the strict reader's test uses: the file opens, then closes before
+	// the read, so the read gives back nothing while the open succeeded.
+	qputenv("ZENE_TEST_CONTAINER_READ_FAULT", "1");
+	const bool ok = writeDawProject(file, authoredModel(), &report, &error);
+	qunsetenv("ZENE_TEST_CONTAINER_READ_FAULT");
+
+	QVERIFY2(!ok, "a write whose read-back gave back nothing was reported as success");
+	QVERIFY2(error.contains(QStringLiteral("cannot be read back")), qPrintable(error));
+	// The report describes no file at all rather than a partial one.
+	QCOMPARE(report.bytes, qint64(0));
+	QVERIFY2(report.sha256.isEmpty(), "the report hashed the bytes of a failed read");
+
+	// The WRITE succeeded: the container is on disk, and reading it without the
+	// fault gives the two entries the writer put there.
+	std::vector<DawProjectEntry> entries;
+	QVERIFY2(dawProjectZipRead(file, &entries, &error), qPrintable(error));
+	QCOMPARE(entries.size(), static_cast<std::size_t>(2));
+
+	// Reconfiguration: with no report requested there is no read-back to fault,
+	// so the same write still succeeds.
+	const QString withoutReport = path(m_directory,
+		QStringLiteral("read-back-fault-no-report.dawproject"));
+	qputenv("ZENE_TEST_CONTAINER_READ_FAULT", "1");
+	const bool okWithoutReport = writeDawProject(withoutReport, authoredModel(), nullptr, &error);
+	qunsetenv("ZENE_TEST_CONTAINER_READ_FAULT");
+	QVERIFY2(okWithoutReport, qPrintable(error));
+}
+
 //! Luna cluster 4133: a successful write handed back an EMPTY loss report even
 //! when the model it was given said a track's contentType had been lost, so
 //! "this file lost nothing" was reported for a file that did lose something.

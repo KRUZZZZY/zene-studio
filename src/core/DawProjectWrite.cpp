@@ -303,6 +303,51 @@ void armTestReadFault(QFile& source)
 	if (!qgetenv("ZENE_TEST_CONTAINER_READ_FAULT").isEmpty()) { source.close(); }
 }
 
+/*! Reads the written container back so the report can describe the FILE at
+ *  \a path. False - with \a error set - when the bytes cannot describe that file:
+ *  the open fails, the read reports an error, or the read gives back fewer bytes
+ *  than the file holds. `readAll()` has no way to report an error, so both are
+ *  checked: its return describes the file only when the count matches. */
+bool readContainerBack(const QString& path, QByteArray* container, QString* error)
+{
+	QFile written(path);
+	if (!written.open(QIODevice::ReadOnly))
+	{
+		if (error)
+		{
+			*error = QStringLiteral("the container was written but cannot be read back: %1")
+				.arg(written.errorString());
+		}
+		return false;
+	}
+	const qint64 expected = written.size();
+	armTestReadFault(written);
+	const QByteArray bytes = written.readAll();
+	const QFileDevice::FileError readError = written.error();
+	const QString readReason = written.errorString();
+	written.close();
+	if (readError != QFileDevice::NoError)
+	{
+		if (error)
+		{
+			*error = QStringLiteral("the container was written but cannot be read back: %1")
+				.arg(readReason);
+		}
+		return false;
+	}
+	if (bytes.size() != expected)
+	{
+		if (error)
+		{
+			*error = QStringLiteral("the container was written but cannot be read back: "
+				"%1 of %2 bytes were read").arg(bytes.size()).arg(expected);
+		}
+		return false;
+	}
+	*container = bytes;
+	return true;
+}
+
 } // namespace
 
 bool dawProjectXmlFromModel(const DawProjectModel& model, QByteArray* xml, QString* error)
@@ -596,20 +641,8 @@ bool writeDawProject(const QString& path, const DawProjectModel& model,
 	// skipped entirely when no report is requested.
 	if (report != nullptr)
 	{
-		QFile written(path);
 		QByteArray container;
-		if (!written.open(QIODevice::ReadOnly))
-		{
-			if (error)
-			{
-				*error = QStringLiteral("the container was written but cannot be read back: %1")
-					.arg(written.errorString());
-			}
-			return false;
-		}
-		armTestReadFault(written);
-		container = written.readAll();
-		written.close();
+		if (!readContainerBack(path, &container, error)) { return false; }
 		const qint64 bytes = container.size();
 		report->path = path;
 		report->bytes = bytes;
