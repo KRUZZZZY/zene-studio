@@ -2,141 +2,117 @@ FIXED
 
 # cluster 5735-port — Failed renders can leave a partial output file
 
-## Verdict: REAL (fixed)
+5735-port: FIXED
 
-The finding is real on this branch. `render.render` handed the caller's own `out`
-path to the CLI render child (`src/core/ControlCommandsProject.cpp:375` before this
-change; the function now starts at `:465` and stages at `:472`). A child that could
-not finish writing therefore left its truncated file at `out`, replacing any good
-file that was already there. `renderSession` removed only the temporary project
-file, never the child's partial output (`src/core/ControlCommandsProject.cpp:565-574`).
+## Verdict: REAL, fixed (round 3)
 
-The same bug reached the other caller of `runCliRender`:
-`controlRenderProjectFile` (`src/core/ControlCommandsProject.cpp:684`). That is the
-render behind `project.subproject_add` and `project.subproject_refresh`
-(`src/core/ControlCommandsSubprojects.cpp:157`); both now take the same staged rule.
-`render.sections` goes through `render.render` itself
-(`src/core/ControlCommandsRenderSections.cpp:291-295`), so it is covered too.
+The finding is real. Before round 2, `render.render` handed the caller's own `out` to
+the CLI render child, so a child that could not finish left its truncated WAV at `out`
+(round-2 RED, before any product change: 524288 bytes of truncated RIFF where the
+caller's 544-byte file had been). Round 2 staged the child's output and published it
+only on success. Review sent round 2 back for three defects, all addressed here:
 
-The sibling render paths already staged their output and were used as the model:
-`RenderQueue` writes `.zene-render-<uuid>.<format>` beside the destination and
-commits only on success (`src/core/RenderQueue.cpp:109-123`, `:169-192`, `:246-256`),
-and `BounceInPlace` renders to `prepared.renderPath` and discards it on failure
-(`src/core/BounceInPlace.cpp:498-503`). The control command was the one render path
-that did not.
+1. **[regression] Symlink chains.** Round 2 followed one symlink hop
+   (`publishDestination`) and renamed the render onto the intermediate link. That
+   replaced `middle` with a file and left the terminal target unchanged. Now
+   `resolveRenderTarget` (`src/core/ControlRenderStaging.cpp:173`) follows the whole
+   chain one hop at a time. It reads each link's raw text (`readSymLink` on Qt >= 6.6,
+   `symLinkTarget` on older Qt, `:70`) and resolves relative text against the folder
+   of the link holding it. It refuses after `MaxRenderSymlinkHops = 40`
+   (`include/ControlRenderStaging.h:41`) and accepts a missing final file.
+   `runCliRender` resolves the chain before staging
+   (`src/core/ControlCommandsProject.cpp:372`). The staging file (`stagedRenderPath`,
+   `:165`) and the `.zene-backup-` file (`publishStagedRender`, `:111`) both go in the
+   final target's folder, so publishing is a same-filesystem rename onto the real file
+   and every link stays a link. The loudness report is still published beside `out`
+   (`publishRenderSidecar`, `:85`).
+2. **[not-fixed] Timeout cleanup raced the child.** Round 2 called `kill()` and then
+   removed the staging file at once. On Windows the child may still hold the file open
+   at that point. Now `abandonCliRender` (`:149`) runs `kill()` and then
+   `waitForFinished(30000)` (`:153-154`), and calls `discardStagedRender` only when
+   `state() == NotRunning`. `discardStagedRender` (`:53`) now returns whether it
+   succeeded and retries the removal 5 times, 100 ms apart. A staging file that stays,
+   or a child that cannot be confirmed gone, is named in the refusal: "a partial render
+   could not be removed: <path>" (`:158`). A render is published only when the child
+   exited normally with code 0: `renderExitCode` (`:135-139`) never treats a crash as
+   0. The hard-coded 600000 ms timeout is now `renderTimeoutMs()` (`:189`).
+   `ZENE_CONTROL_RENDER_TIMEOUT_MS` replaces it only when set to a positive integer;
+   that is the test seam for the timeout path.
+3. **[weakened-check] Runtime failures were skips.** In
+   `tests/control-render-output-publish.py`, `CannotInject` is raised only by
+   `file_size_limit` when `resource`, `RLIMIT_FSIZE` or `SIGXFSZ` is unavailable, and
+   only it maps to exit 77. `H.Timeout`/`H.Blocked`, connection errors and startup
+   failures now return 1 and print the app log (`log_on_error`).
 
-## Cause and fix
+The staging helpers moved from `ControlCommandsProject.cpp` into the new
+`src/core/ControlRenderStaging.cpp` / `include/ControlRenderStaging.h`. Their bodies
+are unchanged by the move; the move keeps `ControlCommandsProject.cpp` under the
+file-length gate. Both callers of `runCliRender` get the same behaviour:
+`renderSession` (`render.render`, which `render.sections` also goes through) and
+`controlRenderProjectFile` (`src/core/ControlCommandsProject.cpp:586`, used by
+`project.subproject_add` and `project.subproject_refresh`).
 
-Before the fix, `runCliRender` built the child command line with the caller's `out`
-directly:
+## Test matrix (tests/control-render-output-publish.py, ctest `ControlRenderOutputPublish`)
 
-```
-QStringList arguments = controlRenderCliArguments(projectPath, out, ...);
-```
+| Path | Check |
+|---|---|
+| normal | render over an existing file publishes RIFF/WAVE; the reply's bytes/sha256 match; no worker file is left |
+| normal + sidecar | the loudness report sits beside `out` and names `out` |
+| chain, absolute | `out -> middle -> target`: both links keep their text, target is RIFF/WAVE matching the reply's sha256/bytes, no worker file in either folder |
+| chain, relative | the same with relative link texts in different folders |
+| failure (RLIMIT_FSIZE 512 KiB) | refused; the previous file is byte-identical; nothing is created when `out` was absent; no worker file |
+| failure through a chain | target byte-identical, both links unchanged, no worker file |
+| timeout (`ZENE_CONTROL_RENDER_TIMEOUT_MS=1`, 64-bar song) | refused; `out` byte-identical; no `.zene-render-*` file; no child of the instance (running, zombie or render command line) in `/proc` when the reply arrives |
+| harness failure | missing binary → exit 1 (not 77) |
 
-The fix gives the child a unique staged name beside the destination and publishes it
-only after a normal, zero exit:
+The failures are injected, not timed: a file-size rlimit, and a 1 ms bound on a render
+of many megabytes. Audio-thread constraints: none apply. The changed code runs in the
+synchronous control handler, which already blocks on a child process. Platforms: the
+Qt API is guarded for Qt5 (`QT_VERSION` check around `readSymLink`). Hosted Qt5/MSVC
+builds were not run here.
 
-- `stagedRenderPath` (`src/core/ControlCommandsProject.cpp:385`) creates
-  `.zene-render-<uuid>.<format>` in the destination's own directory. The extension is
-  the format's own, because the CLI appends that extension to `-o`
-  (`src/core/main.cpp:1571-1575`), so the child writes exactly the path it was given.
-- `discardStagedRender` (`:393`) removes the staged audio and the child's loudness
-  sidecar when the child failed or timed out.
-- `publishStagedRender` (`:442`) renames the finished file over `out` only on success.
-  An existing file is moved aside and restored if the rename fails; a non-file at the
-  destination is never moved. A symlink at `out` is resolved (`publishDestination`,
-  `:402`) so a render through a link still writes the link's target, as before.
-- `publishRenderSidecar` (`:417`) moves `<out>.loudness.txt` beside the caller's path
-  and rewrites its `file` line from the staged name to `out`.
-- `runCliRender` (`:465-520`) stages, discards on failure, publishes on success, and
-  rewrites the child's quoted staged path in a refusal back to the caller's path.
+## Commands and EXIT codes (logs in `~/.config/kads/zene/state/runs/5735-port.r3/logs/`)
 
-No argument, schema, reply field, command id, undo step or data format changed. The
-change runs only in the control handler, which already waits for a child process off
-the audio path; it adds no allocation, lock, wait or log to any realtime function.
-
-## Test matrix
-
-| path | coverage |
-| --- | --- |
-| normal render | a successful `render.render` publishes over an existing file; the reply's `path`, `bytes` and `sha256` describe the file at `out`; it is RIFF/WAVE; no worker file is left |
-| failure, existing destination | `RLIMIT_FSIZE` makes the child fail at a fixed size; the refusal is typed; the caller's file is byte-identical; no worker file is left |
-| failure, no destination | the same injected failure leaves nothing at `out`; no worker file is left |
-| reconfiguration | the loudness report on: `<out>.loudness.txt` is published beside `out`, its `file` line names `out`, and no `.zene-render-` name reaches it; report off restores the setting |
-| other caller | `ControlBounceRenderTest` drives `project.subproject_add` through the stand-in render child, including the render-failure path |
-| audio thread | the change is confined to the control handler and a child process; no realtime code changed |
-| platforms | product code uses `QFile`/`QFileInfo`/`QUuid` only; the Python test uses POSIX `RLIMIT_FSIZE` and reports ctest `skipped` (exit 77), never passed, where it cannot inject it |
-
-## RED / GREEN evidence
-
-RED before the product fix (direct run, `test-1-red.log`, **EXIT=1**):
-
-```
-QT_QPA_PLATFORM=offscreen python3 tests/control-render-output-publish.py build/zene
-```
-
-The failing checks were explicit:
+The final 4b proof, on the final product layout:
 
 ```
-FAILED: the file the caller already had is byte-identical after a failed render
-    524288 bytes on disk, 544 expected, head=b'RIFF\x08\x00\x00\x00WAVEfmt '
-FAILED: a failed render left no file at the requested output path
-    size=524288
+git diff -- src/core/CMakeLists.txt src/core/ControlCommandsProject.cpp src/core/ControlRenderStaging.cpp include/ControlRenderStaging.h > logs/fix.patch   EXIT=0 (493 lines)
+git apply -R logs/fix.patch                                              EXIT=0
+cmake --build build --target zene -j4 > logs/build-5-red.log             EXIT=0
+(build/tests) ctest -R ControlRenderOutputPublish --output-on-failure > logs/test-7-red.log   EXIT=8
+git apply logs/fix.patch                                                 EXIT=0
+cmake --build build --target zene -j4 > logs/build-6-green.log           EXIT=0
+(build/tests) ctest -R 'ControlRenderOutputPublish|ControlBounceRender|ControlRenderSections|ControlRenderSurround' --output-on-failure > logs/test-8-green.log   EXIT=8 (only ControlRenderSurround failed: pre-existing, see Other findings)
 ```
 
-GREEN with the fix (`test-2-green.log`, **EXIT=0**): the same command printed
-`PASS: a failed render never leaves the caller a partial file`.
+RED (`test-7-red.log`) failing checks: for both the absolute and the relative chain,
+"middle.wav is still a link with the text it had", "the final target is the render, a
+RIFF/WAVE file", "the reply's sha256 …" and "the reply's bytes …". Also "a render that
+timed out is refused, not reported ok" and "the file the caller already had is
+byte-identical after a timed-out render".
 
-Rebuild after the fix: `cmake --build build --target zene -j4`
-(`build-1.log`, **EXIT=0**).
+GREEN (`test-8-green.log`): ControlBounceRenderTest Passed, ControlRenderSections
+Passed, ControlRenderOutputPublish Passed.
 
-## 4b: the test catches the bug
-
-```
-git diff -- src/core/ControlCommandsProject.cpp > .../logs/fix.patch && git apply -R .../logs/fix.patch
-```
-
-**EXIT=0**. Rebuilt `zene` (`build-3-red-final.log`, **EXIT=0**). ctest failed:
-
-```
-ctest -R '^ControlRenderOutputPublish$' --output-on-failure   (build/tests)
-```
-
-**EXIT=8** (`test-6-red-final.log`), with the same two bug checks FAILED and
-`0% tests passed, 1 tests failed out of 1`. Then:
+Earlier runs in this round, on the same product code before the file move:
+`test-1-green.log` (3 of 3 passed, EXIT=0), `test-2-red.log` (EXIT=8, the same
+failures) and `test-3-green.log` (EXIT=0).
 
 ```
-git apply .../logs/fix.patch
+QT_QPA_PLATFORM=offscreen python3 tests/control-render-output-publish.py build/zene > logs/test-4-green-direct.log   EXIT=0
+python3 tests/control-render-output-publish.py /tmp/qa5735-no-such-zene > logs/test-5-missing-binary.log         EXIT=1
 ```
 
-**EXIT=0**. Rebuilt `zene` (`build-4-green-final.log`, **EXIT=0**). ctest passed:
-
-```
-ctest -R '^ControlRenderOutputPublish$' --output-on-failure   (build/tests)
-```
-
-**EXIT=0** (`test-7-green-final.log`), `100% tests passed out of 1`.
-
-## Family tests
-
-- `ctest -R '^(ControlRenderPresets|ControlRenderSections|ControlRenderOutputPublish|ControlRenderFormatCapability)$' --output-on-failure`
-  from `build/tests`: **EXIT=0**, 4/4 passed (`test-3-family.log`).
-- `cmake --build build --target ControlRenderJobTest ControlRenderOutputPathTest -j4`:
-  **EXIT=0** (`build-2-tests.log`); `ctest -R '^(ControlRenderJobTest|ControlRenderOutputPathTest)$'`:
-  **EXIT=0**, 2/2 passed (`test-5-cpp-family.log`).
-- `cmake --build build --target ControlBounceRenderTest -j4`: **EXIT=0**
-  (`build-5-bounce-test.log`); `ctest -R '^ControlBounceRenderTest$'`: **EXIT=0**,
-  1/1 passed (`test-8-bounce-caller.log`). This is the `controlRenderProjectFile` /
-  subproject caller.
+In `test-4-green-direct.log` every check reads `ok`, including "no render child of the
+instance is running or unreaped when the reply arrives". The missing-binary run prints
+`FAILED: the run did not complete: Timeout: no lmms binary at …`. Before this round it
+printed SKIPPED and exited 77.
 
 ## Gates
 
-`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>`
-(`gates-1.log`, **EXIT=0**, unpiped):
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/gates-3.log`: **EXIT=0**
 
 ```
-feature-check kads-5735-port (base fa4a5f2e7, 654 changed files)
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
@@ -148,64 +124,59 @@ feature-check kads-5735-port (base fa4a5f2e7, 654 changed files)
 RESULT: PASS
 ```
 
+An earlier run (`gates-1.log`, EXIT=1) failed file-length on
+`ControlCommandsProject.cpp` (552 counted lines). That is why the helpers moved to
+`ControlRenderStaging.cpp`.
+
 ## Self-check
 
-- **REAL, not already fixed.** The RED run above measured a 524288-byte truncated RIFF
-  at `out` where the 544-byte caller file had been, before any product change.
-- **Deterministic test.** The failure is injected with a soft `RLIMIT_FSIZE` of 512 KiB
-  around the instance's spawn; there are no sleeps, wall-clock budgets or retry loops
-  in the failure checks. The only retry is the tree's printed guard on the separate
-  successful-render path. The song renders megabytes, so the child cannot finish
-  inside the limit. A host without `resource` reports skipped (77), never passed.
-- **Cause, callers and siblings.** Both `runCliRender` callers now stage:
-  `renderSession` (`render.render`) and `controlRenderProjectFile`
-  (`project.subproject_add`/`refresh`); `render.sections` renders through
-  `render.render`. `ControlBounceRenderTest`, `ControlRenderSections` and the C++
-  render tests pass. `RenderQueue` and `BounceInPlace` already staged and are
-  unchanged.
-- **No collateral damage.** Successful renders still replace the file at `out`
-  (the normal-path checks pass and the reply matches the file's own bytes/sha256); a
-  directory at `out` is still left alone; a symlink at `out` still writes its target;
-  the loudness sidecar keeps its name and `file` line; no command, schema, reply or
-  undo step changed.
-- **Realtime, undo and commands.** The changed code is in the synchronous control
-  handler, which already waits for a child; no audio-thread code, undo step or
-  control command was added.
-- **Registration.** The new test is registered in `tests/CMakeLists.txt`
-  (`ControlRenderOutputPublish`, skip code 77); `tests/CMakeLists.txt` already has an
-  inherited-file entry in `tests/upstream-modifications.txt`. The product file
-  `src/core/ControlCommandsProject.cpp` is already a registered fork source. The gates
-  above pass.
-- **ALREADY-FIXED / FALSE-POSITIVE**: not claimed. The bug was reproduced on this
-  branch before the change (`test-1-red.log`: 524288 bytes of truncated RIFF at `out`;
-  `test-6-red-final.log`: the same failure with the product patch reverted).
-- **Sibling commands listed by the completion check** (`app.about`, `app.ask`,
-  `app.help`, `app.online_help`, `app.task_cancel`, `app.tasks`, `app.tour`,
-  `app.tours`, `app.update_check_get`, `app.update_check_run`, `app.update_check_set`,
-  `app.version`, `app.whats_new`, `arrangement.fit_tracks`,
-  `arrangement.get_state`). None of them calls `runCliRender` or writes a render
-  output: the `app.*` handlers live in `src/gui/ControlCommandsShell.cpp` (dialogs,
-  help, tasks, update checks) and the `arrangement.*` handlers live in
-  `src/gui/ControlCommandsArrangerView.cpp` and
-  `src/core/ControlCommandsArrangementState.cpp` (view state, track heights). The
-  submit-check lists them because their names occur in text in the changed file's
-  family; this diff changes no command id, schema, reply or handler. The render
-  siblings that do share the path are covered above: `render.sections` through
-  `render.render`, `render.stems`/`exportstems` through its own already-staged
-  directory, the render queue through `RenderQueue`'s own staging, and
-  `project.subproject_add`/`refresh` through the second `runCliRender` caller
-  (proved by `ControlBounceRenderTest`, EXIT=0).
+- **REAL, not already fixed.** The round-2 RED reproduced the truncated file at
+  `out`. The round-3 RED (`test-7-red.log`, EXIT=8) shows the round-2 product still
+  replacing the intermediate link and ignoring the timeout path.
+- **Deterministic test.** No sleeps and no wall-clock waits in the test. Failures are
+  injected with RLIMIT_FSIZE and the timeout seam (1 ms against a 64-bar render); the
+  `/proc` scan runs right after the reply. Exit 77 is reserved for a host that cannot
+  inject RLIMIT_FSIZE. The only retry is the existing printed retry on the
+  successful-render path, which works around a known shutdown abort of the render
+  child. A real failure fails both attempts.
+- **Cause, callers and siblings.** Both callers of `runCliRender` go through
+  `resolveRenderTarget` and `finishCliRender`. `RenderQueue` and `BounceInPlace` keep
+  their own staging, unchanged. `render.sections` uses `render.render`.
+- **Timeout race design (no local TSan).** On timeout the parent process is the only
+  one that touches the staging file after `kill()`, and it does so only after
+  `waitForFinished` confirms the child is gone (`state() == NotRunning`). If the child
+  cannot be confirmed gone, the file is not removed and its path goes into the
+  refusal. This ordering matters on Windows, where an open file cannot be deleted. On
+  Linux the test sees the child reaped before the reply arrives. The Windows behaviour
+  is reasoned from the code, not run.
+- **No collateral damage.** Renders to plain paths behave as in round 2. A symlink at
+  `out` now updates the file the whole chain ends at; that is where a direct write
+  through the link would land. Without `ZENE_CONTROL_RENDER_TIMEOUT_MS` the timeout is
+  still 600000 ms. A crashed child whose exit code reads 0 is now reported as `-1` and
+  never published. A crashed child with a non-zero code keeps that code in the
+  message. No command, schema or undo step changed.
+- **Realtime, undo and commands.** No audio-thread code was touched and no control
+  command was added. The env var is a test seam, not a command.
+- **Registration.** `src/core/ControlRenderStaging.cpp` and
+  `include/ControlRenderStaging.h` are in `tests/fork-sources.txt` and
+  `tests/all-sources.txt`. `src/core/CMakeLists.txt` already has its entry in
+  `tests/upstream-modifications.txt`. The gates pass.
+- **Sibling commands listed by the completion check** (`app.*`, `arrangement.*`):
+  these are as answered in round 2. Their handlers are in
+  `src/gui/ControlCommandsShell.cpp`, `src/gui/ControlCommandsArrangerView.cpp` and
+  `src/core/ControlCommandsArrangementState.cpp`, and none of them renders through
+  `runCliRender` or writes a render output.
+
+Delegation: Sonnet wrote the extended regression test (chains, timeout, exit-code
+split) and then moved the staging helpers into `ControlRenderStaging.*` with their
+registration. Haiku ran both build/RED/GREEN sequences. I wrote the product fix,
+reviewed both diffs, ran the direct test and the gates, and wrote the report.
 
 ## Other findings
 
-- `ControlRenderSurround` fails on this host on two CLI-stderr checks
-  (`--channels 9.1` and `exportstems --channels surround`): the CLI output is empty, so
-  the test cannot find the expected text (`test-4-surround.log`, **EXIT=8**). This test
-  invokes the CLI directly and does not call `runCliRender`, so the staging change
-  cannot affect it; it is the pre-existing CLI-stderr condition noted by the earlier
-  5735 lane.
-- A successful `render.render` to a path without the format's extension now succeeds
-  (the staged name always carries the extension and is published to `out`). Before,
-  the child wrote `<out>.<ext>` and the command refused because `out` did not exist.
-  No test or documented contract depended on the old refusal; it is a consequence of
-  fixing the cause.
+- `ControlRenderSurround` fails on this host (`test-8-green.log`): the CLI's refusals
+  for `--channels 9.1` and `exportstems --channels surround` lack the expected text.
+  The test invokes the CLI directly, not `runCliRender`. It also failed in round 2
+  before this round's changes, so the cause predates this work.
+- A `render.render` to a path without the format's extension succeeds, as it did after
+  round 2: the staged name carries the extension and is published to `out`.

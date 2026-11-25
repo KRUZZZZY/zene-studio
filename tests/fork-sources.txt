@@ -1116,6 +1116,7 @@ include/ControlRackSupport.h
 include/ControlRecordingSupport.h
 include/ControlRegistry.h
 include/ControlRegistryGroups.h
+include/ControlRenderStaging.h
 include/ControlResultCheck.h
 include/ControlReversibility.h
 include/ControlRoom.h
@@ -1981,6 +1982,7 @@ src/core/ControlRecordingSupport.cpp
 src/core/ControlRegistry.cpp
 src/core/ControlRegistryRecords.cpp
 src/core/ControlRegistryRegistrations.cpp
+src/core/ControlRenderStaging.cpp
 src/core/ControlReversibility.cpp
 src/core/ControlReversibilityTable.cpp
 src/core/ControlReversibilityTableAction.cpp
