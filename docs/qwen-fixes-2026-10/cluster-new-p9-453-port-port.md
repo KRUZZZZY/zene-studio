@@ -85,7 +85,7 @@ Logs are in `~/.config/kads/zene/state/runs/new-p9-453-port-port.r1/logs/`.
 | `cd build/tests && ctest -R '^Sf2PlayerRealtimeTest$' --output-on-failure` → `test-1-sf2realtime.log` | **EXIT=0**, `1/1 Test #236: Sf2PlayerRealtimeTest ... Passed` |
 | `cd build/tests && ./Sf2PlayerRealtimeTest` → `test-2-sf2realtime-direct.log` | **EXIT=0**, `Totals: 14 passed, 0 failed, 0 skipped, 0 blacklisted` |
 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` → `gates-1.log` | **EXIT=0**, `RESULT: PASS` (0 changed files at that point) |
-| `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-453-port-port` → `submit-1.log` | see the log; recorded below |
+| `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-453-port-port` → `submit-1.log` | **EXIT=0**, `RESULT: PASS - submit`, no FAIL item |
 
 The guard that would fail if this finding came back is already in the tree, and it is what I ran:
 
