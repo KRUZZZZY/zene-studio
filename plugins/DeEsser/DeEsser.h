@@ -79,8 +79,17 @@ public:
 
 private:
 	ProcessStatus processImpl(InterleavedBufferView<float, 2> inOut) override;
-	//! Bypassed (or not processing for another reason): it turns nothing down, so it reports 0 dB.
-	void processBypassedImpl() override { m_reductionDb.store(0.f, std::memory_order_relaxed); }
+	//! Bypassed (or not processing for another reason): it turns nothing down, so it reports 0 dB, and
+	//! it forgets what it heard (the envelope, the gain, the filters' memory) so that it resumes from rest
+	//! and not from the attenuation the signal before the bypass left behind. Plain stores: no allocation.
+	void processBypassedImpl() override
+	{
+		m_envelope = 0.f;
+		m_gain = 1.f;
+		m_detector.reset();
+		m_low.reset();
+		m_reductionDb.store(0.f, std::memory_order_relaxed);
+	}
 	void design(float frequency, float rate);
 	//! The frame with this sample's gain applied in the chosen mode.
 	SampleFrame shaped(const SampleFrame& in, Mode mode, bool listen);
