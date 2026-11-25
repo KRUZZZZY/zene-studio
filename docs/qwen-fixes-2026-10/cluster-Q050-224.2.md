@@ -1,5 +1,92 @@
 IMPLEMENTED
 
+# Q050-224.2 - bounded raw crash frames (stage 2/4 of Q050-224), round 4
+
+Branch `feat/050-Q050-224.2-oc`. Round-4 logs and the proof manifest are in `~/.config/kads/zene/state/runs/Q050-224.2.r4/logs/`. Builds ran from the
+worktree root and tests from `build/tests`, with `QT_QPA_PLATFORM=offscreen` and output redirected to a log,
+never piped.
+
+## Round 4: the review points
+
+The round-3 review's two `[not-fixed]` points describe the round-1 code (`_Unwind_Backtrace()` at the old
+`CrashReporterFormat.cpp:242`, and a zero Darwin thread id). Commit `2ff68a5036` already fixed both, and the
+two later reviews gave no parsable verdict. This round re-checked both fixes and closed one more macOS gap.
+
+1. **Unwinder in the fatal handler.** It is gone. `captureFrames()` (`src/core/CrashReporterFormat.cpp`)
+   records the PC and then walks the saved frame-pointer chain using raw loads only, bounded by the
+   interrupted SP, the stack ceiling, a strictly increasing 16-byte-aligned chain and `kMaxCrashFrames` (24).
+   `fatal_handler_enters_neither_allocator_nor_loader` interposes `malloc`/`free`/`calloc`/`realloc`,
+   `dl_iterate_phdr` and `_dl_find_object` in a child that hits a real fault. In this session it was RED with
+   the round-1 product (exit 1, child exit 42) and GREEN now (exit 0); see the table.
+2. **macOS thread id.** I checked `currentThreadId()` by reading the source. It returns
+   `mach_thread_self()` and then calls `mach_port_deallocate()`: two Mach traps, no pthread lock, no
+   allocation, and nonzero for a live thread. The nonzero `thread=` assertion in the real-fault test is kept,
+   with no platform gate.
+3. **New this round, `a85a046063`: no Darwin `thread_local` in the handler.** On Darwin a `thread_local` is
+   allocated lazily through `malloc` on a thread's first access (dyld TLV). The walk read the recorded
+   ceiling from a `thread_local`, so a crash on a thread that never registered would have entered the
+   allocator in the signal. On Darwin the handler now reads the stack top with
+   `pthread_get_stackaddr_np(pthread_self())`, which libpthread serves as a plain `t->stackaddr` read for the
+   calling thread (no list lock; source:
+   https://github.com/apple-oss-distributions/libpthread/blob/main/src/pthread.c). The registration
+   functions no longer touch a `thread_local` on Darwin. Linux behaviour is unchanged. This box cannot run
+   the Darwin path; hosted CI compiles it. The now-unused `thread_local`s are `#if`-guarded so clang raises
+   no unused-variable warning.
+
+## Acceptance (round 4, all run in this session against `a85a046063`)
+
+| # | Criterion | Test | Log | Exit |
+|---|---|---|---|---|
+| 1 | A real fault report contains thread id, fault address when meaningful, PC and a bounded frame sequence | `CrashReporterFramesTest::report_contains_bounded_raw_frames`: a forked child with a real SIGSEGV at address 1. Asserts a nonzero `thread=`, `fault_addr=0x1`, a nonzero `pc=`, `frame[0]==pc`, 1-24 frames and size <= `kMaxReportBytes` | `run-3.log` (6 passed) | 0 |
+| 2a | Signal handling is bounded | `frames_are_capped_on_a_deep_crash`: a 200-deep real crash gives exactly 24 frames, and the budget is respected | `run-3.log` | 0 |
+| 2b | The handler is async-signal-safe: no allocator, no loader | `fatal_handler_enters_neither_allocator_nor_loader` (described above); `crash_while_the_loader_is_busy_still_reports` (a fault inside the `dl_iterate_phdr` callback writes the report, does not hang and dies by SIGSEGV) | `run-3.log` | 0 |
+| 2c | Normal shutdown leaves no report and no stale marker | `CrashReporterTest::clean_run_leaves_no_state`, in the 6/6 ctest run | `test-2.log` | 0 |
+| R | The new test fails without the product change | The four product files reverted to `2ff68a5036~1` with the test kept: `build-2.log` exit 0, then `run-2.log` **exit 1**: `FAIL! fatal_handler_enters_neither_allocator_nor_loader() the fatal handler entered the loader's object walk (child exit 42)`. Restored with `git checkout HEAD --`: `build-3.log` exit 0, `run-3.log` **exit 0**, `test-2.log` 6/6 **exit 0** | as listed | 1 -> 0 |
+
+The suite is `ctest -R 'CrashReporterTest|CrashReporterArmTest|CrashReporterFramesTest|WorkerAltStackTest|CrashReporterAppleSignalCheck|ControlCrashReporter' --output-on-failure`.
+It passed 6/6 before the cycle (`test-1.log`) and after it (`test-2.log`). The first green build was
+`build-1.log` exit 0.
+
+## Gates
+
+`submit_check.py` (`submit-check-1.log`) passes every item except `gates (feature_check.py)`. The session
+guard refused that runner: it runs `git -C ~/.local/share/zene-bunny-fix/qwen/gate-baselines/tree checkout -q
+--detach 3436a808b6`, a checkout outside this worktree, and the guard answered
+`bunny-guard: ... is not allowed in a Bunny lane` (`feature-check-1.log`, exit 1). I did not work around the
+refusal. Instead I ran the eight gates it wraps directly in the worktree:
+
+| Gate | Log | Exit |
+|---|---|---|
+| `bash tests/fork-sources-gate.sh` | `gate-1.log` | 0 |
+| `bash tests/all-sources-reproduce.sh` | `gate-2.log` | 0 |
+| `bash tests/no-upstream-regression-gate.sh` | `gate-3.log` | 0 |
+| `tests/scripted/check-namespace` | `gate-4.log` | 0 |
+| `bash tests/no-tautology-gate.sh` | `gate-5.log` | 0 |
+| `python3 tests/doc-figures-gate.py` | `gate-6.log` | 0 |
+| `bash tests/complexity-gate.sh --check` | `gate-7.log` | 2: `lizard is not installed` (the tool is missing on this box, the same as in the round-3 review; no `REGRESSION:` line was emitted) |
+| `bash tests/file-length-gate.sh --check` | `gate-8.log` | 0 |
+
+Complexity, checked by reading the code: the only new function, `stackCeilingForHandler()`, has a single
+path. The `captureFrames()` change replaces two variable reads with locals and adds no branch.
+
+## Commands, GUI, undo, format
+
+There are no new or changed commands and no GUI change. The unit changes only what a report file contains
+and how the handler gathers it. The existing `crash.*` commands and the `CrashReportMenu` offer dialog are
+untouched, so the snapshot and A16 line need no regeneration. Nothing edits a project, so the change is
+`not_mutating`. The report format stays `v1` with the additive `frames=`/`frame[i]=` lines. The manual
+(`data/manual/index.html`) already describes the frame list. `docs/050-features/Q050-224.2.md` and
+`docs/CRASH-REPORTER.md` now describe the Darwin stack-top read.
+
+Delegation: Sonnet ran the green build, the 6-test ctest suite, the direct test run and the full red/green
+revert cycle (`build-1..3`, `test-1..2`, `run-1..3`), committing nothing. I checked its claims against the
+log tails (`run-2.log` 5 passed/1 failed with the child-exit-42 FAIL, `run-3.log` 6 passed, `test-2.log`
+6/6) and confirmed `git status` was clean. I designed and wrote the Darwin change, the docs, the manifest
+and this report myself, because each was smaller than a request would have been. Haiku and DeepSeek were
+not needed.
+
+# Earlier rounds (history)
+
 # Q050-224.2 - bounded raw crash frames (stage 2/4 of Q050-224)
 
 Round 2 of the unit. The round-1 commits (`008a51f6`, `913d2e38`, `bc2480ef`, `9572f18b`) stay on the branch;
@@ -84,74 +171,56 @@ macOS thread id, by source inspection: `currentThreadId()` (`src/core/CrashRepor
 (no pthread lock, no allocation, nonzero for a live thread), and `tests/src/core/CrashReporterFramesTest.cpp`
 still asserts a nonzero `thread=` with no platform gate. Not executable on this Linux box; CI compiles it.
 
+
 ## Self-check
 
-**? Each new test FAILS with your product change reverted (reverse the non-test hunks, rebuild, run: exit
-code?), then PASSES restored.**
-Done twice in this session; the final exact cycle reverted the four product files to `HEAD` (the round-1
-unwinder) while keeping the new test. `build-16-red-exact.log` exit 0; `test-21-red-exact.log`:
-`FAIL! CrashReporterFramesTest::fatal_handler_enters_neither_allocator_nor_loader() the fatal handler
-entered the loader's object walk (child exit 42)`, QtTest **exit 1**. Restored with the saved 441-line
-`product-final2.patch`: `build-17-green-exact.log` exit 0, `test-25-final-probe-direct.log` `PASS`,
-**exit 0**; `test-24-final-suite.log` **exit 0**. (The earlier round-1 behaviour that the test catches was
-exactly `_Unwind_Backtrace()` in the handler.)
+**? Each new test FAILS with your product change reverted, then PASSES restored.**
+Yes, this session. With the four product files reverted to `2ff68a5036~1` and the test kept, `build-2.log`
+exited 0 and `run-2.log` exited **1** (`fatal_handler_enters_neither_allocator_nor_loader ... the loader's
+object walk (child exit 42)`). Restored with `git checkout HEAD --` (tree clean), `build-3.log` exited 0,
+`run-3.log` exited **0** (6 passed) and `test-2.log` exited **0** (6/6).
 
 **? Every acceptance criterion is proven by a test you ran yourself.**
-Criterion 1 + 1m: `report_contains_bounded_raw_frames` (nonzero thread, `fault_addr=0x1`, nonzero PC,
-`frame[0]==pc`, 1..24 frames) in `test-24-final-suite.log` exit 0, plus the standalone `probe-run-2.log`
-exit 139 with the quoted report. Criterion 2: `frames_are_capped_on_a_deep_crash` (24 exactly on Linux),
-`fatal_handler_enters_neither_allocator_nor_loader` (`test-25-final-probe-direct.log` exit 0) and
-`crash_while_the_loader_is_busy_still_reports`, all in `test-24-final-suite.log` exit 0. Normal shutdown:
-`CrashReporterTest::clean_run_leaves_no_state`, same run exit 0. Red/green: `test-21-red-exact.log` exit 1 ->
-`test-25-final-probe-direct.log` exit 0. Gates: `feature-check-3.log` exit 0.
+Criterion 1: `report_contains_bounded_raw_frames`, `run-3.log` exit 0. Criterion 2:
+`frames_are_capped_on_a_deep_crash`, `fatal_handler_enters_neither_allocator_nor_loader` and
+`crash_while_the_loader_is_busy_still_reports` (`run-3.log` exit 0), plus
+`CrashReporterTest::clean_run_leaves_no_state` for normal shutdown (`test-2.log` exit 0).
 
 **? Each edit is ONE undo step, and every new or changed command has an honest reversibility class.**
-There is no command, no model edit and no serialized data in this unit's diff, so no undo step and no
-reversibility class is introduced; the only honest classification for the touched behaviour is
-`not_mutating`. `git diff` of the final product patch contains only `include/CrashReporter*.h` and
-`src/core/CrashReporter*.cpp`; none of those files modifies a project, a model or an undo record.
+There is no command, no model edit and no project data in this unit, so no undo step is created. The
+behaviour is `not_mutating`.
 
 **? Nothing you added runs on the audio thread and allocates, frees, locks, waits, does I/O or emits a
 signal.**
-The flagged lines in the completion check (`plugins/ConvolutionReverb`, `plugins/LadspaEffect`,
-`src/core/AudioEngine.cpp::removeAudioBusHandle`) are not in this unit's diff; they come from other units in
-the 583-file branch diff. This unit's only addition to a real-time-called function is
-`noteThreadStackMarker()` inside `installAlternateStackForCurrentThread()` (called from
-`renderNextPeriod()`/JACK/device callbacks): it takes the address of one local and performs one
-thread-local `uintptr_t` compare/store (`src/core/CrashReporterFormat.cpp:307`). It does not allocate, free,
-lock, wait, read a file, call Qt or emit a signal. The allocating `recordThreadStackBounds()`
-(`pthread_getattr_np`) is called only from `install()` on the main/control thread, never from an audio
-callback. `sigaltstack()` in that function was already there and is a syscall on a static buffer. TSan does
-not run on this box; the new state is `thread_local` plus a fixed array in the existing same-thread
-snapshot, and the re-entrancy guard still admits exactly one writer across threads.
+The only code this unit puts on a real-time path is `noteThreadStackMarker()`, called through
+`installAlternateStackForCurrentThread()`. On Linux it takes one local's address and does a compare/store on
+a `thread_local`. On Darwin it is now empty, so it no longer triggers the lazy TLV allocation on a render
+thread's first call. The allocating `recordThreadStackBounds()` runs only from `install()`, on the
+main/control thread. TSan does not run on this box. By design, all new state is either per-thread or a
+fixed array in the crashing thread's own snapshot, and the existing re-entrancy guard admits one writer.
 
 **? Old projects still load and render exactly as before; new data round-trips through save and load.**
-No project, serialization, song, transport, take, recording or audio-engine file is touched. The report file
-is not project data; its format is the same v1 format with the same additive frame lines introduced in
-stage 2. There is nothing new to save or load, so round-trip behaviour is unchanged.
+No project, serialization, song, transport or engine file is touched, and the crash report is not project
+data. There is nothing new to save or load.
 
 **? Completeness: real user path and agent path; the edge case tried.**
-User path: a real `SIGSEGV` writes `crash-reports/zene-crash-report.txt`; the next start's existing offer
-dialog (`src/gui/CrashReportMenu.cpp`) still offers Keep / Open folder / Discard, and the manual describes
-it. Agent path: the existing `crash.*` commands over the control socket, exercised by `ControlCrashReporter`
-in `test-24-final-suite.log` (exit 0), read the same on-disk report. Edge cases tried: a real fault three
-frames deep (walk reaches callers), a 200-deep stack (exactly 24), a fault while the loader lock is held
-(no hang, report written, signal death), allocator/loader interposition (neither entered), and normal
-start/close (no report, no stale marker). `report_contains_bounded_raw_frames` and the loader-busy case also
-assert death by the signal, so the report cannot be faked by swallowing the crash.
+User path: a real SIGSEGV writes `crash-reports/zene-crash-report.txt`, and the existing offer dialog shows
+it at the next start. Agent path: the existing `crash.*` commands, exercised by `ControlCrashReporter`
+(`test-2.log` exit 0). Edge cases tried: a fault three frames deep, a 200-deep stack (capped at 24), a fault
+while the loader lock is held (no hang), allocator/loader interposition (neither is entered), and a clean
+start and close (no report, no marker). Every fault case also asserts that the process dies by the signal.
 
 **? The GUI test drives the visible control and checks the SAME registered command ran.**
-This unit adds no GUI action and no command, so there is no new visible control to drive and no new command
-identity to check. The existing crash-report offer dialog and its `crash.*` commands are unchanged; the
-completion check's GUI-path item reports the existing `src/gui/CrashReportMenu.cpp` and its existing GUI
-test, not a new one from this unit. Changing the report's frame block does not change what the dialog does.
+This unit adds no GUI action and no command, so there is no new control to drive. The existing dialog and
+the `crash.*` commands are unchanged.
 
 **? Qt 5.15 / MSVC / macOS < 10.15 portability.**
-No Qt API is used in the new capture code, so there is nothing Qt-6-only to guard; the code is C++ and
-POSIX. All POSIX headers and the `pthread_getattr_np`/`sigaltstack`/`syscall`/`ucontext` code are under
-`#ifndef LMMS_BUILD_WIN32` (Windows gets the unchanged no-op stubs). Darwin uses `mach_thread_self()` and
-`pthread_get_stackaddr_np()`, both long predating 10.15, with `_DARWIN_C_SOURCE`; `pthread_mach_thread_np`
-is deliberately avoided because it is not signal-safe. There is no `std::filesystem`, no `small`/`near`/
-`far`/`interface`/`min`/`max` identifier, and the only compiler-specific extensions
-(`__builtin_return_address`, `.symver`, interposition attributes) are guarded by `__GNUC__`/`__linux__`/
-`__GLIBC__`, with the allocator probe skipped outside glibc-on-Linux.
+The capture code uses no Qt API. All POSIX code is under `#ifndef LMMS_BUILD_WIN32`, and Windows keeps the
+no-op stubs. The new Darwin call `pthread_get_stackaddr_np()` was already used in this file. It is declared
+in `<pthread.h>` (included) and has existed since macOS 10.4. The `thread_local`s are `#if !defined(__APPLE__)`
+so nothing on Darwin is left unused. There is no `std::filesystem` and no `small`/`near`/`far`/`interface`/
+`min`/`max` identifier.
+
+**Completion check.** `submit-check-1.log`: every item passes except `gates`, whose runner the session guard
+refused (see Gates). Seven of its eight gates pass when run directly. The complexity gate cannot run here
+because `lizard` is not installed.
