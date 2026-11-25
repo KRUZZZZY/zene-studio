@@ -53,7 +53,14 @@ Local TSan does not run on this box; the race argument above is by design.
 
 ## Self-check
 
-(see below, appended after the completion check)
+Completion check (submit_check.py, submit-check-1.log) EXIT=1: every item PASS except `gates (feature_check.py)`, which FAILs
+only because feature_check.py's internal `git checkout --detach` on its baseline tree is refused by bunny-guard (exit 97, feature-check-1.log). That is BLOCKED
+on the gate runner, not a finding in this change; the hand checks are listed under Gates.
+
+- Test fails reverted / passes with fix: reverted product change -> ctest EXIT=8 (test-red-2.log, `gainReductionDb()` 11.99998 vs 0); with fix -> EXIT=0 (test-green-2.log).
+- Deterministic: fixed 4410-frame 10 kHz sine blocks computed in the test, engine fixed at 44100 Hz, no timers, sleeps or threads; the bypass is driven by `setEnabled(false/true)` between blocks.
+- Cause and completeness: the cause is that `processBypassedImpl` reset only the meter; all state that `processImpl` carries between blocks (`m_envelope`, `m_gain`, `m_detector`, `m_low`) is now reset there. `m_frequency`/`m_rate` are coefficient caches, not signal state, and stay. Compressor.cpp:595 already resets its state the same way.
+- Collateral: no saved parameter, no model, no command changed; only transient DSP state is zeroed on a bypassed block. A project loads exactly as before. The audio path is unchanged while enabled.
 
 Delegation: Haiku was started three times (a first build run that found configure is refused for sessions and the new target needed a build-triggered regeneration; a second build run that reported a test-side compile error; one throwaway no-op). DeepSeek ran one build attempt that found `processAudioBuffer` is protected on the plugin type. The final red/green/4b runs were done by me directly because they take seconds in this tree.
 
