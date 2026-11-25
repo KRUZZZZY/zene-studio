@@ -60,7 +60,11 @@ bash tests/file-length-gate.sh --check                                          
 2. **The callers.** `InstrumentLoaderThread::run` (arranger drop) null-guards the load and emits the new
    `refused(plugin, reason)`; `dropEvent` reports it and takes back the empty track it created; the file-drop branch does
    the same inline; `FileBrowser::handleFile` and `InstrumentTrackWindow::dropEvent` report the refusal instead of
-   dereferencing a null descriptor; `PresetPreviewPlayHandle` tolerates a placeholder.
+   dereferencing a null descriptor; `PresetPreviewPlayHandle` tolerates a placeholder. The five call sites that ignore
+   the result (`ControlCommandsClipImportFile.cpp:247`, `ControlCommandsDocuments.cpp:116`,
+   `ControlCommandsTrackRole.cpp:342`, `ControlTrackRouting.cpp:104`, `Song.cpp:1934/1937`) never dereference it, so a
+   refused load there simply leaves the new track holding the same placeholder it held before.
+
 3. **The tests.** `CarlaRackNoRuntimeTest` is inverted, not extended: a configured `tripleoscillator` must survive a
    refused replacement over the agent path, the device card's Replace Instrument... with the real picker, and Carla
    Patchbay, with `nodeName()`, the track name, the track's parameter value and the journal count unchanged and the save
