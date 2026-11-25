@@ -130,6 +130,18 @@ the registration and no-upstream-regression gates agree.
   `src/core/ControlRecordingSupport.cpp:77-83`, `src/core/audio/TrackRecorder.cpp:262-272`,
   `src/core/RecordingJournal.cpp:310-319`, `src/core/SampleDecoder.cpp:144-151`,
   `src/core/ControlCommandsRecordingPlace.cpp:148` and `:173-178`, plus the measurement in `logs/probe-1.log`.
+- **Gates: 8/8 rows PASS through `gates_driver.py`, but `submit_check.py`'s own row is FAIL, and that is the one
+  unfixable item in this lane.** `feature_check.py` exits 1 without printing a table (`logs/gates-1.log`): its
+  base listing for `9913d36d5` is not cached, computing it needs `git checkout --detach` in
+  `~/.local/share/zene-bunny-fix/qwen/gate-baselines/tree` (refused by the lane guard, exit 97), and that tree is
+  mounted read-only for this session — `touch` there answers `Read-only file system`
+  (`findmnt`: the whole `zene-bunny-fix` tree is `ro`), so the tool cannot write the cache either way. That is why
+  `submit-check-1.log` shows `FAIL gates (feature_check.py)`. I did not edit the gate, the guard, the baseline
+  limits or the cache; the driver above reuses the unmodified gate functions and prints the same eight rows. To
+  settle the row, run `feature_check.py` from a lane whose `gate-baselines/` cache is writable.
+- **Git state.** One commit on `bugs/qwen-new-p16-30` (`efdef674f3`), this report only; `git status --porcelain`
+  prints nothing. `git diff --stat 050/m0-train-52...HEAD` is this file alone, so no product file, no
+  `tests/fork-sources.txt` and no `tests/upstream-modifications.txt` entry is involved.
 
 ## Other findings
 
