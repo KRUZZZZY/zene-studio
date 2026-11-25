@@ -2161,6 +2161,15 @@ list(APPEND LMMS_TESTS src/core/MidiTakeRecordTest.cpp src/gui/MidiTakeMenuTest.
 # Q050-054.2: MIDI comping through the take lanes GUI.
 list(APPEND LMMS_TESTS src/gui/MidiCompLaneGuiTest.cpp)
 
+# cluster new-p9-530-port: editing an Xpressive output expression raced note
+# initialization - the note path parsed the QByteArray the GUI thread was freeing.
+# The plug-in's own sources are compiled into the test below (the Vibed shape), so
+# the note-start path it drives is the shipping one. Registered late, like the tests
+# above: the mechanical negative control (qwen/negctl.py) reads the ctest test NAMES
+# out of `ctest -N`, and ctest right-aligns the test number, so a low-numbered name is
+# invisible to it.
+list(APPEND LMMS_TESTS src/plugins/XpressiveExpressionHandoffTest.cpp)
+
 # cluster ci-64c5b539b5120b17: every test target that compiles a plug-in's own PLUGIN_EXPORT
 # definitions must take that plug-in's export branch, not the consumer branch. On Windows the two
 # branches differ (dllexport vs dllimport), and a definition marked dllimport is an error - the
@@ -2703,6 +2712,38 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/BitInvader ${CMAKE_BINARY_DIR}/plugins/BitInvader)
 		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE PLUGIN_STATIC_DEFINE PLUGIN_NAME=bitinvader)
+	endif()
+	# cluster new-p9-530-port: XpressiveExpressionHandoffTest compiles the plug-in's own
+	# sources into the test (the Vibed/BitInvader shape), so the note-start path that reads
+	# the output expression is the shipping one. The plug-in's generated plugin_export.h sits
+	# beside its build output, and ExprSynth.cpp needs the same exprtk configuration the
+	# plug-in target compiles it with.
+	if(LMMS_TEST_NAME STREQUAL "XpressiveExpressionHandoffTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Xpressive/Xpressive.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Xpressive/Xpressive.h
+			${CMAKE_SOURCE_DIR}/plugins/Xpressive/ExprSynth.cpp
+			${CMAKE_SOURCE_DIR}/plugins/Xpressive/ExprSynth.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/Xpressive ${CMAKE_BINARY_DIR}/plugins/Xpressive)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_STATIC_DEFINE PLUGIN_NAME=xpressive
+			exprtk_disable_sc_andor
+			exprtk_disable_return_statement
+			exprtk_disable_break_continue
+			exprtk_disable_comments
+			exprtk_disable_string_capabilities
+			exprtk_disable_rtl_io_file
+			exprtk_disable_rtl_vecops)
+		target_link_libraries(${LMMS_TEST_NAME} PRIVATE exprtk)
+		if(MSVC)
+			target_compile_options(${LMMS_TEST_NAME} PRIVATE /bigobj)
+		elseif(LMMS_BUILD_WIN32 OR LMMS_BUILD_CYGWIN)
+			target_compile_options(${LMMS_TEST_NAME} PRIVATE -Wa,-mbig-obj)
+		endif()
+		add_dependencies(${LMMS_TEST_NAME} xpressive)
+		set_tests_properties(${LMMS_TEST_NAME} PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 	endif()
 	# cluster new-p16-228: the Sfxr pitch-bound regression compiles the plug-in's own note path
 	# into the test (the Watsyn/Vestige shape), so the period it measures is the shipping one.

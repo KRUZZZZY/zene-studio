@@ -111,6 +111,9 @@ Xpressive::Xpressive(InstrumentTrack* instrument_track) :
 {
 	m_outputExpression[0]="sinew(integrate(f*(1+0.05sinew(12t))))*(2^(-(1.1+A2)*t)*(0.4+0.1(1+A3)+0.4sinew((2.5+2A1)t))^2)";
 	m_outputExpression[1]="expw(integrate(f*atan(500t)*2/pi))*0.5+0.12";
+	// A note created before anything is edited parses these defaults.
+	m_outputExpressionSnapshot[0].publish(m_outputExpression[0]);
+	m_outputExpressionSnapshot[1].publish(m_outputExpression[1]);
 
 	// The render path runs on the audio thread, where logging is not allowed. A
 	// failing expression is recorded there and reported from the main thread by this
@@ -118,6 +121,69 @@ Xpressive::Xpressive(InstrumentTrack* instrument_track) :
 	m_errorReportTimer.setInterval(1000);
 	connect(&m_errorReportTimer, &QTimer::timeout, this, &Xpressive::reportPendingError);
 	m_errorReportTimer.start();
+}
+
+Xpressive::ExpressionSnapshot::ExpressionSnapshot()
+{
+	m_published.store(new Expression{}, std::memory_order_release);
+}
+
+Xpressive::ExpressionSnapshot::~ExpressionSnapshot()
+{
+	delete m_published.load(std::memory_order_relaxed);
+	for (auto* expression : m_retired) { delete expression; }
+	for (auto* expression : m_free) { delete expression; }
+}
+
+const char* Xpressive::ExpressionSnapshot::text()
+{
+	// Announce the text before the writer may reuse it: the writer keeps the
+	// announced one out of the free list until the next read.
+	m_readerReading.store(true, std::memory_order_seq_cst);
+	Expression* const published = m_published.load(std::memory_order_seq_cst);
+	m_readerExpression.store(published, std::memory_order_seq_cst);
+	m_readerReading.store(false, std::memory_order_seq_cst);
+	return published->text.constData();
+}
+
+void Xpressive::ExpressionSnapshot::publish(const QByteArray& expression)
+{
+	Expression* const fresh = takeFree();
+	fresh->text = expression;
+	Expression* const old = m_published.exchange(fresh, std::memory_order_seq_cst);
+	m_retired.push_back(old);
+	reclaim();
+}
+
+Xpressive::ExpressionSnapshot::Expression* Xpressive::ExpressionSnapshot::takeFree()
+{
+	if (m_free.empty()) { return new Expression{}; }
+	Expression* const expression = m_free.back();
+	m_free.pop_back();
+	return expression;
+}
+
+void Xpressive::ExpressionSnapshot::reclaim()
+{
+	// While the reader is between taking a text and announcing it, the writer
+	// cannot tell which one it took, so it reuses none.
+	if (m_readerReading.load(std::memory_order_seq_cst)) { return; }
+	Expression* const held = m_readerExpression.load(std::memory_order_seq_cst);
+	for (auto it = m_retired.begin(); it != m_retired.end(); )
+	{
+		if (*it == held) { ++it; continue; }
+		m_free.push_back(*it);
+		it = m_retired.erase(it);
+	}
+}
+
+void Xpressive::setOutputExpression(int i, const QByteArray& expression)
+{
+	// The GUI thread's copy is what the editor shows and what saveSettings stores;
+	// the audio thread reads the published one, so an edit reaches a note only
+	// through the hand-off.
+	m_outputExpression[i] = expression;
+	m_outputExpressionSnapshot[i].publish(expression);
 }
 
 void Xpressive::saveSettings(QDomDocument & _doc, QDomElement & _this) {
@@ -160,6 +226,9 @@ void Xpressive::loadSettings(const QDomElement & _this) {
 
 	m_outputExpression[0]=_this.attribute( "O1").toLatin1();
 	m_outputExpression[1]=_this.attribute( "O2").toLatin1();
+	// A project load replaces the text the audio thread parses, so publish it.
+	m_outputExpressionSnapshot[0].publish(m_outputExpression[0]);
+	m_outputExpressionSnapshot[1].publish(m_outputExpression[1]);
 	m_wavesExpression[0]=_this.attribute( "W1").toLatin1();
 	m_wavesExpression[1]=_this.attribute( "W2").toLatin1();
 	m_wavesExpression[2]=_this.attribute( "W3").toLatin1();
@@ -203,9 +272,12 @@ void Xpressive::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) {
 
 	if (!nph->m_pluginData) {
 
-		auto exprO1 = new ExprFront(m_outputExpression[0].constData(),
+		// The text is the GUI thread's published copy, never m_outputExpression: a
+		// note that starts while the expression editor rewrites that member would
+		// otherwise parse the buffer the editor is freeing (cluster new-p9-530-port).
+		auto exprO1 = new ExprFront(m_outputExpressionSnapshot[0].text(),
 			Engine::audioEngine()->outputSampleRate()); // give the "last" function a whole second
-		auto exprO2 = new ExprFront(m_outputExpression[1].constData(), Engine::audioEngine()->outputSampleRate());
+		auto exprO2 = new ExprFront(m_outputExpressionSnapshot[1].text(), Engine::audioEngine()->outputSampleRate());
 
 		auto init_expression_step1 = [this, nph](ExprFront* e) { //lambda function to init exprO1 and exprO2
 			//add the constants and the variables to the expression.
@@ -561,6 +633,7 @@ void XpressiveView::expressionChanged() {
 	auto e = castModel<Xpressive>();
 	QByteArray text = m_expressionEditor->toPlainText().toLatin1();
 	QByteArray* stored_expression = nullptr;
+	int output_expression = -1;
 
 	switch (m_selectedGraphGroup->model()->value()) {
 		case W1_EXPR:
@@ -573,15 +646,25 @@ void XpressiveView::expressionChanged() {
 			stored_expression = &e->wavesExpression(2);
 			break;
 		case O1_EXPR:
-			stored_expression = &e->outputExpression(0);
+			output_expression = 0;
 			break;
 		case O2_EXPR:
-			stored_expression = &e->outputExpression(1);
+			output_expression = 1;
 			break;
 	}
-	const bool stored_expression_changed = stored_expression && *stored_expression != text;
-	if (stored_expression)
+	const bool stored_expression_changed = output_expression >= 0
+		? e->outputExpression(output_expression) != text
+		: stored_expression && *stored_expression != text;
+	if (output_expression >= 0)
+	{
+		// The audio thread parses the published copy, so the edit goes through the
+		// hand-off rather than being written in place.
+		e->setOutputExpression(output_expression, text);
+	}
+	else if (stored_expression)
+	{
 		*stored_expression = text;
+	}
 	if (m_wave_expr)
 		m_graph->setEnabled(m_smoothKnob->model()->value() == 0 && text.size() == 0);
 

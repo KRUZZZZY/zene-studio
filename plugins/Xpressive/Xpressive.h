@@ -31,6 +31,7 @@
 #include <QTimer>
 
 #include <atomic>
+#include <vector>
 
 #include "AutomatableModel.h"
 #include "Graph.h"
@@ -66,6 +67,72 @@ class Xpressive : public Instrument
 {
 	Q_OBJECT
 public:
+	/*! An output expression text the audio thread is allowed to read.
+	 *
+	 * m_outputExpression is GUI-thread storage: every keystroke in the expression
+	 * editor rewrites it in place, and a QByteArray assignment releases the buffer
+	 * it replaces. A note that starts while such a rewrite is in flight creates its
+	 * synthesiser from the text (playNoteImpl), so reading that member there races
+	 * the editor and can parse freed storage.
+	 *
+	 * The GUI thread publishes an immutable copy instead. A publication fills a
+	 * text nobody can see yet and hands it over with one atomic store; a published
+	 * text is never written again, so the audio thread parses one whole expression
+	 * however many publications pass while it does.
+	 *
+	 * The audio thread announces the text it took, so the GUI thread sees which
+	 * published text it must not reuse: the announced one stays out of the free
+	 * list until the reader takes another one (the reader parses the text before it
+	 * takes another one). While the reader is between taking a text and announcing
+	 * it, the GUI thread cannot tell which one it took, so it reuses none of them.
+	 * The two flags are read and written with sequentially consistent ordering,
+	 * which is what makes that hand-over race free: the reader's "I am reading"
+	 * store and the writer's "is it reading" load cannot both miss each other.
+	 *
+	 * One writer (the GUI thread), one reader (the audio thread), no lock, no
+	 * allocation and no logging on the audio thread: it takes the published text
+	 * with one atomic load and parses it exactly as before.
+	 *
+	 * The class is public so the regression test can drive the hand-off itself;
+	 * nothing outside the plug-in uses it.
+	 */
+	class ExpressionSnapshot
+	{
+	public:
+		ExpressionSnapshot();
+		~ExpressionSnapshot();
+		ExpressionSnapshot(const ExpressionSnapshot&) = delete;
+		ExpressionSnapshot& operator=(const ExpressionSnapshot&) = delete;
+
+		//! The published text: the audio thread takes it and parses it.
+		const char* text();
+		//! Hands off @a expression as the current text.
+		void publish(const QByteArray& expression);
+
+	private:
+		//! One immutable expression text.
+		struct Expression
+		{
+			QByteArray text;
+		};
+
+		//! A text nobody can be reading: a free one, or a new one.
+		Expression* takeFree();
+		//! Return the published texts the reader cannot be using any more.
+		void reclaim();
+
+		//! The text the audio thread reads.
+		std::atomic<Expression*> m_published{nullptr};
+		//! The text the reader last took: it may still be parsing it.
+		std::atomic<Expression*> m_readerExpression{nullptr};
+		//! True while the reader is between taking a text and announcing it.
+		std::atomic_bool m_readerReading{false};
+		//! Published texts waiting to be reused. GUI thread only.
+		std::vector<Expression*> m_retired;
+		//! Texts that may be written into. GUI thread only.
+		std::vector<Expression*> m_free;
+	};
+
 	Xpressive(InstrumentTrack* instrument_track );
 
 	void deleteNotePluginData( NotePlayHandle* nph ) override;
@@ -89,6 +156,10 @@ public:
 	IntModel& selectedGraph() { return m_selectedGraph; }
 	QByteArray& wavesExpression(int i) { return m_wavesExpression[i]; }
 	QByteArray& outputExpression(int i) { return m_outputExpression[i]; }
+	//! Stores an output expression and hands it to the audio thread, which reads
+	//! only the published copy. Every writer of m_outputExpression goes through
+	//! here so that no edit can be left unpublished.
+	void setOutputExpression(int i, const QByteArray& expression);
 
 	FloatModel& parameterA1() { return m_parameterA1; }
 	FloatModel& parameterA2() { return m_parameterA2; }
@@ -130,6 +201,8 @@ private:
 	IntModel m_selectedGraph;
 	QByteArray m_wavesExpression[3];
 	QByteArray m_outputExpression[2];
+	//! What the audio thread parses: the published copy of each output expression.
+	ExpressionSnapshot m_outputExpressionSnapshot[2];
 	FloatModel m_parameterA1;
 	FloatModel m_parameterA2;
 	FloatModel m_parameterA3;

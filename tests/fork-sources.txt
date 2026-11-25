@@ -4079,3 +4079,8 @@ docs/qwen-fixes-2026-10/cluster-ci-3eb9bda8aa6785a3-port.md
 # cluster ci-c487f7d0c9f0a1ac (2026-11): every target compiling the NAM engine must carry the Eigen
 # -Wno-error=deprecated-enum-enum-conversion suppression (linux-arm64 -DUSE_WERROR; fork-NEW test).
 tests/nam-eigen-options-coverage-check.py
+# cluster new-p9-530-port (2026-10): editing an Xpressive output expression raced note
+# initialization - the note path parsed the QByteArray the editor was freeing. The hand-off
+# regression test through the plug-in's own note path, and its report, are fork-NEW.
+tests/src/plugins/XpressiveExpressionHandoffTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p9-530-port.md
