@@ -197,10 +197,16 @@ git -C .../qwen/gate-baselines/tree checkout -q --detach 9913d36d53... → fatal
   Instead every command the table aggregates was run on this worktree and its exit code recorded
   above: the six simple gates EXIT=0 and both ratchet gates EXIT=0 in `--check` mode, which reports
   "no regressions" and lists no item in `src/core/Note.cpp` or
-  `tests/src/core/MidiProbabilityPersistenceTest.cpp`. `lizard`, which `complexity-gate.sh` needs and
-  the image lacks, was installed into the run's own log folder and used through `PYTHONPATH`
-  (`pip-lizard.log`, EXIT=0); the gate script itself was not modified. `submit_check.py` reports the
-  same single FAIL for the same reason, with every other item PASS.
+  `tests/src/core/MidiProbabilityPersistenceTest.cpp`. That is exactly the test `feature_check.py`
+  applies to a ratchet row: it collects only lines matching `^REGRESSION: ` and drops those already
+  in the base listing, so with no `REGRESSION` line at all both rows are PASS for ANY base -
+  `gate-complexity.log` (96 lines) and `gate-file-length.log` (10 lines) each end in
+  `PASS (check mode: no regressions; baseline not written)` and contain no such line. `lizard`, which
+  `complexity-gate.sh` needs and the image lacks, was installed into the run's own log folder and used
+  through `PYTHONPATH` (`pip-lizard.log`, EXIT=0); the gate script itself was not modified.
+  `submit_check.py` reports the same single FAIL for the same reason
+  (`logs/submit_check.log`), with every other item PASS: commits on the branch, working tree clean,
+  the report, and tests added or changed.
 
 ## Other findings (not touched here)
 
