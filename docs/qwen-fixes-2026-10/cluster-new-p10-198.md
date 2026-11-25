@@ -182,6 +182,60 @@ Registration: `tests/upstream-modifications.txt` gains one line each for
 product file, so `tests/fork-sources.txt` is untouched; both test files were already
 in `tests/all-sources.txt`.
 
+## Gates
+
+| Step | Command | EXIT |
+|---|---|---:|
+| Canonical gate command | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/gates-1-feature-check.log 2>&1` | 1 |
+| Gates with a writable baseline cache and `lizard` on `PYTHONPATH` | `ZENE_GATE_CACHE=.../logs/scratch/gate-cache FEATURE_CHECK_LOG_DIR=.../logs/gates-2-logs PYTHONPATH=.../logs/scratch/pylibs python3 .../logs/scratch/gate/feature_check_local.py <worktree> > .../logs/gates-2-feature-check.log 2>&1` | 0 |
+
+The canonical command cannot run in this sandbox, for two reasons outside the
+repository. Both are recorded rather than worked around silently:
+
+1. `feature_check.py:58-64` needs a baseline listing for the base commit
+   (`9913d36d5`, this branch's parent) and writes it under
+   `~/.local/share/zene-bunny-fix/qwen/gate-baselines/`. That path is a read-only
+   mount here, and the listing for `9913d36d5` is not in the shipped cache, so the
+   script dies on its own `git checkout --detach` (also blocked by the lane guard)
+   and then on the unwritable cache. Output, `gates-1-feature-check.log`, EXIT 1:
+   `bunny-guard: 'git -C .../gate-baselines/tree checkout -q --detach 9913d36d...'
+   is not allowed in a Bunny lane` and
+   `CalledProcessError: ... returned non-zero exit status 97`. `touch` in that
+   directory: `Read-only file system` (EXIT 1). Same failure as
+   `docs/qwen-fixes-2026-10/cluster-5082.md:86-87`.
+2. `tests/complexity-gate.sh:35-37` exits 2 when `lizard` is missing, and no Python
+   on this box has it (`python3 -c "import lizard"` -> ModuleNotFoundError,
+   `command -v lizard` -> EXIT 1).
+
+The equivalent run therefore changed exactly one line of the gate script (`CACHE`
+reads `ZENE_GATE_CACHE`; `.../logs/scratch/gate/feature_check_local.diff`),
+redirected the log dir through the script's own `FEATURE_CHECK_LOG_DIR`, and put a
+`pip install --target` copy of `lizard` on `PYTHONPATH`. The base listing for
+`9913d36d5` was measured the way the script measures it: the base tree extracted with
+`git archive 9913d36d5 | tar -x` into `.../logs/scratch/base-tree` (EXIT 0), the two
+ratchet gates run there (`.../logs/scratch/base-complexity.log`, EXIT 0;
+`.../logs/scratch/base-file-length.log`, EXIT 0), and the `REGRESSION:` lines keyed
+with the script's own `key()`. Both listings are empty (a clean base has no
+regressions), which is what `gates-2-logs` then compared against. With that cache the
+gate table is:
+
+```
+feature-check kads-new-p10-198 (base 9913d36d5, 5 changed files; logs in .../logs/gates-2-logs)
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
+EXIT=0
+```
+
+No gate limit, baseline or check was edited; the repository's gate logic is the one
+that ran.
+
 ## Self-check
 
 - *Verdict backed by evidence?* Yes: `ALREADY-FIXED` half cites
