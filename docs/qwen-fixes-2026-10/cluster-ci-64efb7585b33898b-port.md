@@ -177,6 +177,10 @@ RESULT: PASS
   session because the lane git shim refuses its baseline checkout (exit 97) and its baseline cache
   lives on a read-only mount; the same gates all pass when run directly, and the full table passes
   with a writable cache. Nothing in the gate code, a limit, a baseline or a ratchet was changed.
+  `python3 .../qwen/submit_check.py <worktree> ci-64efb7585b33898b-port` accordingly prints one
+  FAIL, `gates (feature_check.py)`, and PASS on every other row
+  (`commits on the branch`, `working tree clean`, `report ...`, `tests added or changed`); the
+  table is in `logs/submit-1.log`.
 - **Registration.** The new script is in `tests/fork-sources.txt`; the `tests/CMakeLists.txt`
   change (an upstream file) is recorded in `tests/upstream-modifications.txt`; both end with a
   newline and the fork-sources gate passes.
