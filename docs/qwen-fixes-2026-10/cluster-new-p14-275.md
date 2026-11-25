@@ -81,34 +81,98 @@ commit adds only this report (a doc file) and no product, test or list-file chan
 file-length and registration gates have nothing new to judge. The PASS/FAIL table itself was not produced and
 is unverified.
 
+## Round 2
+
+The round-1 review's verdict reads exactly:
+
+> proof fits the claim: no artifact shows `code-reference-or-test` (kind code-reference (path and line that show the behaviour) or a regression-test)
+
+The round-1 manifest held three `code-reference` artifacts with `path` and `line` fields. The schema
+(`schemas/proof.json`) and the checker are not reachable from this sandbox: `~/.config/kads/zene` holds only
+`state/`. So I could not tell which field was missing. Round 2 keeps the code-references and adds the other
+accepted kind: a test that pins the contract the verdict rests on, with a real RED.
+
+**Contract test.** `AudioClipLoopTest::aClipThatRendersThroughTheStretcherNeverEngagesItsLoop`
+(`tests/src/core/AudioClipLoopTest.cpp:219-246`). It loops a clip through `clip.set_loop` and checks the loop is
+engaged. Then:
+- **(A)** It makes the clip tempo-leading (`SourceTempo` at 120 BPM, `WarpStretchMode::PreservePitch`), which is
+  the stretcher path. It asserts `!rendersLinearly()`, that the loop is still stored in `ClipEdits` (as an old
+  project could store it), and `!audioloop::engaged`. After restoring `FollowProject`, the loop is engaged again.
+- **(B)** It writes `transpose = 2` with the Rubber Band-backed `WarpStretchMode::Beats`, also the stretcher path,
+  and asserts the stored loop is still not engaged.
+
+The test is deterministic: fixed values on an in-memory song, no timing, threads or sleeps.
+
+**RED / GREEN.** No product code changes in this cluster, so RED uses a temporary mutation that puts the
+finding's scenario back. It deletes the `!refusal(clip).isEmpty() ||` guard from `audioloop::engaged`
+(`src/core/ClipAudioLoop.cpp:82`). That lets a stretched clip engage its loop, which is the only way the
+stretcher could meet a loop. The mutation was reverted afterwards (`git diff -- src/` empty; `git status`
+shows only the test file).
+
+Logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p14-275.r2/logs/`. Build:
+`cmake --build build --target AudioClipLoopTest -j4 > $L/build-NN.log 2>&1; echo EXIT=$?`. Test (from build/tests):
+`ctest -R AudioClipLoopTest --output-on-failure > $L/test-NN.log 2>&1; echo EXIT=$?`.
+
+| Step | Build | EXIT | Test | EXIT | Result |
+|------|-------|------|------|------|--------|
+| GREEN, code as committed | build-01.log | 0 | test-01.log | 0 | `100% tests passed out of 1` |
+| RED, guard mutated out | build-02.log | 0 | test-02.log | 8 | `FAIL! : AudioClipLoopTest::aClipThatRendersThroughTheStretcherNeverEngagesItsLoop() '!audioloop::engaged(*subject)' returned FALSE.` `Loc: [../../tests/src/core/AudioClipLoopTest.cpp(234)]`, `Totals: 12 passed, 1 failed` |
+| GREEN, mutation reverted | build-03.log | 0 | test-03.log | 0 | `100% tests passed out of 1` |
+
+**Gates.** `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > $L/gates-04.log 2>&1`
+gave EXIT=1. As in round 1, the run stopped at the script's baseline step: the lane guard refuses
+`git -C .../gate-baselines/tree checkout -q --detach 9913d36d53...` (exit 97). The six simple gates and the two
+ratchet gates do not need that baseline, so they were run directly from the worktree.
+Their logs are in `.../new-p14-275.r2/delegate/01-deepseek/logs/`, because the DeepSeek delegate's sandbox could not write to `$L`.
+
+| Gate | Command | EXIT |
+|------|---------|------|
+| fork-sources | `bash tests/fork-sources-gate.sh` | 0 (`PASS: every tracked source in scope is registered`) |
+| all-sources-reproduce | `bash tests/all-sources-reproduce.sh` | 0 |
+| no-upstream-regression | `bash tests/no-upstream-regression-gate.sh` | 0 |
+| check-namespace | `tests/scripted/check-namespace` | 0 |
+| no-tautology | `bash tests/no-tautology-gate.sh` | 0 |
+| doc-figures | `python3 tests/doc-figures-gate.py` | 0 |
+| file-length | `bash tests/file-length-gate.sh --check` | 0 (`PASS (check mode: no regressions; baseline not written)`) |
+| complexity | `bash tests/complexity-gate.sh --check` | 2: `complexity-gate: lizard is not installed`; **not measured** |
+
+`lizard` is not installed on this box: `which lizard` finds nothing and `import lizard` fails. Installing it is a
+system change outside this lane, so I did not install it. The only new function has no branches (CCN 1, from
+the diff), so it cannot be a new complexity item, but the gate itself did not run.
+
 ## Self-check
 
-Completion check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p14-275 > .../logs/submit-3.log 2>&1; echo EXIT=$?`
-gave EXIT=1. Commits, clean tree, report and tests items: PASS. The only item left is `FAIL gates (feature_check.py)`.
-That FAIL is the guard refusal quoted under "Commands and results" (the gate script's baseline `git checkout --detach`
-exits 97 in this lane). The FAIL cannot be cleared from inside the lane without getting around the guard, and the
-run's rules forbid that, so the gate step is **BLOCKED**. The table was never produced. Gate status for this commit
-(one doc file, no product, test or list change) is unverified.
+Completion check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p14-275`
+(its exit code and output are recorded in the commit-time log `submit-*.log` in the r2 log folder). The `gates`
+row can only show FAIL while `feature_check.py`'s baseline checkout is refused by the lane guard (exit 97, quoted
+above). That step is **BLOCKED** in this lane; every gate it wraps was run directly and is listed above.
 
-- **Regression test fails without the fix and passes with it:** not applicable. The verdict is FALSE-POSITIVE and no
-  product code changed, so there is nothing to revert. The existing `AudioClipLoopTest` passes unchanged
-  (build-1.log EXIT 0, test-1.log EXIT 0, "100% tests passed out of 1").
-- **Deterministic test:** no new test was added. `AudioClipLoopTest::refusalsAreTyped` drives `clip.set_loop` through
-  the control registry with fixed tick values (`start` 48 / `length` 32) on an in-memory song, with no timing, sleeps
-  or threads.
-- **Fix at the cause and complete; callers and siblings:** no fix was made. I checked every path that could pair the
-  stretcher with a loop: the audible render `play()` (`src/core/SamplePlayHandle.cpp:616-634`), the muted advance
-  `advanceSourceSilently` (`:807-846`), the window choice in `SampleTrack` (`src/tracks/SampleTrack.cpp:289-290`), and
-  both command entries (`ControlCommandsClipEnvelope.cpp:207-208`, `ControlCommandsNoteTools.cpp:330-331`). All of
-  them are gated by `audioloop::refusal` / `audioloop::engaged`.
-- **No collateral damage:** the commit contains only `docs/qwen-fixes-2026-10/cluster-new-p14-275.md`
-  (`git show --stat HEAD`). Project loading, saved data and render behaviour are untouched.
-- **Code or contract that shows FALSE-POSITIVE:** `src/core/SamplePlayHandle.cpp:129-134,164,183` (the stretcher needs
-  `!rendersLinearly || transpose != 0`); `src/core/ClipAudioLoop.cpp:69-77,79-84` (the loop is engaged only when
-  `rendersLinearly && transpose == 0`); `src/core/ClipAudioLoop.cpp:197-210` and `include/SamplePlayHandle.h:318`
-  (`m_loopMode` is `Off` unless engaged). The intended contract is the refusal text at `src/core/ClipAudioLoop.cpp:71,73`:
-  "a warped or tempo-leading clip's audio cannot loop in this release" / "a transposed clip's audio cannot loop in
-  this release".
+- **The test fails without the change and passes with it.** The cluster has no product change, since the
+  verdict is FALSE-POSITIVE. The equivalent proof is the mutation of the contract the verdict rests on: test-02
+  EXIT 8 with the `audioloop::engaged` refusal guard removed; test-01 and test-03 EXIT 0 with the code as
+  committed.
+- **Deterministic.** The new test drives `clip.set_loop` through the control registry, then direct setters
+  (`setWarpTempoMode`, `setSourceTempo`, `setWarpStretchMode`, `setClipEdits`) with fixed values (length 32
+  ticks, 120 BPM, transpose 2). There is no wall clock, sleep or thread.
+- **At the cause and complete; callers and siblings.** No product code changed. Every path that could pair the
+  stretcher with a loop was checked:
+  - the audible render `play()` (`src/core/SamplePlayHandle.cpp:616-634`)
+  - the muted advance `advanceSourceSilently` (`:807-846`)
+  - SampleTrack's window choice (`src/tracks/SampleTrack.cpp:289-290`)
+  - both command entries (`src/core/ControlCommandsClipEnvelope.cpp:207-208`,
+    `src/core/ControlCommandsNoteTools.cpp:330-331`)
+
+  All of them are gated by `audioloop::refusal` / `audioloop::engaged`.
+- **No collateral damage.** The branch's diff adds only this report and a test function. Project loading,
+  saved data and render behaviour are untouched. The full `AudioClipLoopTest` suite passes (test-03: 13
+  functions, EXIT 0).
+- **Code or contract that shows FALSE-POSITIVE:**
+  - `src/core/SamplePlayHandle.cpp:129-134,164,183`: the stretcher needs `!rendersLinearly || transpose != 0`.
+  - `src/core/ClipAudioLoop.cpp:69-77,79-84`: the loop is engaged only when `rendersLinearly && transpose == 0`.
+  - `src/core/ClipAudioLoop.cpp:197-210` and `include/SamplePlayHandle.h:318`: `m_loopMode` stays `Off`
+    unless the loop is engaged.
+  - The refusal text at `src/core/ClipAudioLoop.cpp:71,73` states the intended contract.
+  - The contract is now pinned by `tests/src/core/AudioClipLoopTest.cpp:219-246`.
 
 ## Other findings
 
@@ -121,4 +185,6 @@ run's rules forbid that, so the gate step is **BLOCKED**. The table was never pr
   deterministic trigger and was not reproduced here. Local TSan does not run on this box, so this is
   reasoning only.
 
-Delegation: Haiku: searched tests/ for the loop-refusal coverage (its search tools were unavailable, so it found `AudioClipLoopTest` by reading), built `AudioClipLoopTest` and ran it (build-1.log, test-1.log, both EXIT 0; I checked the log tails myself). I did the diagnosis, the code reading and the report myself. There was no fix to design, so no Sonnet or DeepSeek task was needed.
+Delegation (round 1): Haiku: searched tests/ for the loop-refusal coverage (its search tools were unavailable, so it found `AudioClipLoopTest` by reading), built `AudioClipLoopTest` and ran it (build-1.log, test-1.log, both EXIT 0; I checked the log tails myself). I did the diagnosis, the code reading and the report myself. There was no fix to design, so no Sonnet or DeepSeek task was needed.
+
+Delegation (round 2): Sonnet wrote the contract test and ran the GREEN / mutation-RED / GREEN sequence (logs 01-03); I checked the diff and the log tails. DeepSeek ran the eight gate scripts directly (logs in delegate/01-deepseek/logs); I checked the tails of the fork-sources, complexity and file-length logs. I wrote the manifest, the report and the commit. Haiku was not needed this round.
