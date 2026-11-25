@@ -236,6 +236,25 @@ EXIT=0
 No gate limit, baseline or check was edited; the repository's gate logic is the one
 that ran.
 
+The pre-submit check was run three times (`submit-check-1.log` before the report was
+committed, EXIT 1; `submit-check-2.log` and `submit-check-3.log` after it, EXIT 1).
+`submit-check-3.log`, verbatim:
+
+```
+PRE-SUBMIT CHECK for new-p10-198
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-new-p10-198.md
+  PASS  tests added or changed - tests/src/plugins/LadspaChannelCountFixture.cpp, tests/src/plugins/PluginPortsMigrationTest.cpp
+  FAIL  gates (feature_check.py)
+```
+
+The one FAIL is the canonical-gate row explained above, and it is environmental:
+`submit_check.py:168-170` runs `ROOT/feature_check.py` unchanged, and that script
+cannot write its base listing in this sandbox. The same gate logic prints
+`RESULT: PASS` for all eight gates when its cache directory is writable, which is
+the run recorded above.
+
 ## Self-check
 
 - *The regression test FAILS with the product change reverted and PASSES with it
