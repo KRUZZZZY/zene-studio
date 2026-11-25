@@ -78,6 +78,32 @@ code and exposed the existing `registerAll()` call. Haiku searched the audio pat
 singletons. A second Haiku ran the guard RED/GREEN cycle with line 55 removed and then restored, and
 rebuilt zene. I made the verdict, reviewed the diff and wrote this report.
 
+## Self-check
+- **The test fails without the product line and passes with it.** No product change was made, because the
+  fix already exists. The guard was checked against the existing fix instead. With
+  `MixerOptions::instance();` removed from ProjectSectionRegistry.cpp:55, ctest exited 8
+  (04-test-guard-red.log, the FAIL! line quoted above). With the line restored, ctest exited 0
+  (06-test-guard-green.log). On HEAD as committed, ctest exited 0 (02-test-red.log).
+- **Deterministic.** There are no sleeps or timing. The seam is the `Engine::initProgress` signal with a
+  `Qt::DirectConnection` on the same thread, at the message "Launching audio engine threads"
+  (src/core/Engine.cpp:90). That signal fires before `startProcessing()` (Engine.cpp:91), so no audio
+  thread exists that could register MixerOptions first. The test never calls `MixerOptions::instance()`.
+- **At the cause and complete.** The cause, construction on first use by the audio path, is already
+  removed: `Song::Song()` builds every section through `registerAll()` (Song.cpp:186). I checked the
+  siblings the audio thread reads (AutomationLatency, AutomationSwitches, MidiPlayback; call sites listed
+  above). All of them are in `registerAll()` (ProjectSectionRegistry.cpp:53, 54, 66). The other
+  `MixerOptions::instance()` callers are UI-thread commands (ControlCommandsMixerTools.cpp:87/95/494,
+  ControlCommandsMixerMeters.cpp:135-154, ControlCommandsProjectInfo.cpp:75/86).
+- **No collateral damage.** No product code changed: the diff is the test file and this report. Saved
+  projects and the load path are untouched. No limit or check was added.
+- **ALREADY-FIXED evidence.** src/core/ProjectSectionRegistry.cpp:55 (`MixerOptions::instance();`),
+  src/core/Song.cpp:186 (`projectsections::registerAll();` in `Song::Song()`), src/core/Engine.cpp:73
+  (`new Song`) before Engine.cpp:91 (`startProcessing()`). Fixed in commit d4aa916d4c.
+- **Gates.** submit_check reports `FAIL gates (feature_check.py)` because the lane guard refuses that
+  script's `git checkout` in its baseline tree (exit status 97, 08-feature-check.log). The brief forbids
+  working around a refused command, so this item stays open. That step is BLOCKED by the environment, not
+  by the change.
+
 ## Other findings
 - Gate tooling: feature_check.py runs `git checkout` in its baseline tree, and the lane guard refuses
   that, so the gates cannot run in this lane.
