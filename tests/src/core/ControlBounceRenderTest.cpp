@@ -47,6 +47,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <new>
 #include <vector>
 
 #include <sndfile.h>
@@ -70,6 +71,17 @@ namespace
 
 constexpr int FakeRate = 44100;
 constexpr int FakeSeconds = 4;
+
+bool s_nextCreateThrows = false;
+
+//! A track creation that fails the way a song which cannot make another track fails: the allocation inside
+//! Track::create throws (Track::setCreateFaultProbeForTest is the seam ArrangerFileDropTest already uses).
+void throwOnNextCreate()
+{
+	if (!s_nextCreateThrows) { return; }
+	s_nextCreateThrows = false;
+	throw std::bad_alloc();
+}
 
 struct RenderRequest
 {
@@ -591,6 +603,39 @@ private slots:
 		QCOMPARE(run(QStringLiteral("project.subproject_add"), {{QStringLiteral("path"), inner}}).errorKind, ControlErrorKind::Refused);
 		QCOMPARE(trackCount(), tracks);
 		QCOMPARE(run(QStringLiteral("project.subprojects")).result.value(QStringLiteral("count")).toInt(), 0);
+	}
+
+	/*! BUG 13: the render is written before the track that plays it exists, so a placement the song cannot do
+	 *  used to leave a WAV nothing names - no track plays it, no <subproject> link records it and no undo step
+	 *  brings it back. The refusal (the typed `refused` a thrown create becomes at the control surface's own
+	 *  boundary) takes the render with it. */
+	void aSubprojectRefusedForWantOfATrackLeavesNoRenderBehind()
+	{
+		Song* song = Engine::getSong();
+		trackWithClip(QStringLiteral("Inner"));
+		const QString inner = out(QStringLiteral("inner4.mmp"));
+		QVERIFY(song->saveProjectFile(inner));
+		song->clearProject();
+		const QString main = out(QStringLiteral("main4.mmp"));
+		QVERIFY(song->guiSaveProjectAs(main));
+		// Where the render goes: this project's own -subprojects folder, made by the render that is refused.
+		const QDir renders(QFileInfo(main).dir().filePath(QStringLiteral("main4-subprojects")));
+		QVERIFY(!renders.exists());
+		const int tracks = trackCount();
+
+		s_nextCreateThrows = true;
+		Track::setCreateFaultProbeForTest(throwOnNextCreate);
+		const ControlResult refused = run(QStringLiteral("project.subproject_add"), {{QStringLiteral("path"), inner}});
+		Track::setCreateFaultProbeForTest(nullptr);
+
+		QVERIFY2(!refused.ok, "the placement failure was answered as a success");
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QCOMPARE(trackCount(), tracks);
+		QCOMPARE(run(QStringLiteral("project.subprojects")).result.value(QStringLiteral("count")).toInt(), 0);
+		// The render DID run (it made the folder) and its file is gone: a WAV left here is one nothing in the
+		// project could ever play - the link follows the track, and no track was made.
+		QVERIFY(renders.exists());
+		QCOMPARE(renders.entryList(QDir::Files), QStringList{});
 	}
 };
 
