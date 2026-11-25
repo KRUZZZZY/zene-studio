@@ -11,18 +11,18 @@ before the first control when the cast fails (`src/gui/LfoControllerDialog.cpp:2
 
 ## Evidence in the product files
 
-- `src/gui/LfoControllerDialog.cpp:248-261` — `modelChanged()`; the six dereferences are
+- `src/gui/LfoControllerDialog.cpp:248-261`  -  `modelChanged()`; the six dereferences are
   `:256-261` (`&m_lfo->m_baseModel` … `&m_lfo->m_multiplierModel`). Before this fix `:250` was
   followed directly by `:256`. The guard is at `:252-254`:
   `if (m_lfo == nullptr) { return; }`.
-- `src/gui/ModelView.cpp:53-75` — `ModelView::setModel()` accepts any `Model*` (null included),
+- `src/gui/ModelView.cpp:53-75`  -  `ModelView::setModel()` accepts any `Model*` (null included),
   runs `doConnections()` (`:89-96`, two `QObject::connect` calls on the model pointer) and then
   `modelChanged()` (`:73`), unconditionally.
-- `src/gui/ModelView.cpp:81-83` — `unsetModel()` is the base class's documented detach: it installs
+- `src/gui/ModelView.cpp:81-83`  -  `unsetModel()` is the base class's documented detach: it installs
   a default-constructed `Model`, which is non-null but is not an `LfoController`.
-- `include/ModelView.h:40-41` — `setModel`/`unsetModel` are public and virtual; `:54-57` `castModel()`
+- `include/ModelView.h:40-41`  -  `setModel`/`unsetModel` are public and virtual; `:54-57` `castModel()`
   is `dynamic_cast<T*>( model() )`.
-- `src/core/LfoController.cpp:335-338` — the shipped construction path always passes a real
+- `src/core/LfoController.cpp:335-338`  -  the shipped construction path always passes a real
   `LfoController`, so the crash is not reachable from the Controller Rack today. It is reachable
   through the public `ModelView` API of a `LMMS_EXPORT` widget, which is the same reachability
   argument the sibling fixes in this tree accepted (`docs/qwen-fixes-2026-10/cluster-new-p14-329.md`,
@@ -32,7 +32,7 @@ before the first control when the cast fails (`src/gui/LfoControllerDialog.cpp:2
 ## Siblings checked
 
 - `PeakControllerDialog::modelChanged()` (`src/gui/PeakControllerDialog.cpp:81-84`) only assigns
-  `m_peakController = castModel<PeakController>()` and dereferences nothing — nothing to fix.
+  `m_peakController = castModel<PeakController>()` and dereferences nothing  -  nothing to fix.
 - The dialog's own `askUserDefWave()` (`src/gui/LfoControllerDialog.cpp:209-219`) does
   `dynamic_cast<LfoController*>(model())` at `:214` and dereferences it at `:216`. Left unchanged: its
   dereference is only reachable after the user picks a file in the modal `FileDialog::openWaveformFile()`
@@ -45,7 +45,7 @@ before the first control when the cast fails (`src/gui/LfoControllerDialog.cpp:2
 
 ## Regression tests
 
-`tests/src/gui/KnobKeyboardTest.cpp` — the file that already holds the two sibling detached-model
+`tests/src/gui/KnobKeyboardTest.cpp`  -  the file that already holds the two sibling detached-model
 regressions for knob model views (`aTempoSyncKnobStopsAfterWarningAboutADetachedModel:228`,
 `aTempoSyncBarModelEditorStopsAfterWarningAboutADetachedModel:249`). A new test *target* was not
 possible: this lane's build tree refuses reconfiguration (see Limitations), so the five cases live in
@@ -63,11 +63,11 @@ no product header is changed for the tests.
 Determinism: no wall clock, sleeps, threads or timers. Every case is a synchronous call on a stack
 `LfoController` and a stack dialog; the crash is a real `SIGSEGV`, and the RED stack in
 `red-1-anLfoControllerDialogSurvivesADetachedModel.log` shows it inside
-`QtSharedPointer::ExternalRefCountData::getAndRef` — the `QObject::connect` that
+`QtSharedPointer::ExternalRefCountData::getAndRef`  -  the `QObject::connect` that
 `ModelView::doConnections()` makes on the bogus `&m_lfo->m_baseModel` (`accessing address 0x…0b8`,
 i.e. the offset of that member off a null `m_lfo`).
 
-Audio thread: nothing here is on the audio path — the change is one early return in a GUI
+Audio thread: nothing here is on the audio path  -  the change is one early return in a GUI
 `modelChanged()`; no allocation, lock, wait, log or signal is added. No command was added or
 changed (`ControlCommandsSnapshot` canary untouched). Undo: none of this is journalled, one call
 still moves no undo step.
@@ -112,7 +112,7 @@ The GUI harness screenshot (`window.toggle {editor: controller_rack}` then
 
 | Command | EXIT | Output |
 | --- | ---: | --- |
-| `FEATURE_CHECK_LOG_DIR=LOG/gates python3 …/feature_check.py <worktree>` → `gate-feature-check.log` | 1 | `bunny-guard: 'git -C …/qwen/gate-baselines/tree checkout -q --detach 9913d36d…' is not allowed in a Bunny lane` — its baseline for this branch's base commit is not cached, and the guard refuses the checkout it makes to compute one |
+| `FEATURE_CHECK_LOG_DIR=LOG/gates python3 …/feature_check.py <worktree>` → `gate-feature-check.log` | 1 | `bunny-guard: 'git -C …/qwen/gate-baselines/tree checkout -q --detach 9913d36d…' is not allowed in a Bunny lane`  -  its baseline for this branch's base commit is not cached, and the guard refuses the checkout it makes to compute one |
 
 So every gate was run on its own, exactly as `feature_check.py` invokes it:
 
@@ -135,13 +135,21 @@ and one for `tests/src/gui/KnobKeyboardTest.cpp`. No new source file was added, 
 
 - `cmake -S . -B build` is refused: `bunny-guard: configuring is the parent's job; the lane build
   tree is already configured` (`configure-1.log`, EXIT=97). A new test target therefore cannot be
-  registered, which is why the regression went into the existing `KnobKeyboardTest` target —
+  registered, which is why the regression went into the existing `KnobKeyboardTest` target  - 
   `cmake --build build --target LfoControllerDialogTest` answered `No rule to make target`
   (`build-1.log`, EXIT=2) before that.
 - `feature_check.py` and the `gates` row of `submit_check.py` cannot run here for the reason in the
   table above. I did not change either tool or any gate limit.
 
 ## Self-check
+
+The completion check (`submit_check.py`, `submit-check-1.log`) reported one FAIL, `gates
+(feature_check.py)`, and asked the five questions below. The FAIL is the environment limit above,
+not a gate: the checker runs `feature_check.py`, whose baseline for this branch's base commit is not
+cached and whose baseline `git checkout` the parent's own guard refuses
+(`bunny-guard: … is not allowed in a Bunny lane`, `gate-feature-check.log`). All eight gates it runs
+were run individually on this tree and every one passed (table above). I did not write the tool's
+baseline cache, change a gate limit or edit a gate.
 
 - **The regression test FAILS with the product change reverted and PASSES with it.** Reverted:
   `git apply -R LOG/fix.patch` (EXIT 0), rebuild (EXIT 0), four cases exit **139** (SIGSEGV) and the
@@ -159,7 +167,7 @@ and one for `tests/src/gui/KnobKeyboardTest.cpp`. No new source file was added, 
   normal-path test drives it), `setModel(nullptr)`, `unsetModel()`, and a foreign model (all four
   tested). Siblings: `PeakControllerDialog::modelChanged()` assigns only (no dereference);
   `askUserDefWave()` is listed under "Other findings" with the reason it has no deterministic test.
-- **No collateral damage.** A valid model binds exactly as before — same six models, same order,
+- **No collateral damage.** A valid model binds exactly as before  -  same six models, same order,
   asserted by `anLfoControllerDialogBindsEveryControlOfItsController` and the ctest family (39
   passed, 0 failed). Nothing is saved or loaded differently: the change is in a GUI-only method and
   touches no model value, no save/load path and no project file. No limit was added that another
