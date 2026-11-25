@@ -44,6 +44,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include <QDataStream>
@@ -310,6 +311,54 @@ private slots:
 		const float expected[] = {1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.25f, 2.5f, 2.75f, 3.0f, 3.0f, 3.0f, 3.0f};
 		for (int i = 0; i < 12; ++i) { QCOMPARE(out[static_cast<std::size_t>(i)][0], expected[i]); }
 		QCOMPARE(out[12][0], 0.0f);
+	}
+
+	//! A note whose pitch gives no finite positive playback step is not voiced. Pitch 0 - the frequency of a
+	//! key an active session tuning table or the microtuner does not map, which NotePlayHandle::updateFrequency
+	//! sets to 0 - makes the step 0, so the voice would hold one source frame for the whole note and never end
+	//! (a stalled frame, and a voice the pool never gets back); a negative or non-finite step makes the frame
+	//! index the voice converts from its (double) position undefined. Such a note is silence: playVoice refuses
+	//! it, writes nothing and claims no voice of the pool.
+	void aNoteWithoutAPlayableStepIsNotVoiced()
+	{
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+		const sample_rate_t rate = Engine::audioEngine()->outputSampleRate();
+		const SampleBuffer sample(std::vector<SampleFrame>(64, SampleFrame{0.75f, -0.75f}), kWavRate);
+		const int marker = 0;
+		const double pitches[] = {0.0, -1.0, std::numeric_limits<double>::quiet_NaN(),
+			std::numeric_limits<double>::infinity()};
+		for (const double pitch : pitches)
+		{
+			RackZoneInputs inputs;
+			inputs.prepare({kDrivenChain}, kDrivenChain + 1, fpp, rate);
+			std::vector<SampleFrame> out(static_cast<std::size_t>(fpp), SampleFrame{});
+			RackZoneNote note = noteAt(&marker, 110, 100);
+			note.generation = 1;
+			note.pitch = pitch;
+			QVERIFY2(!inputs.playVoice(note, sample, out.data()),
+				qPrintable(QStringLiteral("pitch %1 was voiced").arg(pitch)));
+			QCOMPARE(inputs.busyVoices(), 0);
+			for (const SampleFrame& frame : out) { QCOMPARE(frame[0], 0.0f); }
+
+			// A refused note holds no voice: the same note at a playable pitch still plays, from the sample start.
+			note.pitch = 1.0;
+			QVERIFY(inputs.playVoice(note, sample, out.data()));
+			QCOMPARE(out[0][0], 0.75f);
+			QCOMPARE(inputs.busyVoices(), 1);
+		}
+		// A sample that reports no rate gives the same zero step.
+		{
+			const SampleBuffer noRate(std::vector<SampleFrame>(64, SampleFrame{0.75f, -0.75f}), 0);
+			RackZoneInputs inputs;
+			inputs.prepare({kDrivenChain}, kDrivenChain + 1, fpp, rate);
+			std::vector<SampleFrame> out(static_cast<std::size_t>(fpp), SampleFrame{});
+			RackZoneNote note = noteAt(&marker, 110, 100);
+			note.generation = 1;
+			QVERIFY(!inputs.playVoice(note, noRate, out.data()));
+			QCOMPARE(inputs.busyVoices(), 0);
+			QCOMPARE(out[0][0], 0.0f);
+		}
+		printEvidence("zone-voice-step", QStringLiteral("pitch 0/-1/NaN/inf and a rate-0 sample are not voiced"));
 	}
 
 	//! E20/E38 on the audio path: delivering zoned notes, playing a zone's sample and rendering the rack
