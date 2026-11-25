@@ -40,6 +40,9 @@ QSemaphore bytesWritten;
 QThread* writerThread = nullptr;
 //! The next `stallWrites` device writes block on writeGate, as a stalled device would.
 int stallWrites = 0;
+//! The device write with this 1-based number blocks on writeGate (0 = off). Set before
+//! the client is constructed: the writer reads it while it runs.
+int stallOnWriteNumber = 0;
 QSemaphore writeStarted;
 QSemaphore writeGate;
 //! One permit per reader-thread exit. The reader exits only after teardown has set m_quit.
@@ -101,12 +104,12 @@ lmms::MidiEvent filler(unsigned char value = 100)
 QSet<int> soundingNotes(const QByteArray& stream, bool* malformed)
 {
 	QSet<int> sounding;
-	*malformed = stream.size() % 3 != 0;
-	for (qsizetype i = 0; i + 2 < stream.size(); i += 3)
+	*malformed = int(stream.size()) % 3 != 0;
+	for (int i = 0; i + 2 < int(stream.size()); i += 3)
 	{
-		const unsigned status = static_cast<unsigned char>(stream[i]);
-		const int key = static_cast<unsigned char>(stream[i + 1]);
-		const unsigned velocity = static_cast<unsigned char>(stream[i + 2]);
+		const unsigned status = static_cast<unsigned char>(stream.at(i));
+		const int key = static_cast<unsigned char>(stream.at(i + 1));
+		const unsigned velocity = static_cast<unsigned char>(stream.at(i + 2));
 		if (status < 0x80 || key >= 0x80 || velocity >= 0x80)
 		{
 			*malformed = true;
@@ -139,6 +142,7 @@ void resetDevice(bool opens)
 	deviceBytes.clear();
 	writerThread = nullptr;
 	stallWrites = 0;
+	stallOnWriteNumber = 0;
 	closeCalls = 0;
 	closedBytes.clear();
 	readerStopped = false;
@@ -184,9 +188,14 @@ extern "C" size_t mio_write(mio_hdl*, const void* buf, size_t size)
 		writeStarted.release();
 		writeGate.acquire();
 	}
+	if (mioWriteCalls == stallOnWriteNumber)
+	{
+		writeStarted.release();
+		writeGate.acquire();
+	}
 	if (failAfterBytes >= 0)
 	{
-		const qsizetype room = std::max<qsizetype>(0, failAfterBytes - deviceBytes.size());
+		const int room = std::max(0, failAfterBytes - int(deviceBytes.size()));
 		if (room == 0)
 		{
 			deviceEof = true;
@@ -195,7 +204,7 @@ extern "C" size_t mio_write(mio_hdl*, const void* buf, size_t size)
 		}
 		size = std::min(size, static_cast<size_t>(room));
 	}
-	deviceBytes.append(static_cast<const char*>(buf), static_cast<qsizetype>(size));
+	deviceBytes.append(static_cast<const char*>(buf), static_cast<int>(size));
 	bytesWritten.release(static_cast<int>(size));
 	return size;
 }
@@ -295,20 +304,26 @@ private slots:
 		QVERIFY(!closedBytes.contains(QByteArray::fromHex("B0077F")));
 	}
 
-	//! A Note Off refused because the queue was full must not leave the note stuck: once
-	//! the queue drains, a recovery note-off releases it. 40000 events of three bytes
-	//! exceed any pipe, so a byte pipe in front of the device would drop bytes too.
-	void refusedNoteOffIsReleasedAfterOverflowDrains()
+	//! After an overflow every event is refused until the queue has drained; the writer then
+	//! releases every note it has sounded: the one whose Note Off was refused and the one
+	//! whose Note Off was never sent. 40000 events of three bytes exceed any pipe, so a
+	//! byte pipe in front of the device would drop bytes too. The writer is held in its
+	//! third device write (the first filler), the first two being the two Note Ons.
+	void overflowReleasesEverySoundingNoteAfterDraining()
 	{
 		constexpr int QueueCapacity = 1024;
 		constexpr int Fillers = 40000;
 		resetDevice(true);
+		stallOnWriteNumber = 3;
 		auto midi = std::make_unique<TestMidiSndio>();
 		QVERIFY(midi->isRunning());
-		midi->processOutEvent(noteOn(), lmms::TimePos(), nullptr);
-		QVERIFY(bytesWritten.tryAcquire(3, 5000));
-		stallWrites = 1;
 		GateRelease gate;
+		// One device write per Note On on any implementation (each is waited for), so the
+		// filler below is always write 3, also for a byte pipe that batches its reads.
+		midi->processOutEvent(noteOn(0x3C), lmms::TimePos(), nullptr);
+		QVERIFY(bytesWritten.tryAcquire(3, 5000));
+		midi->processOutEvent(lmms::MidiEvent(lmms::MidiNoteOn, 1, 0x40, 0x7F), lmms::TimePos(), nullptr);
+		QVERIFY(bytesWritten.tryAcquire(3, 5000));
 
 		midi->processOutEvent(filler(), lmms::TimePos(), nullptr);
 		QVERIFY(writeStarted.tryAcquire(1, 5000));
@@ -316,10 +331,11 @@ private slots:
 		{
 			midi->processOutEvent(filler(), lmms::TimePos(), nullptr);
 		}
-		midi->processOutEvent(noteOff(), lmms::TimePos(), nullptr);
-		QCOMPARE(static_cast<qulonglong>(midi->outputQueueOverflowCount()),
-			static_cast<qulonglong>(Fillers - QueueCapacity + 1));
+		midi->processOutEvent(noteOff(0x3C), lmms::TimePos(), nullptr);
+		const auto refused = static_cast<qulonglong>(midi->outputQueueOverflowCount());
 
+		// The stream is judged first, after the writer has finished: a byte pipe that
+		// overflowed shows up here as a cut frame or a note left sounding.
 		gate.release();
 		midi.reset();
 		QVERIFY(closed.tryAcquire(1, 5000));
@@ -327,8 +343,13 @@ private slots:
 		const QSet<int> sounding = soundingNotes(closedBytes, &malformed);
 		QVERIFY(!malformed);
 		QVERIFY(sounding.isEmpty());
-		QCOMPARE(closedBytes.right(3), QByteArray::fromHex("803C00"));
-		QCOMPARE(closedBytes.count(QByteArray::fromHex("B00764")), QueueCapacity + 1);
+		QVERIFY(closedBytes.startsWith(QByteArray::fromHex("903C7F91407F")));
+		const QByteArray fillerFrame = QByteArray::fromHex("B00764");
+		QCOMPARE(int(closedBytes.count(fillerFrame)), QueueCapacity + 1);
+		const int lastFiller = int(closedBytes.lastIndexOf(fillerFrame));
+		QVERIFY(lastFiller >= 0);
+		QCOMPARE(closedBytes.mid(lastFiller + 3), QByteArray::fromHex("803C00814000"));
+		QCOMPARE(refused, static_cast<qulonglong>(Fillers - QueueCapacity + 1));
 	}
 
 	//! A device that fails for good keeps its handle until the reader thread has

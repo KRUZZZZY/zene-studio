@@ -70,9 +70,13 @@ public:
 
 	/*! Whole output events refused because the bounded queue was full or the device
 	 *  had failed, or never taken by the device. A refused event is never partly
-	 *  written, so the MIDI stream cannot be cut in the middle of a message. A refused
-	 *  Note Off is not lost: once the queue has drained, a recovery note-off releases
-	 *  the note. */
+	 *  written, so the MIDI stream cannot be cut in the middle of a message.
+	 *
+	 *  Overflow policy: when the bounded queue overflows, every event is refused (and
+	 *  counted) until the writer has delivered everything accepted before the overflow.
+	 *  The writer then releases every note it has sounded on the device, held notes
+	 *  included, with a Note Off (0x80|channel, key, 0), and only then accepts events
+	 *  again. */
 	std::uint64_t outputQueueOverflowCount() const noexcept override;
 
 

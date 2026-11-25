@@ -66,8 +66,8 @@ thread_local std::uint8_t t_outLength = 0;
 //! The writer's share of the output path: the handle and the bounded queue, which the
 //! writer owns until it closes the handle. Whoever holds the shared_ptr keeps it valid.
 //!
-//! Protocol notes. The overflow/pushing/failed/pendingNoteOffs operations use the default
-//! seq_cst ordering on purpose: the argument in runWriter() needs one single total order of
+//! Protocol notes. The overflow/pushing/failed operations use the default seq_cst
+//! ordering on purpose: the argument in runWriter() needs one single total order of
 //! them. They are lock-free read-modify-writes, so they are fine on the audio thread.
 struct MidiSndio::OutputWriter
 {
@@ -78,13 +78,8 @@ struct MidiSndio::OutputWriter
 		std::uint8_t length = 0;
 	};
 
-	static_assert( std::atomic<std::uint64_t>::is_always_lock_free,
-		"the audio thread must never take a lock for the note-off bitmap" );
 	static_assert( std::atomic<std::uint32_t>::is_always_lock_free,
 		"the audio thread must never take a lock for the producer count" );
-
-	//! 16 channels x 128 keys, one bit each.
-	static constexpr std::size_t NoteOffWords = 32;
 
 	mio_hdl* hdl = nullptr;
 	//! Set when MidiSndio is being torn down: the writer drains what is queued,
@@ -93,17 +88,19 @@ struct MidiSndio::OutputWriter
 	//! Set once by the writer when the device failed for good. The writer then keeps
 	//! consuming (and counting) until closing, so the handle outlives the reader.
 	std::atomic<bool> failed{false};
-	//! Set by a producer that refused an event; cleared only by the writer. While it is
-	//! set every event is refused, so nothing can overtake the recovery note-offs.
+	//! Set by a producer that refused an event; cleared only by the writer, as the last
+	//! step of recovery. While it is set every event is refused, so nothing accepted
+	//! after the overflow can be cut by the recovery releases.
 	std::atomic<bool> overflow{false};
 	//! Producers inside submit().
 	std::atomic<std::uint32_t> pushing{0};
-	//! Note Offs that were refused, bit = channel * 128 + key.
-	std::array<std::atomic<std::uint64_t>, NoteOffWords> pendingNoteOffs{};
 	MpscQueue<Message, MidiSndio::OutputQueueCapacity> queue;
 	//! Events refused because queue was full, and events the device never took.
 	std::atomic<std::uint64_t> dropped{0};
 	std::atomic<std::uint64_t> undelivered{0};
+	//! Notes the device is sounding, bit = channel * 128 + key (16 channels x 128 keys).
+	//! Plain, not atomic: touched ONLY by the writer thread (deliver() and recovery).
+	std::array<std::uint64_t, 32> sounding{};
 	std::promise<void> finished;
 
 	//! Hands one complete event to the writer, or refuses and counts it. Audio thread:
@@ -114,9 +111,8 @@ struct MidiSndio::OutputWriter
 		const bool accepted = !failed.load() && !overflow.load() && queue.push( message );
 		if( !accepted && !failed.load() )
 		{
-			// Recorded before leaving the pushing window: a writer that sees no push in
-			// flight therefore also sees every refusal's bit and flag.
-			noteRefused( message );
+			// Set before leaving the pushing window: a writer that sees no push in
+			// flight therefore also sees every refusal's flag.
 			overflow.store( true );
 		}
 		pushing.fetch_sub( 1 );
@@ -126,18 +122,26 @@ struct MidiSndio::OutputWriter
 		}
 	}
 
-	//! Remembers a refused Note Off so recovery can release the note later.
-	void noteRefused( const Message& message ) noexcept
+	//! Records what a completely written event did to the device's sounding notes.
+	//! Writer thread only. Note On with velocity > 0 sets the bit; Note Off, or Note On
+	//! with velocity 0, clears it.
+	void trackSounding( const unsigned char* bytes, std::size_t length ) noexcept
 	{
-		const unsigned status = message.bytes[0] & 0xF0;
-		const bool noteOff = message.length == 3
-			&& ( status == 0x80 || ( status == 0x90 && message.bytes[2] == 0 ) );
-		if( !noteOff )
+		const unsigned status = bytes[0] & 0xF0u;
+		if( length != 3 || ( status != 0x80 && status != 0x90 ) )
 		{
 			return;
 		}
-		const unsigned index = ( message.bytes[0] & 0x0Fu ) * 128u + ( message.bytes[1] & 0x7Fu );
-		pendingNoteOffs[index / 64].fetch_or( std::uint64_t{1} << ( index % 64 ) );
+		const unsigned index = ( bytes[0] & 0x0Fu ) * 128u + ( bytes[1] & 0x7Fu );
+		const std::uint64_t mask = std::uint64_t{1} << ( index % 64 );
+		if( status == 0x90 && bytes[2] != 0 )
+		{
+			sounding[index / 64] |= mask;
+		}
+		else
+		{
+			sounding[index / 64] &= ~mask;
+		}
 	}
 
 	//! Writes one event to the device, or counts it when the device has failed for good.
@@ -163,18 +167,21 @@ struct MidiSndio::OutputWriter
 				return;
 			}
 		}
+		trackSounding( bytes, length );
 	}
 
-	//! Ends an overflow: releases every note whose Note Off was refused. The flag is
-	//! cleared BEFORE the bitmap is taken, so a refusal that sets a bit after the exchange
-	//! also sets the flag again and is handled in the next round. At most 2048 messages.
+	//! Ends an overflow: releases every note the device is sounding, held notes included,
+	//! then clears the flag as the LAST step. `overflow` is still set while the releases are
+	//! written, so every producer is refused until all of them are out and nothing accepted
+	//! after the overflow can be cut by a release. On a failed device nothing can be
+	//! written, so the record is just cleared. At most 2048 messages.
 	void recoverOverflow()
 	{
-		overflow.store( false );
-		for( std::size_t word = 0; word < pendingNoteOffs.size(); ++word )
+		for( std::size_t word = 0; word < sounding.size(); ++word )
 		{
-			std::uint64_t bits = pendingNoteOffs[word].exchange( 0 );
-			while( bits != 0 )
+			// A copy: deliver() clears the live bit through trackSounding().
+			std::uint64_t bits = sounding[word];
+			while( bits != 0 && !failed.load() )
 			{
 				const unsigned index = static_cast<unsigned>( word * 64 )
 					+ static_cast<unsigned>( std::countr_zero( bits ) );
@@ -186,6 +193,11 @@ struct MidiSndio::OutputWriter
 				deliver( release.bytes.data(), release.length );
 			}
 		}
+		if( failed.load() )
+		{
+			sounding.fill( 0 );
+		}
+		overflow.store( false );
 	}
 };
 
@@ -291,7 +303,7 @@ void MidiSndio::processOutEvent( const MidiEvent& event, const TimePos& time, co
 
 	// Full or failed: the whole event is refused and counted, never a fragment, and
 	// never written around a refused event: either would corrupt the byte stream.
-	// A refused Note Off is remembered and released by a recovery note-off.
+	// After a refusal the writer releases every note it has sounded.
 	if( m_output != nullptr )
 	{
 		m_output->submit( message );
@@ -316,7 +328,9 @@ std::uint64_t MidiSndio::outputQueueOverflowCount() const noexcept
 //! cannot be missed by a decision based on state read earlier. overflowSeen + quiet (no
 //! push was in flight when observed, and every later push sees overflow and refuses) + an
 //! empty pop means every event accepted before the refusal has been delivered, so the
-//! recovery note-off lands after them and before anything accepted later. The writer never
+//! recovery releases land after them. `overflow` stays set until every release is written,
+//! so every producer is refused meanwhile and nothing accepted after the overflow can be
+//! cut by a release. The writer never
 //! leaves on a device failure: it keeps consuming (and counting) until `closing`, so
 //! mio_close() runs only after the reader thread stopped using the handle.
 void MidiSndio::runWriter(std::shared_ptr<OutputWriter> out)
