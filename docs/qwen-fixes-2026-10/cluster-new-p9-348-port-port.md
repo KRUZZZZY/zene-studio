@@ -111,30 +111,61 @@ Builds ran from the worktree root, `ctest` from `build/tests`.
 
 ## Self-check
 
-1. **Fails without the fix, passes with it.** `920-reversed-final-test.log`
-   (EXIT=8) after `git apply -R` of the product-only patch, and
-   `922-restored-final-test.log` (EXIT=0) after `git apply` restored it; the
-   product patch is only `src/core/AudioResampler.cpp`.
-2. **Deterministic.** No sleep, deadline, timer or thread. The test uses the
-   `LMMS_TESTING` pool seams (`AudioResampler.h:174-177`), one real quality
-   transaction through the engine, and a fixed input buffer compared bit for bit.
-3. **Cause and complete.** The fix is in the pool's prepare/adopt pass; callers
-   and siblings are listed above. The held-note hook, the sample-voice pool and
-   `AudioFileProcessor`'s own voice pool already used prepare/adopt and are
-   unchanged; the discard path still rolls back cleanly.
-4. **No collateral damage.** No header, persistence, command or capacity change.
-   The pool's slot count and the mode mapping (`AudioResampler.cpp:664-676`) are
-   untouched; a held voice now follows the setting instead of silently keeping
-   the old converter. `AudioResamplerRatioTest` and
-   `AudioResamplerPoolMemoryTest` (including `everySlotStartsWithSelectedQuality`
-   and `failedSwitchPreservesOldQuality`) still pass.
-5. **Realtime, undo and commands.** Preparing or adopting a converter still
+1. **The regression test FAILS with the product change reverted and PASSES with
+   it (exit codes).** `920-reversed-final-test.log` (EXIT=8) after
+   `git apply -R` of the product-only patch, and `922-restored-final-test.log`
+   (EXIT=0) after `git apply` restored it; the product patch is only
+   `src/core/AudioResampler.cpp`. The failing assertion is
+   `heldSlotsFollowTheQualityChange()` `voice.mode()` 1 != 4 at
+   `tests/src/core/AudioResamplerPoolMemoryTest.cpp(133)`; the reversed build
+   is `919-reversed-final-build.log` (EXIT=0) and the restored build is
+   `921-restored-final-build.log` (EXIT=0).
+2. **The test is deterministic: no wall-clock timing, sleeps or races.** It
+   uses the `LMMS_TESTING` pool seams (`include/AudioResampler.h:174-177`:
+   `realtimeVoiceConverterCapacityForTest`, `freeRealtimeVoiceConvertersForTest`,
+   `ensureRealtimeVoiceConverterPoolCapacity`), one real quality transaction
+   through `ExportRenderSettings::setSrcQuality` -> the engine's prepare/adopt
+   pass, and a fixed sine buffer whose samples are compared bit for bit against
+   a `SincBest` reference converter. No thread, timer or deadline is involved.
+3. **The fix is at the cause and complete: every caller and sibling was
+   checked.** Callers of the two changed pool functions: `initialize()` at
+   `src/core/AudioResampler.cpp:137-151` and the engine's quality transaction at
+   `src/core/AudioEngine.cpp:279-341` (prepare through
+   `prepareRealtimeVoiceConverterPool`, adopt through
+   `adoptRealtimeVoiceConverterPool`) plus the discard/rollback at
+   `src/core/AudioEngine.cpp:344-369`. Siblings checked and unchanged: the
+   per-handle hook `AudioEngine::applyConverterModeToPlayHandle()`
+   (`src/core/AudioEngine.cpp:373-407`), `PatmanInstrument`'s
+   prepare/adopt/discard overrides (`plugins/Patman/Patman.cpp:247-267`), the
+   sample-voice pool and `AudioFileProcessor`'s own voice pool (their own
+   prepare/adopt paths), and the single-voice `trySetMode()`
+   (`src/core/AudioResampler.cpp:536-550`). All keep the same contract: prepare
+   may allocate and fail, adopt is a pointer swap, discard rolls back.
+4. **No collateral damage: old projects and saved data load as before, and no
+   limit or check was added.** No header, persistence format, command, undo step
+   or capacity formula changed; the pool still has
+   `5 * (playHandles + 2*1024 + 1)` slots (`src/core/AudioEngine.cpp:139-149`)
+   and the quality mapping is untouched (`src/core/AudioResampler.cpp:664-676`).
+   `AudioResamplerPoolMemoryTest` still passes
+   `everySlotStartsWithSelectedQuality` and `failedSwitchPreservesOldQuality`
+   (the latter expects a failed switch to leave a held voice on the old
+   converter), and `AudioResamplerRatioTest` passes unchanged
+   (`924-final-focused-tests.log`, 7/7).
+5. **The ALREADY-FIXED/FALSE-POSITIVE half of the review has its code:**
+   `Sample::play()` never switches a converter (`src/core/Sample.cpp:109,157,194`);
+   the only `setMode()` caller is `plugins/SlicerT/SlicerT.cpp:126`, which is
+   unreachable (`applyConverterMode` has no call site); `trySetMode()` refuses
+   while a `RealtimeScope` is active (`src/core/AudioResampler.cpp:535`); and
+   there is no manual interpolation anywhere in `Sample::play()`. The quoted
+   `Patman.cpp:301-322,665-677` are the patch publication and the filename
+   ellipsis loop, not a linear-overflow path.
+6. **Realtime, undo and commands.** Preparing or adopting a converter still
    allocates/frees only on the control thread, under the engine change guard;
    `acquire()`/`release()` remain single atomic flag operations and the render
    path gained nothing. No command and no undo step changed.
-6. **Registration and gates.** `tests/upstream-modifications.txt` has an r12
+7. **Registration and gates.** `tests/upstream-modifications.txt` has an r12
    entry for each changed file; `925-feature-check.log` is `RESULT: PASS`,
-   `GATE_EXIT=0`.
+   `GATE_EXIT=0`, and `926-submit-check.log` is `RESULT: PASS - submit`.
 
 ## Other findings
 
