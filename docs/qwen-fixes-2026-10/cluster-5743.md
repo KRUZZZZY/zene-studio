@@ -38,4 +38,10 @@ Manual checks: no new file (so no tests/fork-sources.txt entry needed; `src/core
 - `DeviceCopyTest::aChainIsBypassedAndCleaned` (`DeviceCopyTest.cpp:580`) hard-fails (not skips) when no effect module is built; with the new `amplifier` dependency it passes here.
 
 ## Self-check
-(see below, filled after submit_check)
+- Red/green: with `ControlCommandsRackWrap.cpp` reverted the test fails (test-4.log, `ctest` EXIT=8, `DeviceCopyTest.cpp:460`); with the fix it passes (test-3.log and test-5.log, EXIT=0).
+- Deterministic: no timers, sleeps or threads. It drives `rack.wrap` through `ControlRegistry::invoke` on a fresh channel and tells the two devices apart by a bypass flag set via `plugin.bypass`.
+- Cause and completeness: `ControlCommandsRackWrap.cpp` holds only `rack.wrap` (`registerRackWrapCommand`); the only path that resolves the device list is `namedDevices` (called once, from `devicesToWrap`, from `wrap`), so ordering there covers the named and the omitted-`plugins` cases. The `rack.*` commands the check lists (add_chain, get_state, layer_*, macro_*, remove_chain) live in other files, share no code with this change, and are untouched.
+- Collateral: no saved-data or schema change; duplicate and foreign-chain refusals are unchanged; callers that omit `plugins` or pass them in chain order get exactly the previous result (stable sort of an already ordered list). No new limit.
+- Verdict is FIXED, not a not-real verdict, so no ALREADY-FIXED/FALSE-POSITIVE reference is needed.
+- Unresolved: the `gates (feature_check.py)` item stays FAIL: the script's internal `git checkout --detach` is refused by bunny-guard (see Gates), so I could not produce its table. Unverified: complexity/file-length gate numbers (checked by hand only).
+- Delegation: Haiku ran every build and ctest (build-1..5, test-1..5) and the revert/re-apply proof; I read the logs' key lines, the diff stat and wrote the test, fix, report and manifest.
