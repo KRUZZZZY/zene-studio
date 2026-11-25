@@ -187,10 +187,11 @@ and no file over 500 lines among mine. The change was then restored
   (constructor, `loadSettings`, the view) publish through `setOutputExpression()` /
   `publish()`; the single reader (`playNoteImpl`) reads only the published text. The wave
   expressions are deliberately untouched: `m_wavesExpression` has no audio-thread reader
-  (`plugins/Xpressive/Xpressive.cpp:186-191` save, `:232-234` load, `:640-647` and
-  `:770-800` the editor only). The sibling in this plug-in that the audio thread does
-  read, `WaveSample`, already takes the engine change lock in `copyFrom`
-  (`plugins/Xpressive/ExprSynth.cpp:722-728`).
+  (it is read only by `saveSettings`, `plugins/Xpressive/Xpressive.cpp:195-206`,
+  `loadSettings`, `:232-234`, and the editor's own
+  `expressionChanged`/`updateLayout`, `:640-646` and `:825-851`). The sibling in this
+  plug-in that the audio thread does read, `WaveSample`, already takes the engine change
+  lock in `copyFrom` (`plugins/Xpressive/ExprSynth.cpp:722-728`).
 * **No collateral damage** — `saveSettings` is untouched, so old projects save and load
   exactly as before, and a project that has never been edited parses the same default
   expressions (published in the constructor, `:114-116`). No cap or limit was added: the
@@ -206,6 +207,19 @@ and no file over 500 lines among mine. The change was then restored
 * **Undo and commands** — no control command was added and no model property changed: the
   expression text was not an undoable model before this fix and is not one now, so undo
   is untouched and `ControlCommandsSnapshot` does not move.
+* **The one FAIL the pre-submit check reports is the aggregate runner, not a gate** —
+  `submit_check.py`'s "gates (feature_check.py)" row spawns `feature_check.py`, which
+  cannot finish in a lane: its base-listing step runs
+  `git -C .../qwen/gate-baselines/tree checkout -q --detach 9913d36d53...`, which the
+  bunny guard refuses (exit 97, output quoted above), and the cache file it would then
+  write sits on a read-only mount (`OSError: [Errno 30] Read-only file system:
+  .../gate-baselines/9913d36d5397025d1b7092097f50f6d50c652dc4.json` — from bash and from
+  the file writer alike). Every gate the script wraps was run directly, unpiped, and
+  passes (table above); the two ratchets were measured on both sides of the change
+  (`gate-complexity-base.log`, `gate-file-length-base.log` at the base commit;
+  `gate-complexity-branch.log`, `gate-file-length-branch.log` on this branch). An empty
+  base listing can only make that comparison stricter than the tool's own, never weaker.
+  `<log>/submit-check-1.log` is that run: one FAIL, this row, nothing else.
 * **ALREADY-FIXED / FALSE-POSITIVE** — not claimed; this was a real, unsynchronised
   GUI-write / audio-read pair (lines quoted at the top).
 
