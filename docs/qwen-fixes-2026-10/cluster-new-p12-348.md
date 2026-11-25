@@ -52,8 +52,10 @@ Concurrency (local TSan does not run on this box; this is reasoned from the desi
 
 ## Regression test
 
-`tests/src/plugins/ClapNoteQueueTest.cpp` (new, registered in `tests/CMakeLists.txt` next to `ClapBusMapTest`
-and in `tests/fork-sources.txt`). It is fixture-free and drives only `push`/`pop`/`reset`, so the same test
+`tests/src/plugins/ClapNoteQueueTest.cpp` (new, registered in `tests/CMakeLists.txt` next to `ClapBusMapTest`,
+in `tests/fork-sources.txt`, and in `tests/all-sources.txt`; that last entry was added in a follow-up commit after
+`tests/all-sources-reproduce.sh` flagged the tracked file. Its re-run printed "REPRODUCES" with EXIT 0, log 28, and
+`fork-sources-gate.sh` gave EXIT 0, log 29). It is fixture-free and drives only `push`/`pop`/`reset`, so the same test
 compiles before and after the fix.
 - `droppedNoteOffIsDelivered`, `droppedChokeIsDelivered` (RED): note-on, then 1023 fillers so the ring is full,
   then a release. Draining must deliver that release after the note-on, exactly once.
