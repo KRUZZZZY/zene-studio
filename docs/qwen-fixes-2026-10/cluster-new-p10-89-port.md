@@ -201,6 +201,17 @@ platform and is the portable statement of the rule.
 
 ## Self-check
 
+- **The pre-submit check's one FAIL is the gate tool, not a gate: `gates (feature_check.py)`.**
+  `submit_check.py` (log `34-submit-check.log`, exit 1) reports every other item PASS and
+  re-runs `feature_check.py`, which cannot start here: its per-train base listing is missing
+  for base `9913d36d53`, refreshing it needs a `git checkout` in
+  `~/.local/share/zene-bunny-fix/qwen/gate-baselines/tree` that the lane guard refuses, and
+  the cache directory is a read-only mount (`OSError: [Errno 30] Read-only file system`, log
+  `29-feature-check.log`). The same eight gates the script runs were run individually
+  (table above): six exit 0, `file-length` exit 0, `complexity` exit 2 for a missing `lizard`
+  at both the base commit and the worktree. The fix for the tool is host-side (pre-warm
+  `gate-baselines/<base>.json`, or give a lane a writable cache); I did not touch the gate
+  limits, the tsv baselines or the guard.
 - **The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
   Reverted: `git apply -R logs/fix.patch` exit 0, build 24 exit 0, `./DataFileSaveIntegrityTest`
   exit **4** (31 passed, 4 failed). Restored: `git apply logs/fix.patch` exit 0, build 26 exit 0,
@@ -233,6 +244,10 @@ platform and is the portable statement of the rule.
   `liveSaveInAnotherInstanceIsNotAdopted`, which passes here (log 23).
 
 ## Other findings
+
+- Reproduce the base listing used above with: `git archive 9913d36d53 | tar -x -C <dir> &&
+  (cd <dir> && bash tests/complexity-gate.sh --check; bash tests/file-length-gate.sh --check)`. The
+  extracted tree was scratch and has been removed; the two gate outputs are logs 30 and 31.
 
 - `tests/complexity-gate.sh --check` exits 2 in this sandbox: `lizard is not installed`. This
   is environment state, identical at the base commit and in the worktree, so it measures
