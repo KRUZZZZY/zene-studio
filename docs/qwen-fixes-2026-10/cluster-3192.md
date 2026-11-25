@@ -178,17 +178,11 @@ case is shown by the SIGSEGV in the red run and by the clean green run; the data
   expression. One timing difference, stated above (a bend within one period of a note-off).
 - **Undo, commands, realtime.** No command file changed; no undo step added. No new allocation, lock, wait or log on
   the audio thread; the note-off keeps the guard it already took.
-- **Gates.** The six substantive gates pass (step 9); `file-length` shows no regression (step 10). `complexity` cannot
-  run (`lizard is not installed`), so I extracted the note-off into `releaseLiveNote()` (a small function) so that
-  `processInEvent()` does not grow. `feature_check.py` cannot finish in this session: it must check out the train's base
-  commit into its own cache tree and the session guard refuses it. Exact output (`gate-1.log`):
-
-  ```
-  bunny-guard: 'git -C .../gate-baselines/tree checkout -q --detach 9913d36d5397025d1b7092097f50f6d50c652dc4' is not allowed in a Bunny lane ...
-  subprocess.CalledProcessError: ... returned non-zero exit status 97.
-  ```
-
-  I did not write the baseline cache by hand: that would re-anchor a gate.
+- **Gates.** Round 4: `python3 .../feature_check.py <worktree>` ran to the end, EXIT 0, `RESULT: PASS` (fork-sources,
+  all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length
+  all PASS; `3192.r4/logs/gate-1.log`). The round-2/3 notes that it was blocked by the session guard and that
+  `lizard` was missing no longer apply: the baseline cache existed this time. Round-3 steps 11-12 above are
+  superseded by this result.
 - **Sibling commands.** No command file changed and none was added.
 - **Completeness walk.** Hold an MPE note, bend / press / slide CC74: the note takes it on its next period. Release with a
   velocity: the note gets it, and plays the tail with the expression it had. A clip note on the same key and channel
