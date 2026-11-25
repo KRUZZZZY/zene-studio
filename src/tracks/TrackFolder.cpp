@@ -94,6 +94,29 @@ std::vector<TrackFolder::ChannelBinding> parseBindings( const QString & text )
 	return bindings;
 }
 
+/*! Appends what an ancestor routing folder routes for \a track: the track itself,
+ *  or - for a folder - its members, recursively. A routing folder contributes
+ *  nothing (it owns its subtree), and a folder with no members is read no further:
+ *  that is also what a folder in its own destructor looks like (~TrackFolder has
+ *  already unparented them), so its half-destroyed state is never read.
+ *  Terminates because canHold() refuses a cycle.
+ */
+void appendRouted( Track * track, std::vector<Track*> & out )
+{
+	if( track->type() != Track::Type::Folder ) { out.push_back( track ); return; }
+	auto * folder = static_cast<TrackFolder *>( track );
+	const std::vector<Track*> members = folder->children();
+	if( members.empty() || folder->isRouting() ) { return; }
+	for( Track * member : members ) { appendRouted( member, out ); }
+}
+
+std::vector<Track*> routedFor( Track * subject )
+{
+	std::vector<Track*> out;
+	appendRouted( subject, out );
+	return out;
+}
+
 } // namespace
 
 TrackFolder::TrackFolder( TrackContainer * tc ) :
@@ -241,11 +264,21 @@ bool TrackFolder::canHold( const Track * child, QString * reason ) const
 	return true;
 }
 
+TrackFolder * TrackFolder::routingOwner() const
+{
+	for( const TrackFolder * walker = this; walker != nullptr; walker = walker->parentFolder() )
+	{
+		if( walker->isRouting() ) { return const_cast<TrackFolder *>( walker ); }
+	}
+	return nullptr;
+}
+
 void TrackFolder::childLinked( Track * child )
 {
 	emit stateChanged();
-	if( m_mode != Mode::Routing ) { return; }
-	routeChild( child );
+	// The owner is this folder when it routes, else the routing folder above it:
+	// a track that joins a group folder nested in a routing one is summed too.
+	if( TrackFolder * owner = routingOwner() ) { owner->routeSubtree( child ); }
 }
 
 void TrackFolder::childUnlinked( Track * child )
@@ -256,8 +289,24 @@ void TrackFolder::childUnlinked( Track * child )
 	// back to, and it stays in the list so a child that rejoins can be routed
 	// again without inventing a channel for it.
 	emit stateChanged();
-	if( m_mode != Mode::Routing ) { return; }
-	unrouteChild( child );
+	if( TrackFolder * owner = routingOwner() ) { owner->unrouteSubtree( child ); }
+}
+
+std::vector<Track*> TrackFolder::routedMembers() const
+{
+	std::vector<Track*> members;
+	for( Track * child : children() ) { appendRouted( child, members ); }
+	return members;
+}
+
+void TrackFolder::routeSubtree( Track * subject )
+{
+	for( Track * member : routedFor( subject ) ) { routeChild( member ); }
+}
+
+void TrackFolder::unrouteSubtree( Track * subject )
+{
+	for( Track * member : routedFor( subject ) ) { unrouteChild( member ); }
 }
 
 /*! Puts \a child back on its own recorded channel, if it is currently on the
@@ -378,7 +427,7 @@ bool TrackFolder::enableRouting( QString * error )
 		}
 	}
 	m_mode = Mode::Routing;
-	for( Track * child : children() ) { routeChild( child ); }
+	for( Track * child : routedMembers() ) { routeChild( child ); }
 	Engine::getSong()->setModified();
 	return true;
 }
@@ -397,7 +446,7 @@ bool TrackFolder::enableRouting( QString * error )
  */
 bool TrackFolder::releaseRouting()
 {
-	for( Track * child : children() ) { unrouteChild( child ); }
+	for( Track * child : routedMembers() ) { unrouteChild( child ); }
 	m_savedChildChannels.clear();
 	if( m_mixerChannel > 0 && Engine::mixer() != nullptr
 		&& m_mixerChannel < static_cast<int>( Engine::mixer()->numChannels() ) )
@@ -410,7 +459,7 @@ bool TrackFolder::releaseRouting()
 	// mixer really has - the same thing MixerView::updateMaxChannelSelector does
 	// for every track when the channel list changes. Left widened, a child could
 	// still select the deleted index and would feed a channel that is not there.
-	for( Track * child : children() ) { shrinkChildRange( child ); }
+	for( Track * child : routedMembers() ) { shrinkChildRange( child ); }
 	if( m_mode != Mode::Group )
 	{
 		m_mode = Mode::Group;
@@ -456,7 +505,7 @@ void TrackFolder::channelDeleted( int deletedIndex )
 		// to the channel they were on before routing - the same place
 		// releaseRouting() puts them, and the reason this runs BEFORE the track
 		// walk, which would otherwise put them on master.
-		for( Track * child : children() ) { unrouteChild( child ); }
+		for( Track * child : routedMembers() ) { unrouteChild( child ); }
 		m_savedChildChannels.clear();
 		m_mixerChannel = -1;
 		if( m_mode != Mode::Group )
@@ -513,7 +562,7 @@ bool TrackFolder::ensureRoutingChannel( QString * error )
 	// The children that ARE back (the restore walk rebuilds them one track at a
 	// time) go to the new channel; the ones that arrive later are routed by
 	// childLinked(), which is the same route this is.
-	for( Track * child : children() ) { routeChild( child ); }
+	for( Track * child : routedMembers() ) { routeChild( child ); }
 	return true;
 }
 
