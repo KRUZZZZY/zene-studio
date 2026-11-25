@@ -130,6 +130,11 @@ No `REGRESSION` line names `src/core/VideoAudioExtract.cpp`, `tests/src/core/Vid
 or `tests/src/core/VideoTrackTestParts2.h`, which is the condition `feature_check.py` tests for its
 two ratchet rows (an item is only "new" when it is listed in a file the branch changed).
 
+`submit_check.py <worktree> new-p8-66` (`submit-check-1.log`, exit 1) reports PASS for commits,
+clean tree, the report, and the changed tests; its one FAIL is `gates (feature_check.py)`, the
+same read-only-cache failure above — it runs that script itself, so the row cannot pass inside a
+lane session. Every other row and all five ASK items are answered below with the runs above.
+
 ## Self-check
 
 1. **The regression test FAILS with the product change reverted and PASSES with it.**
