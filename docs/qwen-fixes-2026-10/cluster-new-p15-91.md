@@ -74,7 +74,7 @@ from its `build/tests`. Logs are in
 | Build the LFO test | `cmake --build build --target LfoControllerUserWaveTest -j4` | 0 | `build-4.log` |
 | LFO user-wave test | `ctest -R '^LfoControllerUserWaveTest$' --output-on-failure` | 0 | `test-3.log`: 100% tests passed out of 1 |
 | Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p15-91` | 0 | `feature-check-1.log`: `RESULT: PASS` |
-| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p15-91 new-p15-91` | see below | `submit-check-*.log` |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p15-91 new-p15-91` | 0 | `submit-check-1.log`: every item PASS, `RESULT: PASS - submit` |
 
 The build exit codes are the background wrapper's `EXIT=` line, read back from the process record; the test
 and gate exit codes are the shell's `EXIT=` line appended to each log. The first scratch probe run
