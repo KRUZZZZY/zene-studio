@@ -36,8 +36,9 @@ class QLockFile;
 namespace lmms
 {
 
-//! RAII ownership of <name>.save-lock, the sidecar that says a save of <name> is
-//! running. A save writes <name>.new BEFORE it replaces <name>, so while it runs
+//! RAII ownership of the save lock - one sidecar per project file, <name> with a
+//! single '#' appended (lockPathFor) - that says a save of <name> is running.
+//! A save writes <name>.new BEFORE it replaces <name>, so while it runs
 //! a complete temp sits on disk that is not an orphan: a second instance
 //! recovering it would take the temp the writer is about to publish, and a
 //! restore or a second save would rotate the revision set and replace the file
@@ -84,7 +85,22 @@ public:
 	static std::unique_ptr<DataFileSaveLock> tryAcquireForProject(const QString& projectPath,
 		QString* refusal = nullptr);
 
-	//! The sidecar path for \a fileName.
+	//! The sidecar path for \a fileName: the same directory, and the full file
+	//! name (extension included) with one ASCII byte appended. One lock per
+	//! project file, and a name no save writes - no project extension ends in
+	//! '#', so the sidecar can never be read back as a project or data file.
+	//!
+	//! It is deliberately ONE byte, and that is a length limit, not a taste. A
+	//! save derives <name>.new, <name>.bak and <name>.bak.new (8 bytes) from the
+	//! project name, and QLockFile derives <lock>.rmlock (7 bytes) from the lock
+	//! name for the step that reclaims the lock of a holder that DIED. One byte
+	//! keeps <lock>.rmlock at or under <name>.bak.new, so the lock can never be
+	//! what refuses a save - or the recovery of an interrupted save - at a
+	//! project name the save itself supports: on a filesystem with NAME_MAX 255
+	//! that is a 247 byte name, and a longer suffix (such as the 10 byte
+	//! ".save-lock") refused saves there and left the lock of a dead writer
+	//! unreclaimable at 240 bytes and above, with a complete interrupted save
+	//! pending forever. Keep the suffix at one byte.
 	static QString lockPathFor(const QString& fileName);
 
 	//! The file this lock guards.

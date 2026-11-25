@@ -455,5 +455,5 @@ void ProjectContainerSaveTest::aSaveRefusedByAHeldLockRotatesNothing() {
 	QVERIFY2( landed.ok, qPrintable( landed.errorMessage ) );
 	QVERIFY( landed.result.value( QStringLiteral( "revision_kept" ) ).toBool() );
 	QVERIFY( QFile::exists( path + QStringLiteral( ".rev1" ) ) );
-	QVERIFY2( !QFile::exists( path + QStringLiteral( ".save-lock" ) ), "a completed save left its lock behind" );
+	QVERIFY2( !QFile::exists( DataFileSaveLock::lockPathFor( path ) ), "a completed save left its lock behind" );
 }

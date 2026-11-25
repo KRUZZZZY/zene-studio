@@ -62,7 +62,24 @@ DataFileSaveLock::~DataFileSaveLock() = default;
 
 QString DataFileSaveLock::lockPathFor(const QString& fileName)
 {
-	return fileName + QStringLiteral(".save-lock");
+	// One byte appended to the FULL file name - the extension stays where it is -
+	// so the sidecar sits in the same directory, is one per project file, and is
+	// a name no save writes: no project extension ends in '#', so a sidecar can
+	// never be mistaken for a project or data file.
+	//
+	// One byte, not ten, and that is the whole point. QLockFile derives
+	// <lock>.rmlock (7 bytes) from the lock name for the step that reclaims the
+	// lock of a holder that DIED, and a save derives <name>.new, <name>.bak and
+	// <name>.bak.new (8) from the project name. A 10 byte suffix such as
+	// ".save-lock" pushed the lock's reclaim name past the filesystem's NAME_MAX
+	// at project names the save itself supports: with NAME_MAX 255 a 247 byte
+	// project name saved and backed up fine but its lock was too long to create,
+	// and at 240 bytes the lock could be taken and never reclaimed, so a complete
+	// interrupted save stayed pending forever. One byte keeps the lock's longest
+	// derived name at or under the save's longest, so the sidecar can never be
+	// what refuses a save, or the recovery of its interrupted temp, at a name a
+	// save supports.
+	return fileName + QLatin1Char('#');
 }
 
 std::unique_ptr<DataFileSaveLock> DataFileSaveLock::tryAcquire(const QString& fileName,

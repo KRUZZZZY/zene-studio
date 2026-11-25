@@ -345,9 +345,9 @@ private slots:
 	//! before the writer's backup step the writer copies the recovered content
 	//! over the previous <name>.bak, destroying the only older copy.
 	//!
-	//! The writer says so with the save lock it holds for exactly that window
-	//! (<name>.save-lock, a QLockFile naming its pid). Recovery must leave both
-	//! the temp and the project alone while that lock is held - and adopt the
+	//! The writer says so with the save lock it holds for exactly that window:
+	//! one QLockFile per project file, naming its holder's pid. Recovery must
+	//! leave the temp and the project alone while that lock is held - and adopt the
 	//! very same temp once the holder is gone, which is what a writer that
 	//! crashed leaves behind, so the recovery path is not closed for real
 	//! orphans. The lock is the REAL one, held here in this process: QLockFile
@@ -391,6 +391,28 @@ private slots:
 	//! (the keep-3 rotation ids and the timeline's other slots) refuse BEFORE
 	//! staging or rotating anything, and succeed once the lock is gone.
 	void restoreIsRefusedBeforeRotatingWhileASaveHoldsTheLock();
+
+	//! Cluster new-p10-89, round 5. The sidecar name must fit inside the name
+	//! budget the SAVE itself has: same directory, one byte appended to the full
+	//! file name, and - with the marker QLockFile derives from it for its own
+	//! stale-lock reclaim - never longer than the longest name a save derives
+	//! from the project name (<name>.bak.new). A longer sidecar refuses saves and
+	//! makes an interrupted save permanently unrecoverable at names the save
+	//! itself supports.
+	void saveLockNameFitsTheSavesOwnNameBudget();
+
+	//! Cluster new-p10-89, round 5. At the longest project name the save supports
+	//! (<name>.bak.new is exactly NAME_MAX) a save must still land twice - the
+	//! second time through the backup copy - and leave no lock or reclaim marker
+	//! behind.
+	void saveAtTheNameLengthLimitLandsAndLeavesNoLock();
+
+	//! Cluster new-p10-89, round 5. A writer that DIED holding the lock leaves a
+	//! real QLockFile behind (a forked child takes it and exits without
+	//! unlocking), and the next open must reclaim it and adopt the interrupted
+	//! save - at the name length where the sidecar's own reclaim step used to
+	//! outgrow NAME_MAX and leave the save pending forever.
+	void deadWritersLockIsReclaimedAtTheNameLengthLimit();
 };
 
 #include "DataFileSaveIntegrityTestParts1.h"

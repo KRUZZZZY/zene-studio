@@ -196,7 +196,8 @@ inline bool replaceBackup( const QString & current, const QString & bak )
 //! Cluster new-p10-89. A save writes <name>.new BEFORE it replaces <name>, so a
 //! COMPLETE temp can belong to a save still running in another instance, and
 //! recovery adopting it would take the temp its writer is about to publish
-//! (see DataFileSaveLock). The save holds <name>.save-lock for the whole window
+//! (see DataFileSaveLock). The save holds the project's save lock
+//! (DataFileSaveLock::lockPathFor: <name> with one '#' appended) for the whole window
 //! in which a temp of its own exists; recovery asks for it before touching any
 //! temp.
 //!
@@ -483,8 +484,9 @@ void recoverPendingWrite( const QString & fileName )
 	// still running in another instance: adopting it would take the temp its
 	// writer is about to publish (the writer's rename then fails and reports a
 	// failed save) and discarding a half-written one would delete a save in
-	// flight. The writer holds <file>.save-lock for exactly that window, so
-	// nothing is touched while it is held. A writer that crashed holds nothing
+	// flight. The writer holds <file>'s save lock - one byte of suffix, see
+	// DataFileSaveLock::lockPathFor - for exactly that window, so nothing is
+	// touched while it is held. A writer that crashed holds nothing
 	// once QLockFile sees its pid is gone, and the adoption below runs as it
 	// always did - the recovery path stays open for real orphans.
 	QString lockRefusal;
