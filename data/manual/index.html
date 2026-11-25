@@ -604,9 +604,12 @@ Windows and Linux builds have no Audio Unit format. Audio Unit v3 extensions are
 plug-ins inside Carla's own window - <em>Carla Rack</em> and <em>Carla Patchbay</em> - and that is where a VST3, a VST2, an LV2 or a
 native plug-in opens when you load it in Carla. They need a <a href="https://kx.studio/Applications:Carla">Carla</a> runtime on the
 machine: a build made without one links a stand-in that hosts nothing. In such a build choosing Carla Rack (Replace Instrument...
-in the device card's Actions menu, the instrument browser, or <code>plugin.load</code>) is refused with the reason and the track keeps
-its instrument as a placeholder, which writes back exactly what the project held, so nothing of the old device is lost; a project that
-names Carla Rack opens the same way. Nothing crashes either way. A VST3 is not what Carla Rack is for in this build: Zene hosts VST3
+in the device card's Actions menu, the instrument browser, or <code>plugin.load</code>) is refused with the reason, and the track keeps
+the instrument it already had, with every one of its settings: a refused load changes nothing, records no undo step, and a project saved
+afterwards is identical to the one saved before. A track that held no instrument yet keeps an empty placeholder instead.
+A saved project is the other case: a project that names Carla Rack opens with that placeholder on the track, and the placeholder keeps the
+project's own copy of the device, so the device and its settings come back unchanged once a Carla runtime is installed. Nothing crashes
+either way. A VST3 is not what Carla Rack is for in this build: Zene hosts VST3
 plug-ins itself, so load the <code>.vst3</code> from the device picker's VST3 format (or <code>plugin.list</code> format
 <code>vst3</code>, then <code>plugin.load</code> the <code>dev-&lt;n&gt;</code> it names) and it runs in Zene with no Carla involved.</p>
 

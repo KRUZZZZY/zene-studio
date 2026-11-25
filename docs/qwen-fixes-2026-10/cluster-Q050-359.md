@@ -1,114 +1,142 @@
 IMPLEMENTED
 
-# Q050-359 - Carla Rack VST3 opening stability
+# Q050-359 - Carla Rack VST3 opening stability (round 2)
 
 Branch `feat/050-Q050-359-oc`, worktree `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-Q050-359`.
-Logs and scratch: `/home/kruzzzzy/.config/kads/zene/state/runs/Q050-359.r1/logs`.
+Logs and scratch: `/home/kruzzzzy/.config/kads/zene/state/runs/Q050-359.r2/logs`.
 
-**Reproduced, then fixed at the host path.** On this build `pkg-config carla-native-plugin` finds nothing, so
-`CMakeLists.txt:545-558` sets `LMMS_HAVE_WEAKCARLA` and the product links `plugins/CarlaBase/DummyCarla.cpp`, whose
-`carla_get_native_rack_plugin()` (`:11`) and `carla_get_native_patchbay_plugin()` (`:12`) answer **nullptr**. The first step
-of the sequence the finding describes - put Carla Rack on a track so a plug-in can be loaded inside it - passed that pointer
-to `CarlaInstrument`, which calls `fDescriptor->instantiate(&fHost)` (`plugins/CarlaBase/Carla.cpp:203`) with no null check:
-`SIGSEGV`, fault address `0x48`, `call *0x48(%rax)`. Both host modules now decline with a reason the control surface reports
-(`plugins/CarlaRack/CarlaRack.cpp:52-71`, `plugins/CarlaPatchbay/CarlaPatchbay.cpp:52-69`), exactly as
-`plugins/CarlaVst2::lmms_plugin_main` already did (`CarlaVst2.cpp:81`).
+Round 1 fixed the crash (the two Carla host modules decline when this build links the weak stand-in, whose native
+descriptor is nullptr) and was sent back for a data-loss finding: a **refused** Carla Rack replacement still destroyed the
+musician's instrument before finding out, and the next save persisted the `dummyinstrument` placeholder with no undo
+entry. Round 2 moves the fix into the seam and inverts the regression test.
 
-Commits: `c0ab4e002d` (product + test + registration), `0e6dc10682` (manual + feature record), `f0150ea0cb` (the two
-inherited modules declared in `tests/upstream-modifications.txt`), then this report.
+- `2e56348fb6` - `fix(l10): keep the instrument when a load is refused`: `InstrumentTrack::loadInstrument` is
+  trial-then-swap (candidate instantiated and judged first; a refusal deletes it and returns null with the previous
+  instrument, its state, the track name and `m_preservedInstrument` untouched), and the callers that dereferenced the
+  result unconditionally now report the refusal (`TrackContainerView.cpp` drop paths through a new
+  `InstrumentLoaderThread::refused` signal into `arrangerdrop::reportRefusedInstrument`, `FileBrowser.cpp`,
+  `instrument/InstrumentTrackWindow.cpp`, `PresetPreviewPlayHandle.cpp`).
+- `1bf95db103` - `test(l10): prove a refused Carla Rack load changes nothing`: inverted `CarlaRackNoRuntimeTest`, the two
+  fixtures that relied on the old dummy fallback, `ScriptBindingsTest`'s replacement case, and the ledger entries.
+- this report commit - manual and feature record.
 
 ## Acceptance
 
 | Criterion | Evidence (command, exit) |
 |---|---|
-| 1. Repeat the exact Carla Rack/VST3 load sequence under a crash trace, or record a bounded not-reproduced result | **Reproduced from the shipped binary**: `python3 .../repro_carla_rack.py build/zene LMMS_PLUGIN_DIR=$PWD/build/plugins` - `plugin.list` offers `carlarack` (`dev-1`, `builtin`, `loadable: true`), then `plugin.load` killed the process; the crash reporter wrote `signal=SIGSEGV(11) fault_addr=0x48` (`logs/repro-2.log`, exit 1 = crashed). **Reproduced from the test**: with the two product hunks reversed, `ctest -R '^CarlaRackNoRuntimeTest$'` → `***Exception: SegFault`, stack frame `lmms::CarlaInstrument::CarlaInstrument(...)` at `call *0x48(%rax)`, **exit 8** (`logs/test-red-1.log`). **With the fix**: same command **exit 0**, `Totals: 6 passed, 0 failed, 0 skipped` (`logs/test-green-2.log`, `logs/test-green-3.log`). **Bounded, not reproduced**: the step *inside* Carla (loading the VST3 in a real Rack) cannot run here - no Carla runtime exists in this build, building one is `tools/build-carla-runtime.sh` (a separate heavy build) and Carla's Rack adds plug-ins through its own native window, which a headless QtTest cannot drive (`docs/050-features/Q050-359.md`, Known limits). |
-| 2. If reproduced, fix the host path or route VST3 to the native host, and add a regression test | Host path fixed in both modules; `plugin.load` answers `refused` with *"this build has no Carla runtime, so Carla Rack cannot host anything ... a VST3 loads through Zene's own VST3 host instead (plugin.list format vst3, then plugin.load its dev-&lt;n&gt;)"* (`logs/repro-3-after-fix.log`, exit 0, process alive and answering `control.ping`). Regression test `CarlaRackNoRuntimeTest` (4 cases: agent path `pluginLoadRefusesWithoutTheRuntime`, GUI `theDeviceCardRefusesWithoutTheRuntime`, sibling `carlaPatchbayIsRefusedTheSameWay`, project `aSavedCarlaRackProjectKeepsItsXml`): **exit 8 without the product change, exit 0 with it** (`logs/test-red-1.log`, `logs/test-green-3.log`). |
+| 1. Repeat the exact Carla Rack/VST3 load sequence under a crash trace, or record a bounded not-reproduced result | **Reproduced (round 1, unchanged product path)**: the first step of the sequence - putting Carla Rack on a track so a plug-in can be loaded inside it - killed the shipped binary over its control socket with `signal=SIGSEGV(11) fault_addr=0x48` inside `CarlaInstrument::CarlaInstrument`, and the test reproduced the same frame with the product hunks reversed. **Round 2 re-ran the whole test with the seam reverted**: `git apply -R logs/red-product.diff`, rebuild `zene CarlaRackNoRuntimeTest carlarack carlapatchbay tripleoscillator` -> **exit 0** (`logs/build-red-7.log`), then `ctest -R '^CarlaRackNoRuntimeTest$' --output-on-failure` -> **exit 8**, `Totals: 2 passed, 4 failed` (`logs/test-red-8.log`): `pluginLoadRefusalKeepsTheInstrument` (line 272), `theDeviceCardRefusalKeepsTheInstrument` (324), `carlaPatchbayRefusalKeepsTheInstrument` (353) and `aSavedCarlaRackProjectKeepsItsPlaceholder` (399), with the reverted code reporting `The plugin "dummy" wasn't found ...` where the track should still hold `tripleoscillator`. Restored (`git apply logs/red-product.diff`), rebuilt -> **exit 0** (`logs/build-green-9.log`), `ctest -R '^CarlaRackNoRuntimeTest$'` -> **exit 0**, 5 cases pass (`logs/test-green-10.log`). **Bounded, not reproduced**: the step *inside* Carla (opening Carla's window, loading the VST3 in a real Rack) cannot run here - no Carla runtime exists in this build (`pkg-config carla-native-plugin` finds nothing), building one is `tools/build-carla-runtime.sh`, and Carla's Rack adds plug-ins through its own native window that a headless QtTest cannot drive (feature record, Known limits). |
+| 2. If reproduced, fix the host path or route VST3 to the native host, and add a regression test | Host path fixed at both places the null descriptor and the destroyed instrument entered: the two modules decline with a typed reason that names the missing runtime and points a VST3 at Zene's own VST3 host, and `loadInstrument` no longer destroys the instrument before it knows the replacement exists. Regression test proven both ways: **exit 8 without the product hunks, exit 0 with them** (`logs/test-red-8.log`, `logs/test-green-10.log`). The live socket probe agrees: refused `plugin.load` of carlarack on a TripleOscillator track whose parameter was moved - track still `TripleOscillator`, parameter still the moved value, one report of the reason, shell screenshot rendered (`logs/gui-refusal-1.log`, exit 0; `logs/gui-refusal.png`, sha256 `80b1decf5c1cbaa9144994f51d7ba2ab54e70d9edd054758798c82e9b214568b`). |
 
-## What changed
+Commands, from the worktree and `build/tests`, `QT_QPA_PLATFORM=offscreen`, `LMMS_PLUGIN_DIR` unset, usual `LD_LIBRARY_PATH`:
 
-- `plugins/CarlaRack/CarlaRack.cpp`, `plugins/CarlaPatchbay/CarlaPatchbay.cpp` - decline when the build's Carla stand-in
-  answers nullptr, and hand the reason to `pluginload::noteInstantiationFailure` (the mechanism `Vst3Effect`, `AuEffect`,
-  `ClapEffect` use), so `plugin.load` refuses typed instead of the process dying.
-- `tests/src/gui/CarlaRackNoRuntimeTest.cpp` (new), registered in `tests/CMakeLists.txt` (target, `QT_QPA_PLATFORM=offscreen`,
-  `add_dependencies` on `carlarack`, `carlapatchbay`, `tripleoscillator`), `tests/fork-sources.txt`, `tests/all-sources.txt`.
-- `data/manual/index.html` - a Carla Rack / Carla Patchbay paragraph: what it is for, that a build without a runtime refuses it
-  and keeps the project's XML, and that a VST3 goes to Zene's own VST3 host.
-- `docs/050-features/Q050-359.md` - the feature record.
-- `tests/upstream-modifications.txt` - the two host modules are inherited files, declared with their reason (Gate 6).
+```
+git diff -- include src > logs/red-product.diff && git apply -R logs/red-product.diff
+cmake --build build --target zene CarlaRackNoRuntimeTest carlarack carlapatchbay tripleoscillator -- -j4   # 0  logs/build-red-7.log
+ctest -R '^CarlaRackNoRuntimeTest$' --output-on-failure                                                    # 8  logs/test-red-8.log
+git apply logs/red-product.diff
+cmake --build build --target zene CarlaRackNoRuntimeTest carlarack carlapatchbay tripleoscillator -- -j4   # 0  logs/build-green-9.log
+ctest -R '^CarlaRackNoRuntimeTest$' --output-on-failure                                                    # 0  logs/test-green-10.log
 
-No command was added or changed; no project format changed.
+# neighbours of the seam, and the metadata gates
+cmake --build build --target MissingDevicesPreserveTest MissingDevicesRound2Test InstrumentLayersCommandsTest ReversibilityUndoTest ReversibilityUndoDeviceTest InstrumentTrackRenderPathTest ArrangerFileDropTest CarlaPlayImplTest ScriptEngineTest HybridTrackInstrumentRoleTest ProjectStateTest PartialLoadTest LegacyVst2ProjectTest -- -j4   # 0  logs/build-5-neighbours.log
+ctest -R '^(MissingDevicesPreserveTest|MissingDevicesRound2Test|InstrumentLayersCommandsTest|ReversibilityUndoTest|ReversibilityUndoDeviceTest|InstrumentTrackRenderPathTest|ArrangerFileDropTest|CarlaPlayImplTest|ScriptEngineTest|HybridTrackInstrumentRoleTest|ProjectStateTest|PartialLoadTest|LegacyVst2ProjectTest|ScriptBindingsTest|CarlaRackNoRuntimeTest)$' --output-on-failure   # 0, 15/15  logs/test-green-4-neighbours.log
+ctest -R '^(ControlCommandsSnapshot|ReversibilityContractTest|PluginFormatsDocsGate)$' --output-on-failure     # 0, 3/3  logs/test-green-13-metadata.log
+python3 tests/doc-figures-gate.py                                                                             # 0, PASS  logs/gate-doc-figures-1.log
+bash tests/fork-sources-gate.sh                                                                               # 0, PASS  logs/gate9-fork-sources-2.log
+bash tests/no-upstream-regression-gate.sh                                                                     # 0, PASS  logs/gate6-upstream-2.log
+bash tests/all-sources-reproduce.sh ; tests/scripted/check-namespace ; bash tests/no-tautology-gate.sh        # 0 / 0 / 0
+bash tests/file-length-gate.sh --check                                                                        # 0, no regressions
+```
+
+## What round 2 changed, and why it is the whole finding
+
+1. **The seam.** `InstrumentTrack::loadInstrument` now instantiates the requested module with the track as parent first and
+   judges it the way `ControlCommandsPlugin.cpp:232` and `ControlCommandsAudioSlice.cpp:227` already read a refusal (no
+   descriptor, a descriptor name other than the one requested, or a non-empty `unavailableReason()`). A refusal deletes the
+   candidate and returns `nullptr` without silencing notes, changing the model, clearing `m_preservedInstrument` or
+   creating an undo step; only a real device is adopted, through the original sequence. A track with no instrument at all
+   keeps the `DummyInstrument` placeholder, which is what a project naming an unavailable device already opens with. The two
+   module guards from round 1 stay - they are what stops the SIGSEGV during the trial.
+2. **The callers.** `InstrumentLoaderThread::run` (arranger drop) null-guards the load and emits the new
+   `refused(plugin, reason)`; `dropEvent` reports it and takes back the empty track it created; the file-drop branch does
+   the same inline; `FileBrowser::handleFile` and `InstrumentTrackWindow::dropEvent` report the refusal instead of
+   dereferencing a null descriptor; `PresetPreviewPlayHandle` tolerates a placeholder.
+3. **The tests.** `CarlaRackNoRuntimeTest` is inverted, not extended: a configured `tripleoscillator` must survive a
+   refused replacement over the agent path, the device card's Replace Instrument... with the real picker, and Carla
+   Patchbay, with `nodeName()`, the track name, the track's parameter value and the journal count unchanged and the save
+   taken afterwards canon-identical to the one before; the saved-project placeholder and its XML round-trip case is kept,
+   including a `plugin.load` of carlarack onto that track.
+4. **The fixtures.** Two inherited fixtures had been passing on the fallback this unit removes. `firstLoadable("instrument")`
+   now answers `firstLoadableInstrument()` (the catalogue lists `carlapatchbay` first alphabetically and cannot know it
+   declines), and `InstrumentTrackRenderPathTest`'s helper asserts *both* halves of the new contract - the refusal and the
+   placeholder - where its five slots asserted only a non-null return. No assertion was removed or relaxed.
+5. **Docs.** `data/manual/index.html` states the two behaviours separately (a live refusal preserves; opening a saved
+   project uses the placeholder and keeps its XML), and `docs/050-features/Q050-359.md` drops the Known-limits sentence
+   that declared the loss out of scope.
 
 ## Self-check
 
-**Each new test FAILS with the product change reverted, then PASSES restored.** Reverse step: `git diff --
-plugins/CarlaRack/CarlaRack.cpp plugins/CarlaPatchbay/CarlaPatchbay.cpp` into `logs/product-q050-359.patch`, `git apply -R`,
-rebuild `carlarack carlapatchbay` (`logs/build-6-red-modules.log`, exit 0), `ctest -R '^CarlaRackNoRuntimeTest$'
---output-on-failure` (from `build/tests`) → **exit 8**, `CarlaRackNoRuntimeTest (SEGFAULT)`, `Received signal 11 (SIGSEGV) ...
-accessing address 0x48`, frame `lmms::CarlaInstrument::CarlaInstrument(...)+1205: call *0x48(%rax)`. Restore: `git apply`,
-rebuild (`logs/build-7-restore-modules.log`, exit 0), same `ctest` → **exit 0**, 1/1 passed; verbose run
-(`logs/test-green-2.log`) shows `Totals: 6 passed, 0 failed, 0 skipped`. The test binary was not rebuilt between the two runs:
-only the two product modules changed, and they are what the test loads.
+**Each new test FAILS with the product change reverted, then PASSES restored.** Product hunks (`git diff -- include src`,
+280 lines, `logs/red-product.diff`) reversed with `git apply -R`: rebuild exit **0** (`logs/build-red-7.log`),
+`ctest -R '^CarlaRackNoRuntimeTest$'` exit **8**, 4 of 5 cases fail (`logs/test-red-8.log`). Restored with
+`git apply logs/red-product.diff`: rebuild exit **0** (`logs/build-green-9.log`), same ctest exit **0**, 5 passed /
+0 failed / 0 skipped (`logs/test-green-10.log`). The test binary was rebuilt between the runs because the seam lives in
+`zene`'s library, not only in a module.
 
-**Every acceptance criterion is proven by a test I ran.** Criterion 1: `CarlaRackNoRuntimeTest` exit 8 red / 0 green, plus
-the out-of-test reproduction `logs/repro-2.log` (SIGSEGV) and `logs/repro-3-after-fix.log` (typed refusal, alive).
-Criterion 2: the same four cases; the refusal message carries the native-VST3 route, and `plugin.list` still offers the device,
-so the refusal - not a hidden row - is what a user meets.
+**Every acceptance criterion is proven by a test I ran.** Criterion 1: `CarlaRackNoRuntimeTest` (5 cases) - red exit 8,
+green exit 0, plus the bounded not-reproduced half in the table above. Criterion 2: the same four data-loss cases, red
+exit 8 / green exit 0, and the live socket probe `logs/gui-refusal-1.log` (exit 0) which shows the refusal typed, the
+track still `TripleOscillator`, and the moved parameter unchanged at `0`. Neighbours: 15 of 15, exit 0
+(`logs/test-green-4-neighbours.log`).
 
-**One undo step per edit; honest reversibility.** No command was added or changed, so no reversibility row moved (the snapshot
-check below is the proof nothing did): `plugin.load` keeps `snapshot`, and a *refused* load journals nothing - the test compares
-`control.transactions` before and after the refusal and requires the same length
-(`CarlaRackNoRuntimeTest::pluginLoadRefusesWithoutTheRuntime`); `plugin.list` stays `not_mutating`.
+**One undo step per edit, honest classes.** No command was added or changed. `plugin.load` keeps its committed class and
+its `snapshot` transaction; a refused load journals nothing at all, which every inverted case asserts by comparing
+`control.transactions` / `journalledSteps()` before and after. `ReversibilityContractTest` passes (exit 0,
+`logs/test-green-13-metadata.log`), so the A16 histogram line needed no change, and `ControlCommandsSnapshot` passes
+(exit 0, same log) - no metadata was regenerated because none changed. `snapshot_live.py` is not in this checkout
+(`research/` is absent), so `ctest -R '^ControlCommandsSnapshot$'` is the live-instance check.
 
-**Nothing added runs on the audio thread.** My diff touches no audio-path function: the guard runs inside
-`lmms_plugin_main`, once, on the thread that instantiates the device (GUI thread or project loader), before any
-`CarlaInstrument` exists; `CarlaInstrument::playImpl` and the MIDI hand-off are untouched. The FLAGGED lines from the check
-(`ConvolutionReverbEffect::loadImpulse/buildKernel`, `LadspaEffect::pluginInstantiation`, `AudioEngine::removeAudioBusHandle`)
-are **not mine** - they come from files this branch inherits from `050/m0-train-35`; `git show --stat c0ab4e002d 0e6dc10682`
-lists six files and none of them is one of those.
+**Nothing added runs on the audio thread.** The new code paths are: `InstrumentTrack::loadInstrument` (called only from an
+explicit load - GUI action, drop, project file, or a `plugin.load` command; it takes the track lock exactly as before),
+`InstrumentLoaderThread::run` (a worker thread created per drop), `TrackContainerView::dropEvent`,
+`FileBrowser::handleFile`, `InstrumentTrackWindow::dropEvent`, `PresetPreviewPlayHandle`'s constructor (a preview note setup)
+and `arrangerdrop::reportRefusedInstrument`. None of them is on the render path; `InstrumentTrack::play`,
+`playImpl`, `processOutEvent` and `CarlaInstrument::playImpl` are untouched by the diff, and no allocation, lock, wait,
+I/O or signal was added to them. Local TSan does not run on this box, so this is a design argument, not a measured one.
 
-**Old projects load and render as before; new data round-trips.** No format change and no core code touched.
-`CarlaRackNoRuntimeTest::aSavedCarlaRackProjectKeepsItsXml` opens a project whose `<instrument>` names `carlarack` (with a
-Carla state element inside), gets the Q050-018 placeholder (`dummyinstrument`), saves again and requires the instrument
-element to be byte-identical to the file's own (exit 0). Neighbours that drive the same modules and the catalogue pass:
-`ctest -R '^(CarlaPlayImplTest|CarlaParamFloatModelTest|ControlDeviceCatalogueTest)$'` → **exit 0**, 3/3
-(`logs/test-neighbours.log`).
+**Old projects load and render as before; new data round-trips.** A project that names Carla Rack opens with the
+placeholder and its own `<instrument name="carlarack">` element, which saves back canon-identical before the open, after
+open + save, and after a refused `plugin.load` (`aSavedCarlaRackProjectKeepsItsPlaceholder`, green). Old-project paths were
+re-run: `LegacyVst2ProjectTest`, `PartialLoadTest`, `ProjectStateTest`, `MissingDevicesPreserveTest`,
+`MissingDevicesRound2Test` - all pass in the 15/15 run. No format changed.
 
-**Completeness - real user path and agent path.** Agent: `plugin.list` → `plugin.load dev-<n>` → typed `refused` with the
-message, track left with the placeholder. User: a track's device card → **Replace Instrument...** →
-`src/gui/shell/DeviceActionMenu.cpp:131` → the real `DevicePicker` (query `Carla Rack`, row shows it, `selectedDevice()` is
-`plugin.list`'s id) → `dispatch(... "plugin.load" ...)` → the same refusal, app alive. Edge cases tried: the Patchbay sibling
-(same host path, its own null descriptor); a project that names Carla Rack through open + save (reopen after save); a build
-with a real runtime (the cases report Skipped, as `CarlaVst2HostingTest` does from the other side); a missing `carlarack`
-module (`QSKIP`, naming it).
+**Completeness: the real user path and the agent path.** Agent path: `plugin.load` of `carlarack`/`carlapatchbay` on a
+track that holds a configured instrument - refused, typed, reason quoted (`logs/gui-refusal-1.log`). GUI path: the device
+card's Replace Instrument... opens the real picker, picks the real `carlarack` row, and the same registered command refuses
+(`theDeviceCardRefusalKeepsTheInstrument`). Edge cases tried: a **track with no instrument yet** (placeholder installed,
+`plugin.load` refused, `InstrumentTrackRenderPathTest`'s five slots green), a **saved project naming Carla Rack** (XML
+round-trip, and a refused load onto that very track), the **drop path** (the loader thread reports instead of dropping the
+track silently), a **file dropped on a track whose instrument declined** (browser and instrument window report instead of
+dereferencing), and the **journal** (no step for a refusal).
 
-**The GUI test drives the visible control, and the same registered command ran.** The case triggers the real `QAction` from
-the device card's menu (`lmms::test::menuAction(menu, {"Replace Instrument..."})`), answers the modal `DevicePicker` the action
-opens, and asserts `picker->selectedDevice()` equals the `dev-<n>` `plugin.list` reports - so the accept went through
-`runCommand` → `ControlRegistry::invoke("plugin.load", ...)`; nothing writes the model directly. Undo depth does **not** grow
-here because a refused command journals no step (asserted on the agent case); what proves the command ran is the track's
-instrument becoming the placeholder (only `plugin.load` does that), and the announcement the GUI path makes is in the verbose
-log: `QWARN : CarlaRackNoRuntimeTest::theDeviceCardRefusesWithoutTheRuntime() plugin.load refused: the engine could not load
-instrument 'carlarack': this build has no Carla runtime, so Carla Rack cann...` (`logs/test-green-2.log`).
+**The GUI test drives the visible control through the same registered command.** `theDeviceCardRefusalKeepsTheInstrument`
+finds the instrument's device card, triggers its Replace Instrument... action, drives the real picker (asserts the row reads
+`Carla Rack`, selects that row, accepts), and then checks the model, the journal count and the saved XML - the picker calls
+`plugin.load`, so the same `ControlRegistry` command runs that the agent calls; the test does not invoke the handler itself.
+Screenshot evidence for the `src/gui` change: `logs/gui-refusal.png`, 1600x1000, sha256
+`80b1decf5c1cbaa9144994f51d7ba2ab54e70d9edd054758798c82e9b214568b`, taken with `window.screenshot` after the refused load
+(`logs/gui-refusal-1.log`).
 
-**Portability.** Plain `nullptr` comparisons, `QStringLiteral`, `pluginload::noteInstantiationFailure`; no Qt-6-only API, no
-`std::filesystem`, no new POSIX call, none of `small/near/far/interface/min/max` as identifiers. The test's only Qt API surface
-is `QLibrary::resolve` through `PluginFactory::PluginInfo` (Qt 5.15 has it) plus QtTest/QtWidgets. This box builds Qt 6 only,
-so CI-only compile errors cannot be seen here.
+**Qt 5.15 / MSVC / macOS < 10.15 portability.** The diff adds plain `nullptr` comparisons, `QStringLiteral`, one signal and
+one `connect` with a lambda (C++11, no Qt-6-only overload), and `QString::fromUtf8`; no `std::filesystem`, no POSIX-only
+call, no identifier from the reserved list (`small`, `near`, `far`, `interface`, `min`, `max`). The test drives the widget
+tree through actions and the picker, not through Qt-6-only APIs.
 
-**Command metadata / snapshot.** No command id, schema or description changed. The brief's
-`research/reviews/m1-session-2026-10-12/scratch/m0/snapshot_live.py` does not exist in this checkout (`research/` is absent), so
-nothing was regenerated; instead the committed snapshot was checked against a live instance:
-`ctest -R '^ControlCommandsSnapshot$'` → **exit 0** (`logs/test-commands-snapshot.log`), and `python3 tests/doc-figures-gate.py`
-→ **PASS / exit 0** (935 ids / 78 groups).
+**Gates.** `feature_check.py` exits 1 in this lane with
+`bunny-guard: 'git -C .../gate-baselines/tree checkout -q --detach 9913d36d...' is not allowed in a Bunny lane` before it
+prints a table: its baseline checkout is denied, so the two ratchets get no comparison (round 1's reviewer saw the same).
+`complexity-gate.sh --check` also cannot run here (`lizard is not installed`, exit 2). Every gate that can run passes:
+fork-sources 0, all-sources-reproduce 0 (REPRODUCES), no-upstream-regression 0, check-namespace 0, no-tautology 0,
+doc-figures 0, file-length 0 with no regression in my files.
 
-**Gates.** `python3 .../feature_check.py <worktree>` → **RESULT: PASS**, exit 0 - fork-sources, all-sources-reproduce
-(`REPRODUCES`, exit 0), no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity and file-length (no new
-item in my files). Gate 6 first failed on the two inherited host modules (`plugins/CarlaRack/CarlaRack.cpp` VIOLATION,
-`plugins/CarlaPatchbay/CarlaPatchbay.cpp` VIOLATION); both are now declared with a reason in
-`tests/upstream-modifications.txt` and `bash tests/no-upstream-regression-gate.sh` → **exit 0**
-(`logs/gate-6-upstream.log`). `submit_check.py` was run before this report (four items, all "not committed yet") and again
-after the commits and this self-check (see the last run recorded in the log folder).
-
-**Proof manifest.** `/home/kruzzzzy/.config/kads/zene/state/runs/Q050-359.r1/logs/proof.json`: unit `Q050-359`, this worktree,
-commit `c0ab4e002d712213ce105f40bdcce9ca7b3ecfa2`, a one-sentence claim, and a `regression-test` artifact for
-`tests/src/gui/CarlaRackNoRuntimeTest.cpp` with `red_exit` 8 and `green_exit` 0.
+**Commits.** `2e56348fb6` (product), `1bf95db103` (tests + ledger), the report commit (manual, feature record, this file).
