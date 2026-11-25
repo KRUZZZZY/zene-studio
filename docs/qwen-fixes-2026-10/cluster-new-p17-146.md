@@ -117,6 +117,56 @@ ctest -R '^(StemExportTest|ExportWavWriteErrorTest|SurroundExportTest|MasteringT
 `SurroundExportTest`, `MasteringTest` and `ExportProjectDialogPresetTest`; all six were rebuilt
 (the commands above) and their tests run.
 
+## Gates, one by one (`logs/gate-*.log`)
+
+```
+bash tests/fork-sources-gate.sh                EXIT=0
+bash tests/all-sources-reproduce.sh            EXIT=0
+bash tests/no-upstream-regression-gate.sh      EXIT=0
+bash tests/no-tautology-gate.sh                EXIT=0
+tests/scripted/check-namespace                 EXIT=0
+python3 tests/doc-figures-gate.py              EXIT=0
+bash tests/complexity-gate.sh --check          EXIT=0
+bash tests/file-length-gate.sh --check         EXIT=0
+```
+
+Complexity printed `28177 functions in the fork scope; 60 exceed CCN 10` and
+`PASS (check mode: no regressions; baseline not written)` — the new `renderError()` is an
+inline one-line accessor (CCN 1) and no `REGRESSION:` line names any file of this change.
+File-length printed `PASS (check mode: no regressions; baseline not written)`; no file was
+added.
+
+`lizard`, the complexity gate's tool, is not installed in this lane and `~/.local` is mounted
+read-only (`pip install --user lizard` → `ERROR: Could not install packages due to an OSError:
+[Errno 30] Read-only file system: '/home/kruzzzzy/.local/lib'`, `logs/pip-lizard.log`), so it
+was installed into the session scratch `$TMPDIR/pylibs` and the gate run with
+`PYTHONPATH=$TMPDIR/pylibs`. No shared file was changed.
+
+`feature_check.py` (the one-table wrapper) cannot complete in this session, and neither can its
+two ratchet rows be computed by it: it builds its comparison baseline by checking a shared
+cache worktree out at the base commit — refused by this lane's git guard — and writes its cache
+under `~/.local/share/zene-bunny-fix/qwen/gate-baselines`, which is read-only here:
+
+```
+bunny-guard: 'git -C /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/gate-baselines/tree checkout
+  -q --detach 9913d36...' is not allowed in a Bunny lane (AGENTS.md rules 1, 2, 11, 12).
+subprocess.CalledProcessError: Command '[...]' returned non-zero exit status 97.
+GATESEXIT=1                                        (logs/gates-1.log)
+touch gate-baselines/.probe-write                  Read-only file system, EXIT=1
+```
+
+What those two rows would decide is whether a REGRESSION line is NEW compared with the base
+commit. Both runs are empty, so both rows pass for any base:
+
+* this tree: `logs/gate-complexity.log`, `logs/gate-file-length.log` — 0 `REGRESSION:` lines;
+* the base commit 9913d36 — extracted with `git archive 9913d36 | tar -x -C $TMPDIR/base-9913d36`
+  (no checkout, nothing else touched) and both gates run in it:
+  `BASECOMPLEXITY EXIT=0`, `BASEFILELENGTH EXIT=0`, 0 `REGRESSION:` lines each
+  (`logs/base-complexity.log`, `logs/base-file-length.log`).
+
+So `submit_check.py` shows that single row as FAIL for the harness reason above and every other
+row PASS (`logs/submit-1.log`); no item of this change is over a limit.
+
 ## What a caller sees now
 
 * `lmms render --render <unwritable dir>` / `render.stems`: the child process exits
@@ -177,6 +227,14 @@ STEM_EVIDENCE UNREADY rendered=0 reported-failure=1
   needs no edit, and the fix introduces no widget, no dialog and no new user action. The
   dialog's wording ("the incomplete file was removed") still describes the write-error case;
   see Other findings.
+* **`submit_check.py` residual.** Its only FAIL is the `gates (feature_check.py)` row, and it
+  is the session's own limitation, not a gate finding: `feature_check.py` aborts while creating
+  its base-comparison worktree (`git checkout --detach` refused by the lane guard, exit 97) and
+  its cache directory is read-only here — quoted with exit codes under "Gates" above. Run
+  individually, all eight gates it orchestrates exit 0, and the two ratchet gates have zero
+  `REGRESSION:` lines both at HEAD and at the base commit, so the rows it could not compute
+  would pass. Nothing in this change is over a limit, and no gate file, baseline or ratchet was
+  touched (probe: `touch gate-baselines/.probe-write` → "Read-only file system").
 
 ## Other findings
 
