@@ -10,7 +10,7 @@ A maximum grid therefore attempted 131,072 cell buttons on the UI thread.
 The fix is the UI-specific limit the finding permits: the authored grid remains unchanged, but the
 view draws at most 64 tracks by 64 scenes. `MaxVisibleTracks`/`MaxVisibleScenes` are at
 `src/gui/SessionGridView.cpp:55-56`; `rebuild()` keeps the authored dimensions separately and builds
-only the capped prefix at `:184-187`. The status line says the grid is truncated at `:280-284`, and
+only the capped prefix at `:184-187`. The status line says the grid is truncated at `:281-285`, and
 the Grid Size menu still defaults from the authored dimensions at `:510`. The drop-preview status
 also uses the authored dimensions (`src/gui/SessionGridDrop.cpp:132`). The member split is in
 `include/SessionGridView.h:178-181`.
@@ -49,8 +49,8 @@ widget cap stays; the authored state is now model-wide again, with the drawn-str
   clip's name from `m_playingName`, so `launchReplaces` still returns the note.
 - `include/SessionGridView.h`: `m_sceneHasClip`, `m_playingName`, `readAuthoredClips`, `sceneHoldsClip`.
 
-Report drift from round 1 corrected: the truncation status text is `SessionGridView.cpp:281-284`
-(the status branch itself starts at `:280`), and the pre-fix per-cell creation was `:202` at the base commit,
+Report drift from round 1 corrected: the truncation status text is `SessionGridView.cpp:281-285`
+(the branch is the `if` at `:281`), and the pre-fix per-cell creation was `:202` at the base commit,
 not in the current file.
 
 ### Regression tests added (`tests/src/gui/SessionGridViewTest.cpp`)
