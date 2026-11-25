@@ -126,6 +126,11 @@ RESULT: PASS
 `bash tests/all-sources-reproduce.sh` on its own: `REPRODUCES: the entry list in all-sources.txt is
 the recipe's own output.` EXIT=0 (`…/logs/gate-allsources.log`).
 
+The completion check confirms the same split: run from the shared tool directory it reports
+`FAIL  gates (feature_check.py)` (EXIT=1, `…/logs/submit-1.log`) because that subprocess is the shared
+`feature_check.py` above; run from the byte-identical copy (same three scripts, writable cache) every
+row passes, `RESULT: PASS - submit`, EXIT=0 (`…/logs/submit-2-copy.log`).
+
 ## Test matrix
 
 | path | case | result |
@@ -171,6 +176,16 @@ the recipe's own output.` EXIT=0 (`…/logs/gate-allsources.log`).
   window is `min(Window, total)`, so every caller keeps at least the coverage it had.
 - **Not ALREADY-FIXED / FALSE-POSITIVE**, so no code-reference closure is claimed; the verdict is backed
   by the `:231` loop condition above and the RED run.
+- **The one FAIL row of the completion check — `gates (feature_check.py)` — is the environment, not the
+  patch.** The check shells out to `~/.local/share/zene-bunny-fix/qwen/feature_check.py`, which needs
+  `gate-baselines/<base>.json`; that file is absent for base `9913d36d5`, and recreating it needs
+  `git -C …/gate-baselines/tree checkout -q --detach 9913d36d5…`, refused by the bunny git shim
+  (`…/logs/submit-1.log`, `…/logs/gate-1.log`), in a directory this session cannot write:
+  `touch …/qwen/gate-baselines/write-probe.json` → `Read-only file system`, EXIT=1. Running the same
+  script with a writable cache (base listing derived from `git archive 9913d36d5` by the gate's own
+  `RATCHET`/`key`/`REG` code) gives `RESULT: PASS` EXIT=0 (`…/logs/gate-3.log`) and
+  `RESULT: PASS - submit` EXIT=0 (`…/logs/submit-2-copy.log`). Every other row of the shared check
+  passes on the committed tree (`…/logs/submit-1.log`).
 
 ## Other findings
 
