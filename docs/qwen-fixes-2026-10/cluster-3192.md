@@ -198,7 +198,9 @@ green (step 8).
   ```
 
   The base this run needs (`9913d36d53...`, the train's current merge base) has no cached baseline; round 1's base
-  (`fa4a5f2e7...`) was cached, which is why the same command passed then. Both ratchet rows depend on that
+  (`fa4a5f2e7...`) was cached, which is why the same command passed then. This is the single FAIL in
+  `submit_check.py` (`gates (feature_check.py)`, `submit-check-1.log`), and it is the only one: the check's other
+  rows pass. Both ratchet rows depend on that
   baseline: `file-length` prints no `REGRESSION:` line for any file this fix changed, and `complexity` cannot run
   at all here (`lizard is not installed`, exit 2), so it also prints none. I did not write the cache by hand - that
   would re-anchor a gate.
