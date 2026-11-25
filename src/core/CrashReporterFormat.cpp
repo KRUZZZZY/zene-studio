@@ -232,8 +232,10 @@ unsigned long long currentThreadId()
 namespace
 {
 
+#if !defined(__APPLE__)
 thread_local uintptr_t s_stackLow = 0;
 thread_local uintptr_t s_stackCeiling = 0;
+#endif
 
 // A plausible single thread stack is never wider than this.  It is a guard
 // against a registration on one stack and a fault on another (a fiber or a
@@ -273,6 +275,27 @@ bool contextStackPointers(void* context, uintptr_t& framePointer, uintptr_t& sta
 #endif
 }
 
+// The crashing thread's stack ceiling (and exact floor, when known), read in
+// the handler.  On Darwin a thread_local is NOT a plain load: dyld allocates a
+// thread's TLV block lazily, through malloc, on that thread's first access, so
+// reading s_stackCeiling from a thread that never registered would enter the
+// allocator inside the signal.  Darwin therefore reads the stack top from the
+// current thread's own pthread struct: libpthread's pthread_get_stackaddr_np()
+// returns t->stackaddr directly for pthread_self() (no list lock, no
+// allocation), and pthread_self() is a thread-register read.  Linux keeps the
+// recorded thread_locals: the core is linked into executables, where the TLS
+// access is relaxed to a direct offset from the thread pointer.
+void stackCeilingForHandler(uintptr_t& high, uintptr_t& stackLow)
+{
+#if defined(__APPLE__)
+	high = reinterpret_cast<uintptr_t>(::pthread_get_stackaddr_np(::pthread_self()));
+	stackLow = 0;
+#else
+	high = s_stackCeiling;
+	stackLow = s_stackLow;
+#endif
+}
+
 } // namespace
 
 void recordThreadStackBounds()
@@ -281,16 +304,9 @@ void recordThreadStackBounds()
 	// install() (the main thread at startup, or a test thread), never from the
 	// render/JACK callbacks: pthread_getattr_np allocates (its CPU-set buffer)
 	// and is not real-time safe.  The cheap marker below covers those callers.
-#if defined(__APPLE__)
-	void* top = ::pthread_get_stackaddr_np(::pthread_self());
-	const size_t size = ::pthread_get_stacksize_np(::pthread_self());
-	if (top != nullptr && size > 0)
-	{
-		const uintptr_t high = reinterpret_cast<uintptr_t>(top);
-		s_stackLow = high - size;
-		s_stackCeiling = high;
-	}
-#elif defined(__linux__)
+	// Darwin records nothing: its handler reads the stack top itself (see
+	// stackCeilingForHandler()), so no thread_local is touched there at all.
+#if defined(__linux__)
 	pthread_attr_t attr;
 	if (::pthread_getattr_np(::pthread_self(), &attr) != 0) { return; }
 	void* base = nullptr;
@@ -310,8 +326,10 @@ void noteThreadStackMarker()
 	// no lock, no I/O.  The first registration on a thread is its shallowest
 	// call, so keeping the maximum gives a ceiling above every later frame (and
 	// never lowers the exact ceiling install() recorded on the main thread).
+#if !defined(__APPLE__)
 	const uintptr_t marker = reinterpret_cast<uintptr_t>(&marker);
 	if (marker > s_stackCeiling) { s_stackCeiling = marker; }
+#endif
 }
 
 int captureFrames(void* context, unsigned long long* out, int capacity)
@@ -349,7 +367,9 @@ int captureFrames(void* context, unsigned long long* out, int capacity)
 	const uintptr_t word = sizeof(uintptr_t);
 	const uintptr_t alignMask = (2 * word) - 1;
 	const uintptr_t low = stackPointer;
-	const uintptr_t high = s_stackCeiling;
+	uintptr_t high = 0;
+	uintptr_t stackLow = 0;
+	stackCeilingForHandler(high, stackLow);
 	// No recorded ceiling means no dereference at all: a wrong read would fault
 	// inside the handler and lose the report. PC is still captured above.
 	if (high == 0 || high <= low + 2 * word) { return count; }
@@ -357,7 +377,7 @@ int captureFrames(void* context, unsigned long long* out, int capacity)
 	// With exact bounds (install-time), the interrupted SP must be on that same
 	// stack.  A marker-only thread (render/JACK) has no recorded low, so the
 	// interrupted SP is its own lower bound.
-	if (s_stackLow != 0 && low < s_stackLow) { return count; }
+	if (stackLow != 0 && low < stackLow) { return count; }
 	if (framePointer < low || framePointer > high - 2 * word) { return count; }
 
 	while (count < capacity)
