@@ -147,4 +147,7 @@ files (exit 0). Every gate that can run passes:
 fork-sources 0, all-sources-reproduce 0 (REPRODUCES), no-upstream-regression 0, check-namespace 0, no-tautology 0,
 doc-figures 0, file-length 0 with no regression in my files.
 
-**Commits.** `2e56348fb6` (product), `1bf95db103` (tests + ledger), the report commit (manual, feature record, this file).
+**Commits.** `2e56348fb6` (product), `1bf95db103` (tests + ledger), `2351dde812` (manual, feature record, report),
+`1bd824592c` and `d135d5f257` (report corrections: which call sites need no guard, and the gate rows this lane cannot
+evaluate). `d135d5f257` carries a malformed message - a heredoc slip pasted the helper script into the subject line; its
+content is the one-file report edit it describes, and amending is not allowed in this lane.
