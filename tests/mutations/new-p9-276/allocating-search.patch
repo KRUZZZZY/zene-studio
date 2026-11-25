@@ -1,0 +1,16 @@
+--- a/include/MidiWinMMOutput.h
++++ b/include/MidiWinMMOutput.h
+@@ -187,6 +187,13 @@
+ 				{
+ 					continue;
+ 				}
++				// the original defect: a string list is built and searched for every event
++				QStringList seen;
++				seen.append( QString::number( route.device ) );
++				if( !seen.contains( QString::number( route.device ) ) )
++				{
++					continue;
++				}
+ 				if( m_queue.push( Command{ route.device, message, generation } ) )
+ 				{
+ 					queued = true;

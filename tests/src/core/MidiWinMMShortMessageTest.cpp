@@ -28,12 +28,11 @@
 
 #include "AllocationProbe.h"
 #include "MidiEvent.h"
+#include "MallocWatch.h"
 #include "MidiPort.h"
 #include "MidiWinMMShortMessage.h"
 
-#if __has_include("MidiWinMMOutput.h")
 #include "MidiWinMMOutput.h"
-#endif
 
 using lmms::MidiEvent;
 using lmms::winmmShortMessage;
@@ -55,7 +54,6 @@ MidiEvent eventOf(lmms::MidiEventTypes type, int channel, int p0, int p1 = 0)
 		static_cast<std::int16_t>(p1));
 }
 
-#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
 
 //! Distinct, never-dereferenced port identities: the output path only compares a port pointer.
 const lmms::MidiPort* portId(unsigned n)
@@ -100,7 +98,8 @@ public:
 	std::thread::id thread;
 };
 
-//! Holds the worker inside a driver call until the test releases it.
+//! Holds the worker inside a driver call until the test releases it. Two tokens fit: the test's
+//! own release plus the failure-path guard that keeps a failed check from leaving the worker stuck.
 class GatedSink final : public lmms::MidiWinMMSink
 {
 public:
@@ -114,7 +113,7 @@ public:
 
 	std::vector<Sent> sent;
 	std::binary_semaphore entered{0};
-	std::binary_semaphore release{0};
+	std::counting_semaphore<2> release{0};
 	std::atomic<bool> finished{false};
 };
 
@@ -135,7 +134,6 @@ QString describe(const std::vector<Sent>& sent)
 	return parts.join(QStringLiteral(", "));
 }
 
-#endif // ZENE_HAVE_WINMM_BOUNDED_OUTPUT
 
 } // namespace
 
@@ -210,7 +208,6 @@ private slots:
 	 *  subscribed device, in device-map order, with the name-search multiplicity. */
 	void publishedRoutingDrivesTheQueueToTheSubscribedDevices()
 	{
-#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
 		RecordingSink sink;
 		lmms::MidiWinMMOutput output(sink, false);
 		output.setDevices({
@@ -252,15 +249,11 @@ private slots:
 		};
 		QVERIFY2(received(sink, expected), qPrintable(describe(sink.sent)));
 		QCOMPARE(output.overflowCount(), std::uint64_t{0});
-#else
-		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path has no bounded delivery");
-#endif
 	}
 
 	//! Reconfiguration: unsubscribe, remove, port-mode and re-subscribe all take effect at once.
 	void subscriptionChangesTakeEffectImmediately()
 	{
-#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
 		RecordingSink sink;
 		lmms::MidiWinMMOutput output(sink, false);
 		output.setDevices({
@@ -307,15 +300,11 @@ private slots:
 		output.processOutEvent(port, 7u);
 		QCOMPARE(output.drainForTesting(), std::size_t{0});
 		QVERIFY(received(sink, {}));
-#else
-		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path has no bounded delivery");
-#endif
 	}
 
 	//! Exhaustion: a full queue drops the newest commands, counts them and never blocks.
 	void queueFullDropsNewestAndCounts()
 	{
-#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
 		RecordingSink sink;
 		lmms::MidiWinMMOutput output(sink, false);
 		output.setDevices({{QStringLiteral("A:out"), 0x11u}});
@@ -340,16 +329,12 @@ private slots:
 		QCOMPARE(output.overflowCount(), std::uint64_t{3});
 		QCOMPARE(output.drainForTesting(), std::size_t{1});
 		QCOMPARE(sink.sent.back().message, 0xABCDu);
-#else
-		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path has no bounded queue");
-#endif
 	}
 
 	/*! The audio-thread contract: submission performs no allocation or free. The probe is first
 	 *  shown to see an ordinary allocation, so a zero count below is not a blind probe. */
 	void submissionIsAllocationFree()
 	{
-#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
 		RecordingSink sink;
 		lmms::MidiWinMMOutput output(sink, false);
 		output.setDevices({{QStringLiteral("A:out"), 0x11u}});
@@ -368,27 +353,42 @@ private slots:
 		QVERIFY2(static_cast<quint64>(lmms::test::tlAllocationCount) > 0,
 			"the allocation probe saw nothing: the criterion below would measure nothing");
 
+		// Qt containers allocate through malloc, which operator new does not see: show that the
+		// C-allocator watch sees a QStringList, the container the original code grew per event.
+		if constexpr (lmms::test::MallocWatch::Available)
+		{
+			lmms::test::MallocWatch::begin();
+			{
+				QStringList list;
+				list << QString::number(42);
+				QCOMPARE(list.size(), qsizetype{1});
+			}
+			lmms::test::MallocWatch::end();
+			QVERIFY2(lmms::test::MallocWatch::allocations > 0,
+				"the malloc watch saw nothing for a QStringList: it would measure nothing below");
+		}
+
 		lmms::test::resetAllocationCount();
 		lmms::test::tlCountAllocations = true;
+		lmms::test::MallocWatch::begin();
 		for (std::uint32_t i = 0; i < 1000; ++i)
 		{
 			output.processOutEvent(port, i);
 		}
+		lmms::test::MallocWatch::end();
 		lmms::test::tlCountAllocations = false;
 		QCOMPARE(static_cast<quint64>(lmms::test::tlAllocationCount), quint64{0});
 		QCOMPARE(static_cast<quint64>(lmms::test::tlFreeCount), quint64{0});
+		QCOMPARE(lmms::test::MallocWatch::allocations, std::size_t{0});
+		QCOMPARE(lmms::test::MallocWatch::frees, std::size_t{0});
 
 		QCOMPARE(output.drainForTesting(), std::size_t{1000});
 		QCOMPARE(sink.sent.size(), std::size_t{1000});
-#else
-		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path has no bounded queue");
-#endif
 	}
 
 	//! The driver call runs on the output worker, not on the thread that submitted the event.
 	void workerSendsOffTheSubmittingThread()
 	{
-#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
 		SignallingSink sink;
 		lmms::MidiWinMMOutput output(sink, true);
 		output.setDevices({{QStringLiteral("A:out"), 0x11u}});
@@ -404,15 +404,11 @@ private slots:
 		QCOMPARE(sink.sent[0].message, 0x903C64u);
 		QVERIFY2(sink.thread != submitting,
 			"the WinMM sink ran on the submitting (audio) thread");
-#else
-		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path delivers synchronously");
-#endif
 	}
 
 	//! Teardown: queued commands are discarded, new submissions are refused, and reopening works.
 	void clearDevicesDiscardsQueuedCommandsAndStopsSends()
 	{
-#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
 		RecordingSink sink;
 		lmms::MidiWinMMOutput output(sink, false);
 		output.setDevices({{QStringLiteral("A:out"), 0x11u}});
@@ -436,32 +432,40 @@ private slots:
 		output.processOutEvent(port, 10u);
 		QCOMPARE(output.drainForTesting(), std::size_t{1});
 		QVERIFY(received(sink, {{0x11u, 10u}}));
-#else
-		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path delivers synchronously");
-#endif
 	}
 
 	//! Teardown must wait for a sink call already inside the driver before closing handles.
 	void clearDevicesWaitsForInFlightSink()
 	{
-#ifdef ZENE_HAVE_WINMM_BOUNDED_OUTPUT
 		GatedSink sink;
 		lmms::MidiWinMMOutput output(sink, true);
 		output.setDevices({{QStringLiteral("A:out"), 0x11u}});
 		const lmms::MidiPort* port = portId(1);
 		output.subscribeWritablePort(port, QStringLiteral("A:out"), true);
 
+		// Declared before the guard, so a failing QVERIFY below opens the gate first and the
+		// teardown thread is then joined, instead of leaving the worker stuck in the driver call.
+		std::jthread teardown;
+		struct OpenGateOnExit
+		{
+			GatedSink& gate;
+			~OpenGateOnExit() { gate.release.release(); }
+		} openGateOnExit{sink};
+
 		output.processOutEvent(port, 0x1234u);
 		sink.entered.acquire(); // the worker is now inside the gated driver call
 
 		std::atomic<bool> clearReturned{false};
-		std::thread teardown([&output, &clearReturned]
+		teardown = std::jthread([&output, &clearReturned]
 		{
 			output.clearDevices();
 			clearReturned.store(true, std::memory_order_release);
 		});
 
-		while (!output.teardownWaitedForInFlightForTesting())
+		// Ends when teardown has noticed the in-flight call, or - if teardown does not wait for
+		// it - when clearDevices() returned. The check below then reports that as a failure.
+		while (!output.teardownWaitedForInFlightForTesting()
+			&& !clearReturned.load(std::memory_order_acquire))
 		{
 			std::this_thread::yield();
 		}
@@ -474,9 +478,6 @@ private slots:
 		QVERIFY(sink.finished.load(std::memory_order_acquire));
 		QCOMPARE(sink.sent.size(), std::size_t{1});
 		QCOMPARE(sink.sent[0].message, 0x1234u);
-#else
-		QFAIL("include/MidiWinMMOutput.h is missing: the WinMM output path delivers synchronously");
-#endif
 	}
 };
 

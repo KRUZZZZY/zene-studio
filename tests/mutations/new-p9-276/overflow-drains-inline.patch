@@ -1,0 +1,13 @@
+--- a/include/MidiWinMMOutput.h
++++ b/include/MidiWinMMOutput.h
+@@ -193,7 +193,9 @@
+ 				}
+ 				else
+ 				{
+-					m_overflow.fetch_add( 1, std::memory_order_relaxed );
++					// a full queue makes the producer do the driver work itself, and nothing is counted
++					takeAndSend();
++					queued = m_queue.push( Command{ route.device, message, generation } ) || queued;
+ 				}
+ 			}
+ 		}

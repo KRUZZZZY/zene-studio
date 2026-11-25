@@ -25,13 +25,6 @@
 #ifndef LMMS_MIDI_WINMM_OUTPUT_H
 #define LMMS_MIDI_WINMM_OUTPUT_H
 
-/*
- * The fixed tree carries the bounded implementation this job added. The macro lets the
- * regression tell "the fix is present" from "the fix was reversed" without reading product
- * source text: the test includes this header when it can and fails with a message when it
- * cannot.
- */
-#define ZENE_HAVE_WINMM_BOUNDED_OUTPUT 1
 
 #include <atomic>
 #include <cstddef>

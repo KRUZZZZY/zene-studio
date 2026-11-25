@@ -1,0 +1,13 @@
+--- a/include/MidiWinMMOutput.h
++++ b/include/MidiWinMMOutput.h
+@@ -187,7 +187,9 @@
+ 				{
+ 					continue;
+ 				}
+-				if( m_queue.push( Command{ route.device, message, generation } ) )
++				(void) generation;
++				m_sink.send( route.device, message ); // driver call on the submitting (audio) thread
++				if( true )
+ 				{
+ 					queued = true;
+ 				}
