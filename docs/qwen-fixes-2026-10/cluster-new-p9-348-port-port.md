@@ -165,7 +165,7 @@ Builds ran from the worktree root, `ctest` from `build/tests`.
    path gained nothing. No command and no undo step changed.
 7. **Registration and gates.** `tests/upstream-modifications.txt` has an r12
    entry for each changed file; `925-feature-check.log` is `RESULT: PASS`,
-   `GATE_EXIT=0`, and `926-submit-check.log` is `RESULT: PASS - submit`.
+   `GATE_EXIT=0`, and `926-submit-check.log` and the final `927-submit-check.log` are `RESULT: PASS - submit` (no FAIL, every ASK item answered above).
 
 ## Other findings
 
