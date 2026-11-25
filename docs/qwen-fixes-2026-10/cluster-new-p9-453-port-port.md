@@ -158,6 +158,11 @@ a `shared_ptr` assignment plus a `shared_ptr` copy on the UI thread. Nothing was
 - **Registration.** `plugins/Sf2Player/Sf2Player.cpp` is an inherited file: a line was added to
   `tests/upstream-modifications.txt` naming this cluster and the regression, in the same commit
   (`fork-sources` and `no-upstream-regression` gates PASS).
+- **If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code that shows it.** The verdict is
+  `FIXED`, so this item does not apply to the change; for the record, the part of the cluster that
+  was already fixed is the mutex defect, shown at `plugins/Sf2Player/Sf2Player.cpp:418` (FluidSynth's
+  API mutex off), `:474` and `:492` (the only lock, UI-side), `:1131-1152` (the lock-free adopt path)
+  and `plugins/Sf2Player/Sf2Player.h:401-408`, `:430-438` (bounded queues, preallocated slots).
 - **Proof manifest fits the claim.** A `regression-test` artifact names
   `tests/src/plugins/Sf2PlayerRealtimeTest.cpp` (changed by this branch) and
   `failedLoadKeepsTheFontForTheNextReload`, with `red_exit 8` and `green_exit 0`.
