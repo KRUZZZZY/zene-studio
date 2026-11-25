@@ -123,8 +123,11 @@ bunny-guard: 'git -C .../qwen/gate-baselines/tree checkout -q --detach 9913d36d5
 Traceback ... File "feature_check.py", line 60, in base_listings ... CalledProcessError: ... exit status 97
 ```
 
-(exit code 1; `logs/gates-baseline-1.log`). I ran every gate it runs, one by one,
-against my worktree instead:
+(exit code 1; `logs/gates-baseline-1.log`). The directory really is read-only in
+this session — `mount` reports
+`/dev/nvme0n1p2 on /home/kruzzzzy/.local/share/zene-bunny-fix type btrfs (ro,nosuid,...)`
+and `touch .../qwen/.probe-rw` answers `Read-only file system` (exit 1). I ran
+every gate it runs, one by one, against my worktree instead:
 
 | gate | command | EXIT |
 | --- | --- | --- |
