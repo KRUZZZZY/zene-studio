@@ -66,7 +66,15 @@ void RenderManager::renderNextTrack()
 {
 	// The finished renderer's verdict has to be taken HERE, before the reset below
 	// destroys it: ProjectRenderer reports the write/close failure in hasWriteError().
-	if (m_activeRenderer && m_activeRenderer->hasWriteError()) { m_writeFailed = true; }
+	if (m_activeRenderer && m_activeRenderer->hasWriteError())
+	{
+		m_writeFailed = true;
+		if (m_renderError.isEmpty())
+		{
+			m_renderError = QStringLiteral(
+				"the output could not be written completely; the incomplete file was removed");
+		}
+	}
 	m_activeRenderer.reset();
 
 	if (m_tracksToRender.empty())
@@ -234,7 +242,22 @@ void RenderManager::render(QString outputPath)
 	}
 	else
 	{
-		qDebug( "Renderer failed to acquire a file device!" );
+		// The renderer produced no file at all: no device could be acquired (an
+		// unwritable destination, a full disk) or the settings were refused. That is
+		// a FAILED render, not a skipped one - record the verdict and the reason it
+		// gives, and keep going so the rest of the queue is still attempted (a
+		// partial export), but never let the export end as if every file was
+		// written.
+		const QString reason = m_activeRenderer->refusal();
+		m_writeFailed = true;
+		if (m_renderError.isEmpty())
+		{
+			m_renderError = reason.isEmpty()
+				? QStringLiteral("an output file could not be created")
+				: reason;
+		}
+		qWarning( "Render failed, no output file for %s: %s", qUtf8Printable(outputPath),
+				qUtf8Printable(m_renderError) );
 		renderNextTrack();
 	}
 }
