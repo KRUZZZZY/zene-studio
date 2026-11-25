@@ -208,6 +208,8 @@ logs are in
 | 4b GREEN, step 3 | `cd build/tests && ctest -R OpulenZLifetime --output-on-failure > logs/test-5-green.log 2>&1` | `EXIT=0`; `1/1 Test #205: OpulenZLifetimeTest ... Passed 0.55 sec`; `100% tests passed out of 1` |
 | Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/feature-check-1.log 2>&1` | `EXIT=0`; `RESULT: PASS`; rows: `fork-sources PASS`, `all-sources-reproduce PASS`, `no-upstream-regression PASS`, `check-namespace PASS`, `no-tautology PASS`, `doc-figures PASS`, `complexity no new item in your files`, `file-length no new item in your files` |
 | Pre-submit | `python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-329-port > logs/submit-check-1.log 2>&1` | `EXIT=0`; `RESULT: PASS - submit`; six CHECKED rows PASS, five ASK items answered below |
+| Pre-submit, re-run on the committed report | same command with `> logs/submit-check-2.log 2>&1` | `EXIT=0`; `RESULT: PASS - submit`; `commits on the branch`, `working tree clean`, `report`, `tests added or changed`, `new test files registered`, `gates (feature_check.py)` all PASS |
+| all-sources recipe | `bash tests/all-sources-reproduce.sh > logs/all-sources-reproduce-1.log 2>&1` | `EXIT=0`; `REPRODUCES: the entry list in all-sources.txt is the recipe's own output.` |
 
 ## Files committed
 
