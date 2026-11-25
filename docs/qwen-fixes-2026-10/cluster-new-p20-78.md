@@ -144,6 +144,11 @@ RESULT: PASS
 7. **Registration.** `tests/upstream-modifications.txt` updates the reasons on the
    existing `src/core/midi/MidiSndio.cpp` and `include/MidiSndio.h` entries. Both test
    files are already in `tests/fork-sources.txt`. The fork-sources gate passes.
+8. **Verdict evidence.** The verdict is FIXED, not ALREADY-FIXED or FALSE-POSITIVE. REAL
+   rests on the legacy `sendByte()` ignoring the result of `::write()` (quoted under
+   Decision) and on the legacy red run (`13-legacy-red-functions.log`, 3 failures).
+   Product code tested: commit `5999bead02` (proof manifest `proof.json`). The completion
+   check (`17-submit-check.log`) gave EXIT=0, RESULT: PASS.
 
 Delegation: Sonnet implemented the designed product change and the four tests and ran
 the first green builds (logs 01–04). Haiku ran the green, 4b red/green and legacy red
