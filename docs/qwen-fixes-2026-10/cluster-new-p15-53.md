@@ -147,11 +147,12 @@ against my worktree instead:
 
 - **The regression test FAILS with the product change reverted and PASSES with
   it.** RED: `git apply -R logs/fix.patch` (EXIT=0), build (EXIT=0), ctest
-  EXIT=8, `test-5-red-reverted.log` shows `'!ok' returned FALSE` at
-  `DawProjectInterchangeRoundTripTest.cpp(2632)`. GREEN: `git apply logs/fix.patch`
-  (EXIT=0), build (EXIT=0), ctest EXIT=0 (`test-6-green-restored.log`). The same
-  red before the fix existed at all is `test-2-red.log` (EXIT=8, 65 passed,
-  1 failed).
+  EXIT=8 (`test-11-red-final.log`: 65 passed, 1 failed, `'!ok' returned FALSE` at
+  `DawProjectInterchangeRoundTripTest.cpp(2632)`). GREEN: `git apply
+  logs/fix.patch` (EXIT=0), build (EXIT=0), ctest EXIT=0
+  (`test-12-green-final.log`). The same red before the fix existed at all is
+  `test-2-red.log` (EXIT=8, 65 passed, 1 failed); the earlier rounds are
+  `test-5-red-reverted.log` / `test-6-green-restored.log`.
 - **Deterministic.** No sleeps, no wall clock, no threads. The fault is injected
   through the module's existing seam `ZENE_TEST_CONTAINER_READ_FAULT`, which
   closes the file between open and read (`QFile::close()`, no platform call), so
