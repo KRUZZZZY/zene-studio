@@ -3069,6 +3069,7 @@ tests/src/core/MasteringSequenceTest.cpp
 tests/src/core/MasteringTest.cpp
 tests/src/core/MasteringTestSourceMix.cpp
 tests/src/core/MasteringTestSupport.h
+tests/src/core/MasteringUndoFailureTest.cpp
 tests/src/core/MathTest.cpp
 tests/src/core/McuSurfaceFeedbackTest.cpp
 tests/src/core/McuSurfaceTest.cpp
