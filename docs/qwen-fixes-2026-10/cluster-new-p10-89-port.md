@@ -193,7 +193,7 @@ files (`src/core/DataFile.cpp`, `tests/src/core/DataFileSaveIntegrityTestParts2.
 | reconfiguration | `adoptionHonoursTheDisableBackupConfiguration` (`app/disablebackup` both ways) |
 | exhaustion / boundary | the two name-length tests at `NAME_MAX-8` and `NAME_MAX-15` |
 | audio thread | untouched: the diff is one string concatenation in the save-lock path plus comments; no process/render code, no allocation or lock added on the audio path |
-| platform build | Unix: `utimensat`, `fork`/`waitpid`, `pathconf` under `#ifdef Q_OS_UNIX`; Windows: `CreateFileW`/`SetFileTime` under `#ifdef Q_OS_WIN` and the two length tests compile everywhere (test 3's Unix-only body is `#ifdef`ed, with a `QSKIP` body on Windows) |
+| platform build | Unix: `utimensat`, `fork`/`waitpid`, `pathconf` under `#ifdef Q_OS_UNIX`; Windows: `CreateFileW`/`SetFileTime` under `#ifdef Q_OS_WIN`, and test 3's Unix-only body is `#ifdef`ed with a `QSKIP` body on Windows, so neither side's code is visible to the other compiler. NOT verified here: this session built Linux only - the MSVC/macOS builds were not run, so the Windows branch is reasoned about, not compiled |
 
 Test 3 skips on Windows by design - a `MAX_PATH` filesystem does not have this failure mode,
 and a dead holder there needs a different fixture; test 1 (the name budget) runs on every
