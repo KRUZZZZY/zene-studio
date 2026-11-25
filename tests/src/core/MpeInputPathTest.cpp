@@ -675,6 +675,73 @@ private slots:
 		song->clearProject();
 	}
 
+	//! Cluster 3192 (round 4): a note-off for a key this track is not holding has nothing to resolve
+	//! and must not take the engine's model lock. JACK dispatches MIDI from its audio callback
+	//! before the render owner scope is entered (AudioJack.cpp:442 vs :476), where
+	//! requestChangeInModel() does not short-circuit, so a guard here would park the callback on
+	//! the control threads. The base only took it for a held key. Covers a key that never had a
+	//! note (a dropped note-on: monitoring Off, a key outside the track's range) and a duplicate
+	//! note-off for a note that was already released.
+	void noteOffForAnUnheldKeyTakesNoModelLock()
+	{
+		using namespace lmms;
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(
+			Track::create( Track::Type::Instrument, song ) );
+		QVERIFY( track != nullptr );
+		MpeExpression::setEnabled( true );
+
+		constexpr int kMemberChannel = 10;
+		constexpr int kNeverHeldKey = 70;
+		constexpr int kReleasedKey = 71;
+
+		// A key that held a note, released through the ordinary path: the second note-off is a
+		// duplicate for an empty slot.
+		track->processInEvent( MidiEvent( MidiNoteOn, kMemberChannel, kReleasedKey, 100 ) );
+		QVERIFY( track->playingNote( kReleasedKey ) != nullptr );
+		track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, kReleasedKey, 90 ) );
+		QVERIFY( track->playingNote( kReleasedKey ) == nullptr );
+		QVERIFY( track->playingNote( kNeverHeldKey ) == nullptr );
+
+		std::atomic<bool> delivered{ false };
+		bool completedWhileModelHeld = false;
+		int waitersSeen = 0;
+		{
+			std::thread callback;
+			{
+				const auto modelOwner = Engine::audioEngine()->requestChangesGuard();
+				callback = std::thread( [track, &delivered] {
+					// The backend audio callback: AudioJack::processCallback dispatches MIDI here.
+					const RealtimeScope callbackScope;
+					track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, kNeverHeldKey, 96 ) );
+					track->processInEvent( MidiEvent( MidiNoteOff, kMemberChannel, kReleasedKey, 96 ) );
+					delivered.store( true, std::memory_order_release );
+				} );
+				// Decided on the events, not on a clock: the delivery either finished while the
+				// model was held, or it parked in AudioEngine::requestChangeInModel().
+				const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds( 10 );
+				while( !delivered.load( std::memory_order_acquire )
+					&& Engine::audioEngine()->modelChangeWaiters() == 0
+					&& std::chrono::steady_clock::now() < deadline )
+				{
+				}
+				completedWhileModelHeld = delivered.load( std::memory_order_acquire );
+				waitersSeen = Engine::audioEngine()->modelChangeWaiters();
+			}
+			callback.join();
+		}
+		QVERIFY2( completedWhileModelHeld, "a note-off for a key the track does not hold waited for "
+			"the engine's model lock" );
+		QCOMPARE( waitersSeen, 0 );
+		QVERIFY( track->playingNote( kNeverHeldKey ) == nullptr );
+		QVERIFY( track->playingNote( kReleasedKey ) == nullptr );
+
+		MpeExpression::setEnabled( false );
+		song->clearProject();
+	}
+
 private:
 	//! One render period of @a note on this thread - the period the audio thread would run,
 	//! which is where a published MPE update reaches the handle.

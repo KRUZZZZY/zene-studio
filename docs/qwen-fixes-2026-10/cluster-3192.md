@@ -2,6 +2,19 @@ FIXED
 
 Cluster 3192: "MPE expression updates race with note rendering" (`src/tracks/InstrumentTrack.cpp`, historical `:370`).
 
+**Round 4 (realtime).** Round 3's `releaseLiveNote()` called `requestChangeInModel()` for every `MidiNoteOff`; the base
+took it only when `m_notes[key] != nullptr`. A note-off for a key this track is not holding (monitoring Off drops the
+note-on but keeps the note-off; a key outside `firstKey()..lastKey()`; a duplicate note-off) therefore blocked the JACK
+audio callback on the control threads' model ownership (`src/core/audio/AudioJack.cpp:442` dispatches MIDI before
+`:476` renders; `src/core/AudioEngine.cpp:1985-1991` short-circuits only on the render thread). Commit `8b4f41cc18`
+(a QA fix already on the branch, which I reviewed) restores the base behaviour:
+`releaseLiveNote()` returns at once when `playingNote( event.key() ) == nullptr`
+(`src/tracks/InstrumentTrack.cpp:~519`), before `captureMpeReleaseVelocity()` and the guard. `playingNote()` bounds-checks
+the key; only the input thread ever fills a slot and the render thread only clears it, so the unguarded read can be
+stale-non-null (the guarded re-read then finds null, the case round 3 handles) but never stale-null for a held note.
+The unguarded read itself is the base's own, kept as it was. This round adds the missing regression test
+`noteOffForAnUnheldKeyTakesNoModelLock` and shows it red with that fix reversed.
+
 **Round 3.** Round 2 published the release velocity per key and let `NotePlayHandle::noteOff()` take it. The review
 and the diagnostic checkpoint showed two things were still wrong with that, plus one wrong test. This round removes
 the per-key release-velocity mechanism and resolves the note under the engine guard instead.
@@ -39,8 +52,7 @@ Changed in round 3:
    a wait, and the retired-handle window is gone: the render thread retires a handle while holding the lock, and the
    destructor clears the slot, so after the guard the slot is a live note or null. Before this round the code tested
    `m_notes[key] != nullptr`, waited for the guard, then dereferenced `m_notes[key]` again (null if retired during the
-   wait). This adds no new JACK wait that note-on/off did not already have: the note-off branch already took the same
-   guard for any live note; the one difference is a note-off for a key with no live note now also takes it.
+   wait). Round 4 added the fast path below, so a note-off for an unheld key takes no lock.
 4. **`sendMpeExpressionMidi()` stays on the render thread**, from `applyLiveMpeExpression()`. This is the same
    thread and the same `processOutEvent` path the note's own note-on and note-off messages already use
    (`NotePlayHandle::play`/`noteOff`); documented at the call.
@@ -78,6 +90,7 @@ This is within the one-period latency that the render-thread handoff already has
 | `releaseVelocityIsNotHandedToAClipNote` | an input note-off with no live input note leaves the release velocity unclaimed; a clip note (`Origin::MidiClip`) on the same key and channel that ends afterwards keeps -1 |
 | `threadedNoteOffStoresTheReleaseVelocity` | the note-off runs on a second thread; the velocity is read only after `join()` |
 | `noteOffAfterRetirementTouchesNoRetiredHandle` | single-threaded retire then note-off; and threaded: the writer parks on the model lock (observed through `modelChangeWaiters()`, not a clock), the note is retired while the lock is held (recursive mutex), and the writer then finds an empty slot |
+| `noteOffForAnUnheldKeyTakesNoModelLock` | (round 4) a note-off for a never-held key and a duplicate note-off, delivered from a `RealtimeScope` thread while the model is held, finish without parking (`modelChangeWaiters()` stays 0) |
 | `liveExpressionReachesTheNoteOnTheRenderThread` | (kept) pitch, pressure, CC74 delivered from a `RealtimeScope` thread while the model is held finish without waiting; values appear only on the note's own period; release velocity lands on the note |
 | `liveExpressionIsNotWrittenByTheInputThread`, `inputPathStampsTheRightNotes`, the `noteOffVelocity*` slots | (kept) |
 
@@ -105,6 +118,30 @@ the logs myself. (A first green run reported EXIT=0 for a build that had failed 
 | 10 | `bash tests/file-length-gate.sh --check` | `gate-file-length.log` | 0 (`PASS (check mode: no regressions)`) |
 | 11 | `bash tests/complexity-gate.sh --check` - cannot run here: `lizard is not installed` | `gate-complexity.log` | 2 |
 | 12 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` - blocked by the session guard, see Self-check | `gate-1.log` | 1 |
+
+Round 4 commands (logs in `/home/kruzzzzy/.config/kads/zene/state/runs/3192.r4/logs/`; Haiku ran them, I read the logs):
+
+| # | Command | Log | Exit |
+| --- | --- | --- | --- |
+| R1 | `git diff 8b4f41cc18~1 8b4f41cc18 -- src/tracks/InstrumentTrack.cpp > logs/fix.patch` | `fix.patch` | 0 |
+| R2 | `git apply -R logs/fix.patch` (fast path reversed = round-3 code) | - | 0 |
+| R3 | `cmake --build build --target MpeInputPathTest -j4` | `build-1-red.log` | 0 (`Built target MpeInputPathTest`) |
+| R4 | `cd build/tests && ctest -R '^MpeInputPathTest$' --output-on-failure` - **RED** | `test-1-red.log` | **8** |
+| R5 | `git apply logs/fix.patch` | - | 0 |
+| R6 | `cmake --build build --target zene MpeInputPathTest MpeExpressionTest MpePlaybackTest MpeNoteStorageTest MpeStreamSnapshotTest MpeSynthExpressionTest MpeInputActionTest InstrumentTrackRenderPathTest NotePlaybackTest TakeLaneCompPlaybackTest SessionTuningTest MidiInputTransformTest MidiInputGateTest MidiTakeRecordTest ExternalMidiDeviceTest ControlNoteExpressionCommandsTest PianoRollRecordTest -j4` | `build-2-green.log` | 0 (no `error:`) |
+| R7 | `ctest -R '^MpeInputPathTest$' --output-on-failure` - **GREEN** | `test-2-green.log` | **0** |
+| R8 | the same 17-test family regex as step 8 | `test-3-family.log` | **0** (17/17) |
+
+RED (R4, `test-1-red.log`), the single failure, against the round-3 code without the fast path:
+
+```
+FAIL!  : MpeInputPathTest::noteOffForAnUnheldKeyTakesNoModelLock() 'completedWhileModelHeld' returned FALSE. (a note-off for a key the track does not hold waited for the engine's model lock)
+Totals: 13 passed, 1 failed, 0 skipped, 0 blacklisted
+```
+
+GREEN (R7): `1/1 Test #179: MpeInputPathTest ... Passed`, `100% tests passed out of 1`.
+
+The round-3 runs below still stand for the other slots.
 
 RED (step 4, `test-red3.log`), against the round-2 product code:
 
@@ -172,3 +209,5 @@ case is shown by the SIGSEGV in the red run and by the clean green run; the data
 Delegation: Haiku ran the builds and test runs (red proof, green proof, family) and reported exit codes and failing
 slots; I read the logs and the diff myself. The first green build it reported as EXIT=0 had actually failed; I caught
 that from the log and the final runs were repeated. I wrote the fix, the tests and this report.
+
+Delegation (round 4): Haiku ran the red/green builds and the family run; I read `test-1-red.log` for the failing slot and `test-2-green.log` for the pass, and wrote the test and this report.
