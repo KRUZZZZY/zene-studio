@@ -164,7 +164,11 @@ public:
 		{
 			for (Slot& slot : chunk->items)
 			{
-				if (slot.inUse.load(std::memory_order_acquire)) { continue; }
+				// A slot a voice is holding is prepared too. Skipping it left the
+				// holder on the old converter, and nothing ever revisited the slot:
+				// after release, acquire() handed the next voice the old quality.
+				// The swap happens under the engine's change guard, which excludes
+				// the render thread, exactly as it does for a held Patman note.
 				if (!prepareSlot(&slot, mode))
 				{
 					discardAll();
@@ -172,6 +176,7 @@ public:
 				}
 			}
 		}
+		m_preparedMode = mode;
 		return true;
 	}
 
@@ -181,10 +186,10 @@ public:
 		{
 			for (Slot& slot : chunk->items) { adoptSlot(&slot); }
 		}
-		if (m_head.load(std::memory_order_relaxed) != nullptr)
-		{
-			m_mode = m_head.load(std::memory_order_relaxed)->items[0].mode;
-		}
+		// The pool's mode is the one just adopted, not the mode of whichever slot
+		// happens to be first: a held first slot kept the old mode here, and every
+		// chunk appended after the change was then built for the old quality.
+		m_mode = m_preparedMode;
 	}
 
 	void discardAll() noexcept
@@ -380,6 +385,7 @@ private:
 	std::atomic<Chunk*> m_head{nullptr};
 	std::size_t m_capacity = 0;
 	AudioResampler::Mode m_mode = AudioResampler::Mode::Linear;
+	AudioResampler::Mode m_preparedMode = AudioResampler::Mode::Linear;
 	std::atomic<bool> m_initialized{false};
 };
 

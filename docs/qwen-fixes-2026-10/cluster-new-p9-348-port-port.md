@@ -1,279 +1,154 @@
-ALREADY-FIXED
+FIXED
 
-# cluster new-p9-348-port-port: retained Patman converter modes
+# cluster new-p9-348-port-port: a quality change while converter slots are held
 
-The reported defect (a quality change leaving held Patman notes on the old
-resampler mode, and over-polyphony SincBest notes losing their converter) is
-already fixed on `HEAD`. This cluster adds regression tests and a
-`LMMS_TESTING`-only deletion counter beside the existing creation counter. No
-product behaviour changes: outside `LMMS_TESTING` every converter release is the
-same plain `src_delete` as before.
+## Decision
 
-## The r8 commit is not in this history
+The defect is **REAL** and fixed at the pool, in the form it takes on this HEAD.
+Two of the review's three blocking items quote the r8 lineage, which is not in
+this history; the mechanism they name does not exist here. The verdict per item:
 
-    git merge-base --is-ancestor cb06a9fbc3 HEAD   # EXIT=1
-
-`cb06a9fbc3` (r8) is **not** an ancestor of `HEAD`. The fix is present as the
-current product code, not as a cherry-pick of that commit. The r8 review's cited
-lines therefore belong to a lineage that is absent here: on this `HEAD`,
-`plugins/Patman/Patman.cpp:618-677` is `PatmanView::openFile()` (GUI file
-dialog), not the slot-pool code the review describes.
-
-## Round 11: audit result and p1 caller table
-
-The read-only audit (`logs/001-audit.md`) found no render-path caller that
-creates, frees or switches a converter. Verdict: **no real render-path defect**
-in this lineage; the report's cited `HEAD` lines are still accurate.
-
-| Site | What it is | Can it run on the render path? |
+| Blocking item (review r8) | Verdict on this HEAD | Evidence |
 | --- | --- | --- |
-| `include/Sample.h:67` | `PlaybackState::setConverterMode()` inline -> `m_resampler.setMode()` | Definition only; reachable only from SlicerT. No direct render-path call. |
-| `plugins/SlicerT/SlicerT.cpp:126` | `SlicerT::applyConverterMode()` calls `slot.state.setConverterMode(mode)` | No: `applyConverterMode` has zero call sites in `src plugins include`; `playNoteImpl` makes no converter call. |
-| `src/core/AudioResampler.cpp:511` | `AudioResampler::setMode()` -> `trySetMode()` | No render-path caller; `Sample::play` never calls it. |
-| `src/core/AudioResampler.cpp:530` | `AudioResampler::trySetMode()` definition | Called only by `setMode()`. No render-path caller. |
-| `include/AudioResampler.h:151,155` | declarations of `setMode`/`trySetMode` | Declarations; no caller. |
+| `[realtime]` a quality change skips occupied slots; active notes then reach `Sample::play()` with the new quality, which calls `AudioResampler::setMode()`; released slots keep stale mode metadata and acquisition rejects them | **REAL, FIXED at the pool** — but not through the quoted mechanism. Nothing on the render path switches a converter: `Sample::play()` only sets the ratio and processes (`src/core/Sample.cpp:109,157,194`), the only `setMode()` caller is `SamplePlayHandle`-unrelated dead SlicerT code (`include/Sample.h:67` <- `plugins/SlicerT/SlicerT.cpp:126`), and `AudioResampler::trySetMode()` refuses while a `RealtimeScope` is active (`src/core/AudioResampler.cpp:535`). The real half: `RealtimeVoiceConverterPool::prepareAll()` skipped every slot a voice was holding, and `adoptAll()` then read the pool's mode back from slot 0. A holder that no per-handle hook can walk stayed on the old converter, the pool recorded the **old** quality, and `ensureCapacity()` built every chunk appended after the change in that old quality — so a voice that needed capacity after the change (the "overflow" voice of item 2) got a Linear converter while SincBest was selected. | before: skip at `src/core/AudioResampler.cpp:172`, mode read back from slot 0 at `:188-191`; acquisition hands a slot out with its stored mode and never rejects it (`:203-219`); release only clears `inUse` (`:220-223`); after: `:160-181` prepares and records the target, `:183-193` adopts it and sets the pool mode |
+| `[regression]` overflow voices use manual linear interpolation and lose the selected SincBest quality (`Patman.cpp:301-322,665-677`) | **FALSE-POSITIVE on this HEAD.** There is no manual/hand interpolation in the play path at all: `Sample::play()` always converts through its state's `AudioResampler` (`src/core/Sample.cpp:157,194`), and every tagged voice claims one converter prepared in the selected mode (`src/core/AudioResampler.cpp:404-417`, `plugins/Patman/Patman.cpp:528`). The quoted lines are the patch-file publication in `setFile()` (`plugins/Patman/Patman.cpp:299-324`) and the filename-ellipsis loop in `PatmanView::updateFilename()` (`:663-679`); the r8 slot pool and its four-slot SincBest cap do not exist here. | capacity is derived, not four slots: `src/core/AudioEngine.cpp:145-149` -> `5 * (playHandleCapacity + 2*PlayHandle::MaxNumber + 1)`; pool control-thread growth at `src/core/AudioEngine.cpp:1545-1565` |
+| `[not-fixed]` the required SincBest over-capacity regression is missing | **FIXED by two regressions that fit this design.** The new `AudioResamplerPoolMemoryTest::heldSlotsFollowTheQualityChange` holds pool slots across a quality change (held converter mode, held converter samples, mode of capacity grown afterwards, released slot's mode); `PatmanLoadTest::overPolyphonyKeepsEverySincBestBlockAudible` (T2) already renders 232 overlapping SincBest voices bit-identical to a SincBest oracle with zero render-path converter creations. Pool exhaustion is not a polyphony case here: it needs ~10k states no product path can create (below). | new test `tests/src/core/AudioResamplerPoolMemoryTest.cpp:113-164`; T2 `tests/src/plugins/PatmanLoadTest.cpp:530-629` |
 
-The only `setConverterMode` call site (`SlicerT.cpp:126`) is unreachable dead
-virtual code today. The render-path play functions (`Sample::play`,
-`PatmanInstrument::playNoteImpl`, `AudioFileProcessor::playNoteImpl`,
-`SlicerT::playNoteImpl`) contain no converter create/free/switch.
+## The defect and the fix
 
-## The deletion-counter hook and what it covers
+`RealtimeVoiceConverterPool` is the engine's supply of prepared libsamplerate
+states. `AudioEngine::applyConverterModeToRetainedStates()` (`src/core/AudioEngine.cpp:279-295`)
+runs a prepare/adopt transaction under the engine's change guard, which excludes
+the render thread, so a converter can be replaced between periods but never
+during one.
 
-`src/core/AudioResampler.cpp` routes every converter release through
-`deleteConverterState()`: the pool's `adoptSlot()` replacement, the chunk build
-failure path, `discard()`, the pool destructor, and `AudioResampler::
-StateDeleter`. The helper increments `s_realtimeConverterDeletions` only under
-`LMMS_TESTING` and only while `RealtimeScope` is active; otherwise it is a plain
-`src_delete` with no count, allocation, lock or log. The matching seams are
-declared under `#ifdef LMMS_TESTING` in `include/AudioResampler.h`.
+`prepareAll()` skipped every slot with `inUse == true`
+(`src/core/AudioResampler.cpp:172` before the fix). The per-handle hook
+(`src/core/AudioEngine.cpp:306-320` -> `plugins/Patman/Patman.cpp:247-267`)
+updates the slots of states the engine can walk, but a plain pooled voice is not
+walkable, and the pool itself never revisited a skipped slot: `release()` only
+cleared `inUse` (`:220-223`) and `acquire()` handed that slot to the next voice
+with its old converter (`:203-219`). `adoptAll()` then set the pool's own mode
+from `head->items[0].mode` (`:188-191`); with slot 0 held and skipped, the pool
+recorded the old mode, and `ensureCapacity()` -> `appendChunks(capacity, m_mode)`
+built every chunk appended afterwards in that old quality.
 
-## Evidence that the fix is already in the product
+The fix is at that cause, in `src/core/AudioResampler.cpp`:
 
-### (a) A quality change prepares, then adopts, every retained state
+- `prepareAll()` prepares **every** slot, held or free (`:160-181`), and records
+  the requested mode (`:179`). Preparing a held slot only allocates its
+  replacement; the swap happens in the adopt phase, under the same guard the
+  held-note hook already uses.
+- `adoptAll()` adopts every slot and sets `m_mode` to the mode it adopted
+  (`:183-193`) instead of inferring it from one slot.
 
-- `src/core/AudioEngine.cpp:298-320` --
-  `AudioEngine::prepareConverterModeForRetainedStates()` prepares the realtime
-  voice converter pool, the sample-voice pool, the song's instrument notes, and
-  every live, new, and capacity-deferred play handle. Preparation only reserves
-  converter states; nothing is allocated on the audio thread.
-- `plugins/Patman/Patman.cpp:247-267` --
-  `PatmanInstrument::prepareConverterModeForNote()`,
-  `adoptPreparedConverterModeForNote()`, and
-  `discardPreparedConverterModeForNote()` forward the engine's prepare/adopt/
-  discard phases to each held note's `handle_data::state`. A held note therefore
-  receives the prepared mode when the engine publishes it.
-- `src/core/AudioResampler.cpp:219-264` -- the realtime voice converter pool's
-  `prepareSlot()` creates and caches a converter for the requested mode, and
-  `adoptSlot()` swaps the prepared converter into the slot and records
-  `preparedMode`. This is the allocation the engineering change moves out of
-  the render path.
+No allocation, free, lock or log was added to a render path: `prepareSlot()`
+allocates and `adoptSlot()` frees on the control thread inside the guarded
+transaction (`:237-283`), exactly as before; `acquire()`/`release()` stay atomic
+flag operations. No header changed, no persistence changed, no command changed,
+and the pool's capacity formula is untouched. Callers and siblings checked:
+`initialize()` re-init (`:137-151`), the engine's quality transaction
+(`src/core/AudioEngine.cpp:279-341`), the engine's control-thread growth
+(`:1545-1565`), a single voice's `trySetMode()` (`:536-550`), the sample-voice
+pool and `AudioFileProcessor`'s voice pool (their own prepare/adopt paths,
+unchanged), and the discard/rollback path (`src/core/AudioEngine.cpp:344-369`),
+which still leaves held states on their old converter when a prepare fails.
 
-### (b) The render thread never allocates a converter
+## Regression test
 
-- `src/core/AudioEngine.cpp:145-149` -- `realtimeVoiceConverterCapacity()`
-  reserves one state per play handle per render playback state
-  (`1 + CompSlipReaders::MaxReaders`), sized so every retained and pending
-  handle already has a pool slot.
-- `src/core/AudioResampler.cpp:392` -- when the pool is exhausted the
-  constructor throws `std::runtime_error{"No prepared realtime voice converter
-  is available"}` instead of allocating inside the render thread. The design
-  therefore fails loudly rather than calling into libsamplerate on the audio
-  thread.
+`tests/src/core/AudioResamplerPoolMemoryTest.cpp:113-164`,
+`heldSlotsFollowTheQualityChange()`:
 
-## New tests
+1. holds the first three slots the pool hands out (slot 0 included) with plain
+   `AudioResampler(RealtimeVoiceTag)` voices — no hook can reach them;
+2. changes the quality to SincBest through `ExportRenderSettings::setSrcQuality`,
+   i.e. the engine transaction, and asserts every held voice reports SincBest;
+3. converts the same input on the held voice and on a `SincBest` reference and
+   compares the samples bit for bit, so the switch is real output, not metadata;
+4. grows the pool by one chunk, as the engine does after a change
+   (`ensureRealtimeVoiceConverterPoolCapacity`), and asserts the acquired
+   "overflow" slot is SincBest;
+5. releases the holders and asserts the released slot comes back in the mode the
+   pool now holds.
 
-`tests/src/plugins/PatmanLoadTest.cpp` adds:
+Without the fix, step 2 fails with `voice.mode()` 1 (Linear) != 4 (SincBest).
+The test uses no sleep, deadline or thread; the pool seams are the
+`LMMS_TESTING` accessors at `include/AudioResampler.h:174-177`.
 
-- `qualityChangeKeepsHeldPatmanSlotsAtTheNewMode()` (T1) -- holds three real
-  Patman notes through `AudioEngine::applyConverterModeToRetainedStates()`,
-  releases and reacquires them, and asserts each reacquired slot reports the
-  requested `SrcQuality` mode. Strengthened in r11: the counted render must also
-  delete zero converters.
-- `lazyRenderPathConversionIsDetected()` (T4) -- holds three real notes across a
-  quality switch, reads each note's own `Sample::PlaybackState` through
-  `PatmanInstrument::handle_data` (not a layout mirror), asserts every note
-  already reports the new mode before rendering, and asserts the following
-  `RealtimeScope` render creates and deletes zero converters. It also keeps a
-  prepared-but-not-adopted state pending through a render.
-- `overPolyphonyKeepsEverySincBestBlockAudible()` (T2) -- renders 200 notes plus
-  32 notes beyond the nominal polyphony under `RealtimeScope`, asserts every
-  SincBest block is audible and matches the SincBest oracle, and (r11) asserts
-  a held-note switch render creates and deletes zero converters.
-- `sincBestReferenceDiffersFromLinearReference()` (T3) -- proves the oracle is a
-  real SincBest render, not the Linear fallback.
+The first version of the test was written in `PatmanLoadTest.cpp` (RED at
+`905-red-test.log`, line 690). It was moved to the pool's own test file because
+the file-length gate flags that file: `916-feature-check.log` `FAIL
+file-length NEW: new file over 500 lines: tests/src/plugins/PatmanLoadTest.cpp
+(565)`, `GATE_EXIT=1`. `PatmanLoadTest.cpp` is now byte-identical to the base.
 
-`tests/upstream-modifications.txt` records the test coverage and the
-`LMMS_TESTING`-only counter/friend hooks.
+## Commands and EXIT codes
 
-## Mutation checks (r11 logs, final test file)
+All logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p9-348-port-port.r11/logs/`.
+Builds ran from the worktree root, `ctest` from `build/tests`.
 
-Build before each test:
+| What | Command | Exit | Log |
+| --- | --- | ---: | --- |
+| Baseline build of the untouched tree | `cmake --build build --target PatmanLoadTest patman -j4` | 0 | `900-baseline-build.log` |
+| Baseline test | `ctest -R '^PatmanLoadTest$' --output-on-failure` | 0 | `901-baseline-test.log` |
+| RED, test first written in `PatmanLoadTest.cpp` | `cmake --build build --target PatmanLoadTest -j4` / `ctest -R '^PatmanLoadTest$' --output-on-failure` | 0 / 8 | `904-red-build.log`, `905-red-test.log`: `voice.mode()` 1 != 4, line 690 |
+| GREEN with the fix, before the move | `cmake --build build --target zene patman PatmanLoadTest AudioResamplerPoolMemoryTest AudioResamplerRatioTest -j4` / `ctest -R '^(PatmanLoadTest\|AudioResamplerPoolMemoryTest\|AudioResamplerRatioTest)$'` | 0 / 0 | `906-green-build.log`, `907-green-test.log`, `908-green-verbose.log` (10/10, new test listed) |
+| Test moved to the pool test; build and run | `cmake --build build --target AudioResamplerPoolMemoryTest PatmanLoadTest -j4` / `ctest -R '^(AudioResamplerPoolMemoryTest\|PatmanLoadTest)$'` | 0 / 0 | `917-moved-build.log`, `918-moved-test.log` |
+| Save the product patch | `git diff -- src/core/AudioResampler.cpp > .../logs/fix.patch` | 0 | `fix.patch` (48 lines) |
+| 4b, reversed | `git apply -R .../logs/fix.patch` | 0 | — (`4b-proof.sh`) |
+| 4b, reversed build | `cmake --build build --target AudioResamplerPoolMemoryTest -j4` | 0 | `919-reversed-final-build.log` |
+| 4b, reversed test: **must fail** | `ctest -R '^AudioResamplerPoolMemoryTest$' --output-on-failure` | 8 | `920-reversed-final-test.log`: `FAIL! heldSlotsFollowTheQualityChange()` `voice.mode()` 1 != 4, `AudioResamplerPoolMemoryTest.cpp(133)`, 20 passed 1 failed |
+| 4b, restore | `git apply .../logs/fix.patch` | 0 | — |
+| 4b, restored build | `cmake --build build --target AudioResamplerPoolMemoryTest -j4` | 0 | `921-restored-final-build.log` |
+| 4b, restored test: **must pass** | `ctest -R '^AudioResamplerPoolMemoryTest$' --output-on-failure` | 0 | `922-restored-final-test.log`: 1/1 passed |
+| Final rebuild (product + focused targets) | `cmake --build build --target zene patman PatmanLoadTest AudioResamplerPoolMemoryTest AudioResamplerRatioTest AudioPluginTest ControlDeviceCatalogueTest -j4` | 0 | `923-final-build.log` |
+| Focused CTests | `ctest -R '^(PatmanLoadTest\|AudioPluginTest\|ControlDeviceCatalogueTest\|RtSafetySweep\|RtSafetySelfTest\|AudioResamplerPoolMemoryTest\|AudioResamplerRatioTest)$' --output-on-failure` | 0 | `924-final-focused-tests.log`: 7/7 passed |
+| Feature gate | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | `925-feature-check.log`: `RESULT: PASS`, all eight checks PASS |
+| Feature gate before the move (the file-length finding) | same | 1 | `916-feature-check.log`: `FAIL file-length NEW: new file over 500 lines: tests/src/plugins/PatmanLoadTest.cpp (565)` |
 
-    cmake --build build --target zene PatmanLoadTest
-
-Test, from `build/tests`, `--output-on-failure` so a RED mutation names the
-failing assertion:
-
-    ctest -R 'PatmanLoadTest|AudioResamplerPoolMemoryTest|AudioPluginTest' --output-on-failure
-
-Every build below ended `EXIT=0`; every RED test run is non-zero; the reverted
-tree ends `EXIT=0`. Logs are under
-`~/.config/kads/zene/state/runs/new-p9-348-port-port.r11/logs/`. The line
-numbers are those of the final `tests/src/plugins/PatmanLoadTest.cpp`; M4's log
-numbers are three lines higher because that mutation inserted lines above the
-assertions.
-
-| Mutation | Exact edit | Build log / EXIT | RED log / EXIT | Observed failure |
-| --- | --- | --- | --- | --- |
-| M1 | `RealtimeVoiceConverterPool::adoptSlot` returns early | `052-m1-build.log` / 0 | `053-m1-test.log` / 8 | T1 `reacquired.back().mode()` 1 != 4 (line 446); T4 `state->converterMode()` 1 != 4 (507); T2 `!blocksMatch(sincBestReference, linearReference)` false (591); T3 oracle indistinguishable from Linear (654) |
-| M2 | `acquire()` returns nullptr after 4 SincBest acquisitions | `054-m2-build.log` / 0 | `055-m2-test.log` / 8 | T2 aborts with an unhandled `std::runtime_error` (`No prepared realtime voice converter is available`), not a QCOMPARE |
-| M3 | `PatmanInstrument::prepareConverterModeForNote` returns true without preparing | `056-m3-build.log` / 0 | `057-m3-test.log` / 8 | T1 `reacquired.back().mode()` 1 != 4 (446); T4 `state->converterMode()` 1 != 4 (507) |
-| M4 | `referenceBlock` oracle forced to Linear | `058-m4-build.log` / 0 | `059-m4-test.log` / 8 | T2 mismatched 232 != 0 (581; log 584); T3 oracle indistinguishable from Linear (654; log 657) |
-| M5 | M3 plus a lazy conversion in `playNoteImpl` (no hooks) | `060-m5-build.log` / 0 | `061-m5-test.log` / 8 | T1 realtime allocations 3 != 0 (424); T4 realtime allocations 3 != 0 (503); T2 realtime allocations 3 != 0 (612) |
-| M6 | `adoptPreparedConverterModeForNote` no-op plus `adoptPreparedConverterMode()` before `play` in `playNoteImpl` | `062-m6-build.log` / 0 | `063-m6-test.log` / 8 | T4 realtime deletions 1 != 0 (514, the pending-prepare guard) |
-| M7 | M5 but the lazy conversion fires only on the first note that needs it | `064-m7-build.log` / 0 | `065-m7-test.log` / 1 (single test `lazyRenderPathConversionIsDetected`) | T4 realtime allocations 1 != 0 (503) |
-
-M7 is the proof that all three held notes are counted: a conversion on the
-first note of the three-note render is caught, so the earlier per-note reset
-(which measured only the last note) cannot hide it. T4 now resets both counters
-once, renders all three notes in one `RealtimeScope`, and compares creations and
-deletions after the scope closes. T2's held render is likewise bounded: its
-`RealtimeScope` closes before the QCOMPAREs, cleanup, `switchQuality` and the
-`freeSlots` compare.
-
-M6's history is recorded separately. The first M6 run against the
-unstrengthened tests did **not** fire: `040-build-m6.log` `EXIT=0`,
-`041-test-m6.log` `EXIT=0` (100% passed). T4's pending-prepare guard was added
-afterwards; the same M6 edit then failed `042-build-m6-strengthened.log`
-`EXIT=0` / `043-test-m6-strengthened.log` `EXIT=8`, and the restored tree passed
-`044-build-restored.log` `EXIT=0` / `045-test-restored.log` `EXIT=0`.
-
-The reversal attempt also fails, as it must: `git apply -R --check` of
-`fix-hooks.patch` exits 1 (`error: patch failed: src/core/Song.cpp:1345` /
-`error: src/core/Song.cpp: patch does not apply`, `068-revert-hooks.log`), and
-the same for `fix-pool.patch` (`error: patch failed: src/core/Sample.cpp:103`,
-`069-revert-pool.log`). The mutation proof therefore rests on M1-M7, not on
-reverting the saved patches. After the last mutation the restored build is
-`066-restored-build.log` `EXIT=0` and the restored test is
-`067-restored-test.log` `EXIT=0` (100% tests passed out of 3).
-
-## Six focused ctest runs
-
-From `build/tests`:
-
-    ctest -R 'AudioResamplerPoolMemoryTest|ControlDeviceCatalogueTest|PatmanLoadTest|AudioPluginTest|RtSafetySweep|RtSafetySelfTest' --output-on-failure
-
-`AudioResamplerPoolMemoryTest`, `ControlDeviceCatalogueTest`, `PatmanLoadTest`,
-`AudioPluginTest`, `RtSafetySweep`, and `RtSafetySelfTest` all pass:
-`100% tests passed out of 6`, **EXIT=0**. Log:
-`.../new-p9-348-port-port.r11/duet/14-worker/tmp/002-r11-six-focused.log`.
-The p1 baseline run of the same six is `.../duet/02-worker/tmp/003-p1-test-baseline.log`
-(also EXIT=0).
-
-## feature_check
-
-    python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <repo>
-    # 070-feature-check.log, EXIT=0
-
-| Gate | Result |
-| --- | --- |
-| fork-sources | PASS (exit 0) |
-| all-sources-reproduce | PASS (exit 0) |
-| no-upstream-regression | PASS (exit 0) |
-| check-namespace | PASS (exit 0) |
-| no-tautology | PASS (exit 0) |
-| doc-figures | PASS (exit 0) |
-| complexity | PASS (no new item in these files) |
-| file-length | PASS (no new item in these files) |
-
-`RESULT: PASS`.
-
-## submit_check
-
-    python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <repo> new-p9-348-port-port
-    # 071-submit-check.log, EXIT=0, rerun after the final commit
-
-| Item | Result |
-| --- | --- |
-| commits on the branch | PASS |
-| working tree clean | PASS (after the commit) |
-| report | PASS |
-| tests added or changed | PASS (claim-only closure: independent QA must verify the cited code/contract) |
-| gates (feature_check.py) | PASS (all eight gates) |
-
-`RESULT: PASS`; the five `?` items are answered in `## Self-check`.
-
-## Thread safety
-
-TSan is not available in this environment. The argument is from the design and
-the event-ordering tests: preparation happens on the control thread, adoption
-is published before playback resumes, and the render thread only takes pool
-slots that were reserved for its play handles. The tests use
-`AudioEngine::modelChangeWaiters()` and `RealtimeScope` rather than timing
-windows.
+`PatmanRealtimeTest` from the review's focused list does not exist in this tree
+(`ctest -N -R PatmanRealtimeTest` has no match); the Patman coverage lives in
+`PatmanLoadTest`, which is in the run above.
 
 ## Self-check
 
-- [x] `cb06a9fbc3` is not an ancestor of `HEAD` (`git merge-base` EXIT=1).
-- [x] The r11 audit found no render-path caller that creates, frees or switches
-      a converter; the only `setConverterMode` site is dead SlicerT code.
-- [x] The deletion counter is `LMMS_TESTING`-only and wraps every pool/resampler
-      release; non-testing releases stay plain `src_delete`.
-- [x] T1/T2 assert zero creations and zero deletions; T4 checks each held note's
-      real `PlaybackState` mode and the counted render.
-- [x] All seven mutations (M1-M7) are RED and the reverted tree is GREEN;
-      M7 catches a conversion on the first of T4's three notes.
-- [x] `feature_check.py` has no new FAIL (`RESULT: PASS`, EXIT=0).
-- [x] No product behaviour changed; only the `LMMS_TESTING`-only counter and
-      friend hooks were added.
-- [x] New test functions stay within CCN <= 10 and the file is at or below 500
-      code lines (both gates: no new item).
-- [x] `submit_check.py` has no FAIL and every `?` item is answered.
-
-### Answers to the pre-submit questions
-
-1. **RED with the fix reverted, GREEN with it (exit codes).** M1-M7 each fail
-   `PatmanLoadTest` or its T4 function (CTest EXIT=8; M7 EXIT=1; logs `053`,
-   `055`, `057`, `059`, `061`, `063`, `065`); each mutation build is EXIT=0.
-   The restored tree builds cleanly (`066`, EXIT=0) and the test passes (`067`,
-   EXIT=0, 100% of 3). The saved-patch reversal is not authoritative: both
-   `git apply -R --check` calls exit 1 (`068`, `069`).
-2. **Deterministic.** There are no sleeps or wall-clock deadlines. The load test
-   uses the `AudioEngine::modelChangeWaiters()` event seam; playback tests use
-   `RealtimeScope`, `framesPerPeriod()`, real `NotePlayHandle` objects, and
-   bit-for-bit block comparison against a separately rendered SincBest oracle.
-   The deletion/creation counters are atomic and reset immediately before the
-   counted render.
-3. **Cause and complete.** The only caller of
-   `applyConverterModeToRetainedStates()` is `AudioEngine::setSrcQuality()`
-   (`AudioEngine.cpp:409`); it drives the prepare/adopt/discard hooks at
-   `AudioEngine.cpp:388-393`, and the `Instrument` defaults
-   (`include/Instrument.h:143-150`) keep every other instrument consistent.
-   Patman is the only override (`Patman.h:66-68`). The p1 table shows no
-   render-path converter setter.
-4. **No collateral damage.** No product file or persistence format changed. The
-   deletion hook has no effect outside `LMMS_TESTING`: it calls plain
-   `src_delete` and adds no allocation, free, lock or log. Saved projects load
-   through the unchanged readers, and the tests use a temporary GF1 patch and
-   the existing test seams only.
-5. **ALREADY-FIXED evidence.** `src/core/AudioEngine.cpp:298-320` prepares every
-   retained state, `plugins/Patman/Patman.cpp:247-267` forwards prepare/adopt/
-   discard to held Patman notes, and `src/core/AudioResampler.cpp:219-264`
-   caches the prepared converter before adoption. The reserved capacity at
-   `src/core/AudioEngine.cpp:145-149` and the throw at
-   `src/core/AudioResampler.cpp:392` keep allocation out of the render thread.
+1. **Fails without the fix, passes with it.** `920-reversed-final-test.log`
+   (EXIT=8) after `git apply -R` of the product-only patch, and
+   `922-restored-final-test.log` (EXIT=0) after `git apply` restored it; the
+   product patch is only `src/core/AudioResampler.cpp`.
+2. **Deterministic.** No sleep, deadline, timer or thread. The test uses the
+   `LMMS_TESTING` pool seams (`AudioResampler.h:174-177`), one real quality
+   transaction through the engine, and a fixed input buffer compared bit for bit.
+3. **Cause and complete.** The fix is in the pool's prepare/adopt pass; callers
+   and siblings are listed above. The held-note hook, the sample-voice pool and
+   `AudioFileProcessor`'s own voice pool already used prepare/adopt and are
+   unchanged; the discard path still rolls back cleanly.
+4. **No collateral damage.** No header, persistence, command or capacity change.
+   The pool's slot count and the mode mapping (`AudioResampler.cpp:664-676`) are
+   untouched; a held voice now follows the setting instead of silently keeping
+   the old converter. `AudioResamplerRatioTest` and
+   `AudioResamplerPoolMemoryTest` (including `everySlotStartsWithSelectedQuality`
+   and `failedSwitchPreservesOldQuality`) still pass.
+5. **Realtime, undo and commands.** Preparing or adopting a converter still
+   allocates/frees only on the control thread, under the engine change guard;
+   `acquire()`/`release()` remain single atomic flag operations and the render
+   path gained nothing. No command and no undo step changed.
+6. **Registration and gates.** `tests/upstream-modifications.txt` has an r12
+   entry for each changed file; `925-feature-check.log` is `RESULT: PASS`,
+   `GATE_EXIT=0`.
 
 ## Other findings
 
-- `PatmanRealtimeTest` does not exist in this design: `ctest -N | rg
-  PatmanRealtime` has no match (exit 1). The relevant suite is `PatmanLoadTest`.
-- A four-slot SincBest capacity does not exist in this design. The realtime pool
-  is the whole global capacity (thousands of slots); T2 bounds the audited case
-  at 200 voices plus 32 beyond nominal polyphony because exceeding the global
-  pool is not a polyphony scenario.
-- The review's cited lines belong to the absent r8 lineage (see the top of this
-  report). On this `HEAD` those lines are `PatmanView::openFile()`.
-- No product defect was found outside the packet. The over-polyphony path
-  intentionally throws when the reserved pool is exhausted rather than
-  allocating on the audio thread.
+- Pool exhaustion throws out of the render path. When every slot is held,
+  `AudioResampler(RealtimeVoiceTag)` throws
+  `std::runtime_error{"No prepared realtime voice converter is available"}`
+  (`src/core/AudioResampler.cpp:416`) and nothing between
+  `PatmanInstrument::playNoteImpl()` and the device callback catches it. No
+  product path can reach it: the pool has
+  `5 * (playHandles + 2*1024 + 1)` slots while the engine can create at most
+  `playHandles * (1 + CompSlipReaders::MaxReaders)` note/comp states plus the
+  fixed sample-voice pool. It is a design question for the pool's owner, not
+  this cluster, and is recorded rather than changed here.
+- `AudioResampler::trySetMode()` returns false (and `setMode()` throws) for a
+  pooled state while a `RealtimeScope` is active
+  (`src/core/AudioResampler.cpp:535,522`). That is the guard that keeps the r8
+  render-path switch from ever happening here; it is unchanged.
