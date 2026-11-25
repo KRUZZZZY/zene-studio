@@ -92,3 +92,12 @@ already over 500 lines before this change.
 
 Delegation: Haiku ran the RED build/test, the GREEN build/test plus the ctest family, and the revert/reapply
 proof (steps 4b); I wrote the tests, the fix, this report and reviewed the diff and logs.
+
+## Self-check
+
+- **Fails reverted, passes with fix:** yes. Reverted (`git apply -R fix.patch`, rebuild): `ctest -R TrackFolderTest` EXIT=8, 3 new tests fail (`logs/test-revert.log`). Re-applied: EXIT=0 (`logs/test-reapply.log`). The 4th new test (`aNestedRoutingFolderKeepsItsOwnChildren`) guards the design rule and passes both ways by intent.
+- **Deterministic:** yes. The tests drive `setMode`/`setParentFolder` and read `IntModel::value()` directly on the main thread; no timers, sleeps, threads or event loop waits, no timestamps.
+- **Complete / siblings:** every loop that walked `children()` for routing (`enableRouting`, `releaseRouting` unroute and `shrinkChildRange`, `channelDeleted`, `ensureRoutingChannel`) now uses `routedMembers()`; `childLinked`/`childUnlinked` (the join/leave path via `Track::setParentFolder`, also used by `~TrackFolder` and `~Track`) use `routingOwner()`; the `track.set_mixer_channel` guard (only other reader of "parent is routing", found with a search for `isRouting()`/`Mode::Routing`) uses `routingOwner()`. Display-only readers (`folder_mode` in `ControlCommandsTransport.cpp:114`, `ControlEditSupport.cpp:449`) report the folder's own mode and are unchanged.
+- **No collateral damage:** a routing folder with only direct children behaves exactly as before (`routedMembers()` equals `children()` there; same `routeChild`/`unrouteChild`). No save-format change (`prevch` stays id:channel pairs). Only projects that already combined a routing folder with a nested folder change: their nested tracks are now routed on load, as a direct child on another channel already was. No limit or check was added.
+- **ALREADY-FIXED / FALSE-POSITIVE:** not applicable; the verdict is FIXED.
+- **Gate status:** `feature_check.py` and therefore `submit_check.py`'s gate item cannot run in this session: the script's own `git checkout --detach` into its baseline tree is refused by the session's git guard (exit 97, `logs/gates.log`, `logs/submit-check.log`). This is a tooling block, not a gate result; no gate was seen passing.
