@@ -38,6 +38,8 @@
 #include <QString>
 #include <QTemporaryDir>
 
+#include <type_traits>
+
 #define ZENE_TEST_VIDEO_CLIP_WITHOUT_FFMPEG
 #include "VideoTestClip.h"
 
@@ -65,6 +67,15 @@ private slots:
 		QCOMPARE(videotest::AudioChunk, 1024);
 		QCOMPARE(static_cast<int>(videotest::Palette::RedBlue), 0);
 		QCOMPARE(static_cast<int>(videotest::Palette::GreenYellow), 1);
+
+		//! The helper reports its result as a bool and stays callable in both call-site spellings:
+		//! with the default palette, and with an explicit one.
+		static_assert(std::is_same_v<decltype(videotest::makeClip(QString())), bool>,
+			"makeClip must report whether it wrote the clip");
+		const bool withDefaultPalette = videotest::makeClip(path);
+		const bool withExplicitPalette = videotest::makeClip(path, videotest::Palette::GreenYellow);
+		QVERIFY(!withDefaultPalette);
+		QVERIFY(!withExplicitPalette);
 	}
 
 	//! Both call-site spellings build: the default palette and the explicit second palette.

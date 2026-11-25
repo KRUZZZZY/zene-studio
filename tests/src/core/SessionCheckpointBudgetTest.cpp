@@ -96,6 +96,21 @@ QString noisyTracksScript(int count)
 	return source;
 }
 
+struct HistoryState
+{
+	QStringList tracks;
+	int undoDepth = 0;
+	int redoDepth = 0;
+	int evicted = 0;
+	qint64 retained = 0;
+};
+
+HistoryState captureHistory()
+{
+	const ProjectJournal* journal = Engine::projectJournal();
+	return {trackNames(), journal->undoDepth(), journal->redoDepth(), journal->evictedSteps(), journal->retainedBytes()};
+}
+
 } // namespace
 
 class SessionCheckpointBudgetTest : public QObject
@@ -117,6 +132,38 @@ private:
 			const ControlResult saved = run(QStringLiteral("project.save"), {{QStringLiteral("path"), path(file)}});
 			QVERIFY2(saved.ok, qPrintable(saved.errorMessage));
 		}
+	}
+
+	//! Two kept tracks, one undone: one undo step and one redo step exist, then the byte budget is set to the
+	//! current snapshot plus 512 bytes, so only a large script/open result can overflow it.
+	void buildUndoAndRedoHistory()
+	{
+		Engine::projectJournal()->clearJournal();
+		for (const char* name : {"kept-one", "kept-two"})
+		{
+			QVERIFY(run(QStringLiteral("track.add"), {{QStringLiteral("type"), QStringLiteral("instrument")},
+				{QStringLiteral("name"), QString::fromLatin1(name)}}).ok);
+		}
+		Engine::projectJournal()->undo();
+		QVERIFY(!trackNames().contains(QStringLiteral("kept-two")));
+		QCOMPARE(Engine::projectJournal()->redoDepth(), 1);
+		const auto snapshot = Engine::getSong()->captureUndoSnapshot();
+		QVERIFY(snapshot);
+		QVERIFY(Engine::projectJournal()->setMaxUndoBytes(snapshot->size() + 512));
+		QVERIFY(Engine::projectJournal()->undoDepth() >= 1);
+		QCOMPARE(Engine::projectJournal()->redoDepth(), 1);
+	}
+
+	void verifyHistoryUntouched(const HistoryState& before)
+	{
+		const HistoryState after = captureHistory();
+		QCOMPARE(after.tracks, before.tracks);
+		QCOMPARE(after.undoDepth, before.undoDepth);
+		QCOMPARE(after.redoDepth, before.redoDepth);
+		QCOMPARE(after.evicted, before.evicted);
+		QCOMPARE(after.retained, before.retained);
+		Engine::projectJournal()->redo();
+		QVERIFY(trackNames().contains(QStringLiteral("kept-two")));
 	}
 
 	static void restoreBudget() { Engine::projectJournal()->setMaxUndoBytes(ProjectJournal::DefaultMaxUndoBytes); }
@@ -192,6 +239,39 @@ private slots:
 		QCOMPARE(trackNames(), tracksBefore);
 		QCOMPARE(journalDepth(), 0);
 		QVERIFY(Engine::projectJournal()->retainedBytes() <= limit);
+	}
+
+	void aRefusedScriptKeepsTheExistingUndoAndRedoSteps()
+	{
+		freshProject(QStringLiteral("history-base"), QStringLiteral("history-script.mmp"));
+		buildUndoAndRedoHistory();
+		if (QTest::currentTestFailed()) { return; }
+		const HistoryState before = captureHistory();
+
+		const ControlResult scripted = run(QStringLiteral("script.run"),
+			{{QStringLiteral("source"), noisyTracksScript(24)}});
+		QVERIFY2(!scripted.ok, "script.run was expected to be refused by the byte budget");
+		QCOMPARE(scripted.errorKind, ControlErrorKind::Refused);
+		verifyHistoryUntouched(before);
+	}
+
+	void aRefusedOpenKeepsTheDisplacedSessionsUndoAndRedoSteps()
+	{
+		const QString target = path(QStringLiteral("history-open-target.mmp"));
+		freshProject(QStringLiteral("target-base"), QStringLiteral("history-open-target.mmp"));
+		QVERIFY(addNoisyTracks(24));
+		QVERIFY(run(QStringLiteral("project.save"), {{QStringLiteral("path"), target}}).ok);
+
+		freshProject(QStringLiteral("displaced"), QStringLiteral("history-open-source.mmp"));
+		buildUndoAndRedoHistory();
+		if (QTest::currentTestFailed()) { return; }
+		QVERIFY(Engine::getSong()->isModified());
+		const HistoryState before = captureHistory();
+
+		const ControlResult opened = run(QStringLiteral("project.open"), {{QStringLiteral("path"), target}});
+		QVERIFY2(!opened.ok, "project.open was expected to be refused by the byte budget");
+		QCOMPARE(opened.errorKind, ControlErrorKind::Refused);
+		verifyHistoryUntouched(before);
 	}
 };
 

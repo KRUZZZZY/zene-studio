@@ -242,6 +242,26 @@ qint64 findStartTagEnd( const QByteArray& bytes, qint64 tagStart )
 }
 
 
+/*! The byte position of the UTF-16 unit offset \a characterOffset in UTF-8
+ *  \a bytes. QXmlStreamReader::characterOffset() counts UTF-16 units, not bytes
+ *  (this Qt has no byteOffset()): lead bytes begin characters, and a four-byte
+ *  sequence (lead >= 0xF0) is a surrogate pair, two units. */
+qint64 bytePositionOfCharacter( const QByteArray& bytes, qint64 characterOffset )
+{
+	qint64 units = 0;
+	qint64 pos = 0;
+	while( pos < bytes.size() && units < characterOffset )
+	{
+		const auto lead = static_cast<unsigned char>( bytes.at( pos ) );
+		if( ( lead & 0xC0 ) != 0x80 ) { units += lead >= 0xF0 ? 2 : 1; }
+		++pos;
+	}
+	// Continuation bytes of the last counted character belong to it.
+	while( pos < bytes.size()
+		&& ( static_cast<unsigned char>( bytes.at( pos ) ) & 0xC0 ) == 0x80 ) { ++pos; }
+	return pos;
+}
+
 /*! Walk \a xml - already open over \a bytes - to the start tag of the FIRST
  *  element named \a contentElementName, and answer the offset just past that
  *  tag, or -1 with \a error set. Matching the first element of that name, at
@@ -276,7 +296,7 @@ bool walkToContentStart( QXmlStreamReader& xml, const QByteArray& bytes,
 		if( token != QXmlStreamReader::StartElement ) { continue; }
 		if( xml.qualifiedName().toString() != contentElementName ) { continue; }
 
-		const qint64 afterTag = xml.characterOffset();
+		const qint64 afterTag = bytePositionOfCharacter( bytes, xml.characterOffset() );
 		const qint64 tagStart = bytes.lastIndexOf( '<', afterTag - 1 );
 		const qint64 tagEnd = findStartTagEnd( bytes, tagStart );
 		if( tagEnd <= 0 || bytes.at( tagEnd - 1 ) == '/' )
