@@ -497,6 +497,12 @@ private:
 	}
 	static void retireTarget(std::atomic<std::uint32_t>& alive, std::atomic<std::uint64_t>& writers,
 		std::uint32_t token);
+	//! Test seam (ModulationAudioViewTest only, a friend): called once on the
+	//! destroying thread when retireTarget() starts waiting for a pinned audio
+	//! write. Null in production; never called on the audio thread.
+	using RetireWaitHook = void (*)();
+	static std::atomic<RetireWaitHook> s_retireWaitHook;
+	static void announceRetireWait() noexcept;
 	//! Rebuilds the staged view and the liveness watches from m_runtime (control
 	//! thread, OUTSIDE the reader-visible write window: the writer quiescence
 	//! this waits for belongs to the edit, not to the audio thread). Touches no

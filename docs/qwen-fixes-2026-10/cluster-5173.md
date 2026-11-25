@@ -3,165 +3,145 @@ ALREADY-FIXED
 # Cluster 5173: liveness tokens do not protect modulation targets from concurrent destruction
 
 Verdict: ALREADY-FIXED on branch `bugs/qwen-5173`. Two earlier commits replaced the check-then-use
-window the finding describes with a pin-and-wait lifetime scheme. Both are ancestors of HEAD:
+window the finding describes with a pin-and-wait lifetime scheme. Both are ancestors of HEAD (round 1:
+`git merge-base --is-ancestor <sha> HEAD` EXIT 0 for each):
 
 - `73ecb52ba3 fix(core): pin modulation targets during audio writes (cluster 5173)`
 - `97789a3fd0 fix(core): scope modulation teardown gates to target generations (cluster 5173)`
 
-`git merge-base --is-ancestor 73ecb52ba3 HEAD; echo A=$?` printed `A=0`. The same check for
-`97789a3fd0` printed `B=0`.
-
-The finding cites an older shape of the code. In that shape, `drivingSource` checked `targetAlive` and
-the caller then wrote through the raw `entry.model` with nothing held in between. The earlier
-SKIPPED-SCOPE note quotes that shape as `ModulationLayerPublisher.cpp:189` / `:222`. That window no
-longer exists.
+Round 2 (this round) changes no lifetime behaviour. Review round 1 found that the regression test did
+not prove the fix: it passed with the writer wait deleted. Its interim repair (39982f8481) observed
+the destroyer for a 250 ms wall-clock window, and the definition of done forbids wall-clock timing in
+tests. This round replaces that window with a deterministic test seam, a production-null hook inside
+`retireTarget`'s wait loop. It proves RED (wait loop deleted) and GREEN.
 
 ## Evidence (file:line on this branch)
 
 - `include/ModulationLayer.h:418-435` has `beginTargetWrite(slot, token)`. On the audio thread it
   CAS-increments a writer count in `m_targetWriters[slot]`. The increment happens only while that
   atomic word still carries this token's generation and the closing bit is clear. It then re-checks
-  `targetAlive`. It does not allocate, lock or wait: a failed check returns `false`, and the block
-  skips the entry.
-- `include/ModulationLayer.h:437-443` has `endTargetWrite(slot)`, which releases the pin with a
-  `fetch_sub`.
-- `src/core/ModulationLayerPublisher.cpp:300-317` is `applyModulationBlock`. It takes the pin at `:302`
-  and holds it through an RAII guard, `TargetWritePin`, at `:303-308`. The raw-pointer writes happen
-  while the pin is held: `writeModulatedEntry(entry.model, ...)` at `:316`, and the per-voice
-  `entry.instrument->modulateNote` through `applyVoiceEntry` at `:312`. `drivingSource` (`:273-281`)
-  now only reads the view's plain bytes and the token. It never dereferences the model.
+  `targetAlive`. It does not allocate, lock or wait. `:437-443` has `endTargetWrite`, which releases
+  the pin.
+- `src/core/ModulationLayerPublisher.cpp:309-327` is `applyModulationBlock`. It takes the pin at `:311`
+  and holds it through an RAII guard, `TargetWritePin`. The model write at `:325`
+  (`writeModulatedEntry(entry.model, ...)`) and the per-voice `entry.instrument->modulateNote` (through
+  `applyVoiceEntry`) both run while the pin is held. `drivingSource` reads only the view's bytes and the
+  token. It never dereferences the model.
 - `src/core/AutomatableModel.cpp:184` emits `aboutToBeDestroyed()` at the entry of
-  `~AutomatableModel`, before any value state is torn down. `src/core/Instrument.cpp:78` and
-  `src/tracks/InstrumentTrack.cpp:255` do the same for an instrument target (cluster 5186).
-- `src/core/ModulationLayerPublisher.cpp:222-238`: for every published target, `publishView` connects
-  those signals to `retireTarget`.
-- `src/core/ModulationLayerPublisher.cpp:130-159` is `retireTarget`. On the destroying thread it sets
-  the closing bit with a CAS on the same atomic word, then yields until the writer count for this
-  generation reaches 0, and only then clears `m_alive`. Destruction continues only after
-  `retireTarget` returns.
-- `src/core/ModulationLayerPublisher.cpp:174-200`: a republish closes every slot and waits for its
-  writers in the same way, and it issues new tokens. A view published earlier therefore cannot pin a
-  slot that has been rebound.
-- `src/core/AutomatableModel.cpp:180-182` asserts that a model is never destroyed on an audio worker
-  during a period. So the spin in `retireTarget` runs off the audio thread.
+  `~AutomatableModel`. `src/core/Instrument.cpp:78` and `src/tracks/InstrumentTrack.cpp:255` do the
+  same for an instrument target. `publishView` connects these signals to `retireTarget`
+  (`ModulationLayerPublisher.cpp:236-245`).
+- `src/core/ModulationLayerPublisher.cpp:137-168` is `retireTarget`. It sets the closing bit with a CAS
+  on the same atomic word, then waits (`:155-161`) until this generation's writer count reaches 0, and
+  only then clears `m_alive`. Destruction continues only after it returns.
+- The writer's increment and the destroyer's closing bit are read-modify-writes on one atomic word, so
+  they are totally ordered. If the increment comes first, the destroyer waits for the write. If the
+  closing bit comes first, `beginTargetWrite` fails and the entry is skipped. This is design reasoning:
+  local TSan does not run on this box.
 
-Why this closes the race (design reasoning; local TSan does not run on this box): the writer's
-increment and the destroyer's closing bit are read-modify-writes on one atomic word. They are
-therefore totally ordered.
+## Round 2 change: the deterministic regression
 
-- If the increment comes first, the destroyer sees a non-zero count and waits until the write at
-  `:316` has finished.
-- If the closing bit comes first, the CAS in `beginTargetWrite` fails its generation/closing check and
-  the entry is skipped.
+Product, test seam only. Production behaviour does not change:
+- `include/ModulationLayer.h:500-505` (private, visible only to the friend `ModulationAudioViewTest`)
+  declares `RetireWaitHook`, `s_retireWaitHook` and `announceRetireWait()`.
+- `src/core/ModulationLayerPublisher.cpp:130-135` defines them. The hook is `nullptr` unless a test
+  sets it.
+- `:154,158`: inside `retireTarget`'s wait loop, `announceRetireWait()` is called once, on the
+  destroying thread, when that thread starts waiting for a pinned write. It costs one atomic load and
+  never runs on the audio thread.
 
-In both cases the model cannot be freed while the audio thread is writing through it, which is the fix
-the finding asks for ("defer target destruction until audio readers have exited").
+Test: `tests/src/core/ModulationAudioViewTest.cpp:233-303`, `targetDestructionWaitsForAnInFlightAudioWrite`:
+1. The audio write parks inside the pinned region (a `dataChanged` hook blocks on `resumeWrite`).
+2. A destroyer thread deletes the model.
+3. A second `aboutToBeDestroyed` slot is connected after the publisher's, so it runs only once
+   `retireTarget` has returned. It records whether the parked write had already resumed.
+4. The main thread waits on one semaphore. Either the wait hook releases it (a build that waits), or
+   the post-retire slot does (a build that retired while the write was parked).
+5. Assertions: the hook fired, retire had not returned while the write was parked, and retire
+   returned only after the write resumed.
 
-## Regression test (already on the branch, added by 73ecb52ba3)
+There are no sleeps and no clocks. `try_acquire_for(5s)` only bounds a hang: on a correct build the
+hook fires because the write is pinned and parked. The 250 ms window from 39982f8481 is removed. The
+assertions are stronger than the old `teardownEntered` check: the hook can only fire after the
+closing bit is set, and `!targetAlive` is still asserted at the end.
 
-`tests/src/core/ModulationAudioViewTest.cpp:222-287` is
-`targetDestructionWaitsForAnInFlightAudioWrite`. Its audio thread parks inside the model write through
-a `dataChanged` hook. Another thread then deletes the model. The test checks two things: the gate
-closes, and the destruction does not finish while the write is still parked. The sibling
-`rebindDuringDestructionIgnoresAStaleTargetClosure` (`:289`) covers the generation scoping that
-97789a3fd0 added.
+## Commands (round 2; logs in `/home/kruzzzzy/.config/kads/zene/state/runs/5173.r2/logs`)
 
-The second check as 97789a3fd0 left it sampled once, immediately after the gate closed, and it passed
-on a build with no writer wait at all - that commit had replaced 73ecb52ba3's 50 ms sleep with the
-single sample. The QA review restored a bounded observation window (see "QA review" below).
+These are the runs whose output I read in this session (build-8 onward, test-13 onward, gates-2). The
+red patch `logs/red-waitloop.patch` deletes the writer-wait loop in `retireTarget`
+(`ModulationLayerPublisher.cpp:154-161`), which is the central hunk of the earlier fix.
 
-## Commands run this session
+| Step | Command | EXIT | Log / evidence |
+|---|---|---|---|
+| GREEN build | `cmake --build build --target ModulationAudioViewTest -j4` | 0 | build-8.log |
+| GREEN | `cd build/tests && ctest -R ModulationAudioView --output-on-failure` | 0 | test-13.log, `1/1 Test #186: ModulationAudioViewTest ... Passed` |
+| RED: remove the wait | `git apply logs/red-waitloop.patch` | 0 | |
+| RED build | `cmake --build build --target ModulationAudioViewTest -j4` | 0 | build-9.log |
+| RED | `cd build/tests && ctest -R ModulationAudioView --output-on-failure` | 8 | test-14.log: `FAIL!  : ModulationAudioViewTest::targetDestructionWaitsForAnInFlightAudioWrite() 'waitedForWriter && !retireReturnedWhileParked' returned FALSE. (the target was retired while the audio thread still held its raw pointer)` at `ModulationAudioViewTest.cpp(297)` |
+| restore the wait | `git apply -R logs/red-waitloop.patch` | 0 | |
+| GREEN again | `cmake --build build --target ModulationAudioViewTest -j4`; `ctest -R ModulationAudioView --output-on-failure` | 0; 0 | build-10.log, test-15.log `Passed` |
+| 4b revert | `git diff -- include/ModulationLayer.h src/core/ModulationLayerPublisher.cpp > logs/fix.patch && git apply -R logs/fix.patch` | 0 | |
+| 4b RED | `cmake --build build --target ModulationAudioViewTest -j4` | 2 | build-12.log: `ModulationAudioViewTest.cpp:248:43: error: 's_retireWaitHook' is not a member of 'lmms::ModulationLayerPublisher'`. The test needs the seam, so reverting the seam stops it compiling. The meaningful RED is the wait-loop removal above. |
+| 4b GREEN | `git apply logs/fix.patch`; `cmake --build build --target ModulationAudioViewTest -j4`; `ctest -R ModulationAudioView --output-on-failure` | 0; 0; 0 | build-13.log, test-17.log `100% tests passed out of 1` |
+| header consumers | `cmake --build build --target zene ModulationLayerTest ModulationLayerValueTest ModulationLayerProjectRoundTripTest ModulationRateTest ModulatorToolsTest ControlModulatorCommandsTest -j4` | 0 | build-14.log. A full `cmake --build build -j4` is refused by the lane's build guard (EXIT 97, build-11.log: "build a named target"), so the targets are named. |
+| family | `cmake --build build --target ModulatorPanelTest -j4`; `cd build/tests && ctest -R "Modulation\|Modulator" --output-on-failure` | 0; 0 | build-16.log; test-19.log `100% tests passed out of 8` (ModulationLayerValue, ModulationLayer, ModulationAudioView, ControlModulatorCommands, ModulationLayerProjectRoundTrip, ModulationRate, ModulatorTools, ModulatorPanel) |
+| gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | 0 | gates-2.log, table below |
 
-| Command | EXIT | Log |
-|---|---|---|
-| `cmake --build build --target zene ModulationAudioViewTest -j4 > logs/build-1.log 2>&1; echo EXIT=$?` | 0 | build-1.log |
-| `cd build/tests && ctest -R ModulationAudioView --output-on-failure > logs/test-1.log 2>&1; echo EXIT=$?` | 0 | test-1.log (`1/1 Test #186: ModulationAudioViewTest ... Passed`, `100% tests passed out of 1`) |
-| `cd build/tests && ZENE_CONTROL_CHECK_RESULTS=1 ./ModulationAudioViewTest -v1 > logs/test-2.log 2>&1; echo EXIT=$?` | 0 | test-2.log (`PASS : ...targetDestructionWaitsForAnInFlightAudioWrite()`, `PASS : ...rebindDuringDestructionIgnoresAStaleTargetClosure()`, `Totals: 16 passed, 0 failed`) |
-
-`logs/` is `/home/kruzzzzy/.config/kads/zene/state/runs/5173.r1/logs`.
-
-There is no product change, so no RED/GREEN reversal was run in this session. That proof belongs to
-commits 73ecb52ba3 and 97789a3fd0.
-
-## Gates (step 5): blocked by the environment
-
-| Command | EXIT | Log |
-|---|---|---|
-| `python3 .../qwen/feature_check.py <worktree> > logs/gates-1.log 2>&1; echo EXIT=$?` (run by Haiku) | 1 | gates-1.log |
-| same command, run again in the lead session's shell `> logs/gates-2.log` | 1 | gates-2.log |
-
-Neither run produced a gate table. In both, the gate script's own baseline step was refused by the
-lane guard before any gate ran:
+### Gates (gates-2.log, verbatim)
 
 ```
-bunny-guard: 'git -C /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/gate-baselines/tree checkout -q --detach 3436a808b65a59d362b15837adc1308ea67bf675' is not allowed in a Bunny lane (AGENTS.md rules 1, 2, 11, 12). ...
-subprocess.CalledProcessError: Command '[... 'checkout', '-q', '--detach', '3436a808b6...']' returned non-zero exit status 97.
+feature-check kads-5173 (base 3436a808b, 5 changed files; logs in /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-5173/build/feature-check)
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
 ```
-
-As the rules require, I did not work around the guard. Running the gates needs the harness to allow
-feature_check.py's baseline checkout in `qwen/gate-baselines/tree`. The diff of this job is one new
-Markdown file under `docs/` and no product, test or registration file. So there is nothing for the
-complexity, file-length or registration gates to measure, but this is unverified because the gate did
-not run.
 
 ## Self-check
 
-- **The regression test FAILS with the product change reverted and PASSES with it.** This job has no
-  product change, so there is nothing to revert here. The regression test
-  `targetDestructionWaitsForAnInFlightAudioWrite` came in with fix commit 73ecb52ba3. This session it
-  PASSES on HEAD (test-1.log EXIT=0, test-2.log EXIT=0, `Totals: 16 passed, 0 failed`). The RED run
-  belongs to that earlier commit's own record; I did not re-run it this session.
-- **The test is deterministic.** It synchronises through a `Model::dataChanged` hook with
-  `testsupport::BinarySemaphore`. The audio write parks at the hook, and the destroyer is observed
-  through the `targetAlive` gate (`ModulationAudioViewTest.cpp:228-262`). The 2 s `try_acquire_for`
-  and deadline only bound a hang: on a correct build they never decide the result. The QA review
-  replaced the single post-gate sample with a bounded 250 ms observation window (see "QA review"
-  below); the audio write stays parked for that whole window, so a build that defers the teardown
-  cannot finish inside it and the window never decides a pass.
+- **The regression test FAILS with the product change reverted and PASSES with it.** With the fix's
+  wait loop deleted it fails, ctest EXIT 8 (test-14.log). With the loop restored it passes, EXIT 0
+  (test-13.log, test-15.log). Reverting this round's seam hunk (procedure 4b) stops the test
+  compiling (build EXIT 2, build-12.log). Re-applying it builds and passes (test-17.log, EXIT 0).
+- **The test is deterministic.** The seam is `ModulationLayerPublisher::s_retireWaitHook`, called from
+  `retireTarget`'s wait loop. The synchronisation points are a `Model::dataChanged` park and an
+  `aboutToBeDestroyed` slot that runs after retire returns. No sleeps, no `steady_clock`. The 5 s and
+  2 s `try_acquire_for` bounds only keep a hang finite and never decide a pass.
 - **The fix is at the cause and complete; callers and siblings checked.** Every raw-pointer write on
-  the audio path is in `applyModulationBlock` (`ModulationLayerPublisher.cpp:300-317`). Both writes
-  there, the model write at `:316` and the instrument write at `:312`, happen under the pin taken at
-  `:302`. Both teardown sources are wired to `retireTarget`: model destruction
-  (`AutomatableModel.cpp:184` → `:227`) and instrument destruction (`Instrument.cpp:78`,
-  `InstrumentTrack.cpp:255` → `:233`). A rebind closes the slot and waits for its writers the same way
-  (`:174-200`). `drivingSource` (`:273-281`) never dereferences the model.
-- **No collateral damage.** This job changes no product code, no saved data and no limits. It adds
-  only this report.
-- **ALREADY-FIXED: the code that shows it.** `include/ModulationLayer.h:418-443`
-  (`beginTargetWrite`/`endTargetWrite`), `src/core/ModulationLayerPublisher.cpp:130-159`
-  (`retireTarget`), `:222-238` (watches) and `:302-316` (pinned write), and
-  `src/core/AutomatableModel.cpp:184`. The fix commits 73ecb52ba3 and 97789a3fd0 are ancestors of HEAD
-  (merge-base EXIT 0 for both).
+  the audio path is in `applyModulationBlock` and runs under the pin taken at
+  `ModulationLayerPublisher.cpp:311`. Both teardown sources reach `retireTarget`:
+  - the model, through `AutomatableModel.cpp:184` → `:236`;
+  - the instrument, through `Instrument.cpp:78` and `InstrumentTrack.cpp:255` → `:242`.
+
+  A rebind waits for writers in `publishView`'s own loop. That loop is a sibling with its own tests
+  (`anEditWaitingForAnActiveWriter...`), and this round leaves it unchanged. The seam is the only
+  product change. `ModulationLayer.h` gained a private static member, so `zene` and every
+  Modulation/Modulator test target were rebuilt by name (build-14.log, build-16.log). The lane
+  guard refuses a full build.
+- **No collateral damage.** No saved data, format, limit, command or undo path is touched. In
+  production the hook is null, so `announceRetireWait()` is one acquire load per retire wait, off the
+  audio thread. Both files are fork sources (`tests/fork-sources.txt:1270`, `:2147`), so the
+  registration lists need no change.
+- **ALREADY-FIXED: the code that shows it.** `include/ModulationLayer.h:418-443`,
+  `src/core/ModulationLayerPublisher.cpp:137-168` (with the wait at `:155-161`), `:236-245` and
+  `:311-325`, and `src/core/AutomatableModel.cpp:184`.
 
 ## Other findings
 
-- The gate is blocked by the environment: in this lane, `feature_check.py` cannot check out its
-  baseline (see Gates above). Every lane that runs this gate under the same guard will hit it.
+- Round 1 could not produce the gate table: the baseline checkout in `qwen/gate-baselines/tree` was
+  refused. In round 2 `feature_check.py` ran to completion (gates-2.log, EXIT 0).
+- `retireTarget` busy-waits (yield) on the destroying thread. It relies on the `Q_ASSERT_X` at
+  `src/core/AutomatableModel.cpp:180` that no target is destroyed on an audio worker, and that check
+  compiles out in release builds. The earlier fix already had this property; it is not changed here.
 
-## QA review (r1)
-
-The claim was checked against the branch, and the cited regression was measured for sensitivity. The
-ALREADY-FIXED verdict holds: the pin-and-wait scheme really does close the check-then-use window the
-finding describes (`ModulationLayer.h:418-443`, `ModulationLayerPublisher.cpp:130-159`, `:291-319`).
-The test as submitted did not prove it, so the wait assertion was strengthened to a bounded 250 ms
-observation window (`ModulationAudioViewTest.cpp:261-283`), the same shape 73ecb52ba3 used before
-97789a3fd0 removed it.
-
-| Command | EXIT |
-|---|---|
-| `cmake --build build --target zene ModulationAudioViewTest -j4` | 0 |
-| `cd build/tests && ctest -R ModulationAudioView --output-on-failure` | 0 (`186 ... Passed`, 16 passed / 0 failed) |
-| `./ModulationAudioViewTest targetDestructionWaitsForAnInFlightAudioWrite`, five repeats | 0, 0, 0, 0, 0 |
-| the same ctest with `retireTarget`'s writer wait removed from `ModulationLayerPublisher.cpp:151-157` (product hunk reversed, test untouched), rebuilt | 8 (`FAIL! ... 'waitedForWriter' returned FALSE`, `ModulationAudioViewTest.cpp:283`) |
-| `git checkout -- src/core/ModulationLayerPublisher.cpp`, rebuilt, ctest again | 0 |
-
-Without the observation window that reversal PASSED (EXIT 0), which is how the gap was found.
-`feature_check.py` on this worktree: EXIT 1 with no gate table - the six simple gates PASS
-(`fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`,
-`doc-figures`), then `base_listings()` dies on the same guard-blocked baseline checkout the builder
-reported, so the complexity and file-length rows never run. No product file is touched by this unit,
-so neither ratchet has an item to list in it.
-
-Delegation: Haiku (two starts) ran the build, the ctest and direct test runs, the first gate run and
-the first completion check. I checked their key log lines myself. Sonnet and DeepSeek were not used:
-the bug was already fixed, so there was no fix or test to write.
+Delegation: an earlier round-2 session wrote the seam and the test rewrite, and left them uncommitted
+(captured as `5173.r2/pre-leftover.patch`). This session restored the patch, and I reviewed the
+diff. Haiku (three starts) ran every build and ctest run: GREEN, RED with the wait loop deleted, the
+4b revert/re-apply, the named header-consumer rebuild with the Modulation family, and feature_check.
+I checked the FAIL/PASS lines in test-13/14/15 myself. Sonnet and DeepSeek were not needed: no new
+code had to be written this session.
