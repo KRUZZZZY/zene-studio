@@ -25,8 +25,9 @@ so it only connects Zene instances, never Live or Bitwig.
 * **Receive:** the peer's stream is *added* to this instance's master mix, after the
   send tap, so a pair of instances sending to each other never feeds back.
 * Format: float32, stereo, little endian, at most 128 frames per UDP datagram
-  (1040 bytes, one LAN frame). A 16-byte header carries a sequence number and the
-  sample rate; a packet at another rate than the receiving engine's is dropped and
+  (1044 bytes, one LAN frame). A 20-byte header (version 1) carries a sequence number,
+  the sample rate and the frame position of the packet's first frame; a legacy 16-byte
+  header (version 0) from an older peer is still accepted. A packet at another rate than the receiving engine's is dropped and
   counted (`rate_mismatches`) - there is no resampling. A packet with a zero rate is
   malformed (counted as `malformed`): zero means "not known yet", and the sender never sends one.
 * A non-finite sample (NaN or an infinity) in a received packet is decoded as silence,
@@ -57,8 +58,10 @@ so it only connects Zene instances, never Live or Bitwig.
   `2 x target + one period` it is cut back to the target (`trims`). Latency is therefore
   bounded at that high-water mark, and the cost of drift is an occasional trim or
   underrun, not growing delay.
-* A sequence gap (lost packet) is replaced with silence, up to 8 packets, so timing holds
-  (`lost_packets`). Late or duplicate packets are dropped (`reordered_packets`).
+* A sequence gap (lost packet) is replaced with silence, so timing holds (`lost_packets`):
+  the frame position in the version 1 header makes it exactly the lost frames (capped at
+  8 packets of 128 frames). A legacy version 0 header has no position, so its gap is
+  estimated from the length of the arriving packet. Late or duplicate packets are dropped (`reordered_packets`).
 * The stress test (`realtimeStressReportsBoundedUnderrunsAndLatency`, two 1 ms-cadence
   threads, 3000 periods, loopback) asserts: samples in order, underruns <= 1% of periods,
   buffered latency under the high-water mark, no ring overruns, 80% of the stream heard.
