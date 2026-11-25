@@ -106,32 +106,87 @@ Logs in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p12-260.r1/logs/`. ctes
 | 4b: fixed build | `cmake --build build --target zene TempoMapPanelTest -j4` | 0 | `build-6-4b-fixed.log` |
 | 4b: fixed run | `ctest -R '^TempoMapPanelTest$' --output-on-failure` | **0** | 100% passed (`test-5-4b-fixed.log`) |
 | GUI proof | `QT_QPA_PLATFORM=offscreen python3 gui-shot-p12-260.py build/zene <logs>/ui` | 0 | real `zene` headless: 1/32 at tick 0 + 120 BPM at 2147483647, `window.tempo_map`, `window.screenshot` of the panel (`gui-shot-1.log`) |
-| Gates | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **0** | `RESULT: PASS`, all 8 rows PASS (`gate-1-feature-check.log`) |
+| Gates (wrapper) | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | **1** | **did not run: environment refusal**, see below (`gate-1-feature-check.log` EXIT=0 before my commits, `gate-2/3/4-feature-check.log` EXIT=1 after them) |
 
 GUI proof artifact: `logs/ui/tempo-map-bar-column.png`, 703 x 360, 28916 bytes, sha256
 `b8c41de94c418a55360f51a80dc0f04d79cefa9fa467e3107001a1ba2efafbd4`. It shows both rows — bar 1 (1/32)
-and bar 357913942 at tick 2147483647 — drawn immediately by `window.screenshot`.
+and bar 357913942 at tick 2147483647 — drawn immediately by `window.screenshot`. The driver is
+`logs/gui-shot-p12-260.py` (scratch, not committed): it starts the real `build/zene` headless over
+`--control-socket`, runs `transport.tempo_map_add` twice, `window.tempo_map`, then `window.screenshot`
+with `"window": "active"`.
+
+### Gates: what ran, and the one wrapper that cannot run here
+
+`feature_check.py` wraps eight gates. Before my commits it returned EXIT=0 (`gate-1-feature-check.log`)
+because its ratchet baseline for that merge base (`fa4a5f2e7`) was already cached. After my commits the
+train moved (`050/m0-train-52` now contains the old tip), so the merge base became `9913d36d53`, whose
+baseline is not cached; the wrapper then checks that commit out in its own cache tree and the Bunny git
+shim refuses it:
+
+```
+bunny-guard: 'git -C .../qwen/gate-baselines/tree checkout -q --detach 9913d36d53...' is not allowed
+in a Bunny lane (AGENTS.md rules 1, 2, 11, 12).  (exit 97)
+```
+
+That is a refusal of the wrapper's own infrastructure step (`gate-4-feature-check.log`), not a gate
+finding about this change. Each gate was therefore run directly in the worktree:
+
+| Gate | Command | EXIT | Log |
+| --- | --- | --- | --- |
+| fork-sources | `bash tests/fork-sources-gate.sh` | 0 | `gate-fork-sources.log` |
+| all-sources-reproduce | `bash tests/all-sources-reproduce.sh` | 0 | `gate-all-sources-reproduce.log` |
+| no-upstream-regression | `bash tests/no-upstream-regression-gate.sh` | 0 | `gate-no-upstream-regression.log` |
+| check-namespace | `tests/scripted/check-namespace` | 0 | (stdout empty, EXIT=0) |
+| no-tautology | `bash tests/no-tautology-gate.sh` | 0 | `gate-no-tautology.log` |
+| doc-figures | `python3 tests/doc-figures-gate.py` | 0 | `gate-doc-figures.log` |
+| file-length (ratchet) | `bash tests/file-length-gate.sh --check` | 0 | `gate-file-length.log` |
+| complexity (ratchet) | `bash tests/complexity-gate.sh --check` | **2** | `gate-complexity.log`: `lizard is not installed — run: pip install lizard` |
+
+`lizard` is not on this box (`python3 -c "import lizard"` → `ModuleNotFoundError`), so the complexity
+ratchet cannot be evaluated here, and the earlier wrapper PASS for it was vacuous (`feature_check.py`
+counts "no REGRESSION line in your files" as PASS, which an absent tool also produces). What that gate
+would say is nevertheless determined by its own rule: it fails on a NEW function over CCN 10 or on an
+existing one whose CCN RISES (`tests/complexity-gate.sh` header). This change adds no function and the
+replaced decision is one-for-one (`while (tick - barStart >= perBar)` → `if (barsAhead > 0)`), so
+`barAt`'s CCN is unchanged (`src/gui/TempoMapPanel.cpp:128-169`). I did not install `lizard`: that would
+change a shared machine's tooling for every other lane.
 
 ## Self-check
 
-1. **RED/GREEN and 4b.** RED with no product fix: `test-1-red.log`, ctest EXIT=8,
+Answers to the five items `submit_check.py` asks:
+
+1. **The regression test FAILS with the product change reverted and PASSES with it (exit codes).** RED
+   without the fix: `test-1-red.log`, ctest **EXIT=8**,
    `FAIL! : TempoMapPanelTest::theBarWalkDoesNotStepOncePerBar() 'steps <= 4' returned FALSE. (the bar
-   walk took 357913941 steps)`. GREEN: `test-2-green.log`, EXIT=0. 4b reverses only the quotient hunk
-   (`fix.patch` was taken after the seam was committed, so the test still compiles): EXIT=8 again
-   (`test-4-4b-unfixed.log`), reapplied: EXIT=0 (`test-5-4b-fixed.log`).
-2. **Deterministic.** No clock, sleep, thread or process timing. The assertion is on an exact integer
-   step count and on the bar number, both pure functions of the map.
-3. **Fix at the cause; callers and siblings.** The cause is the per-bar `while`; callers and the only
-   sibling walk are listed above; `barAt` has one caller.
-4. **No collateral damage.** The fix returns the same bar values (the test pins one of them), so saved
-   projects show the same bars. No limit or check was added, so nothing new can refuse a caller. The
-   seam is compiled out of product builds.
-5. **Realtime, undo, commands.** `refresh()` is GUI-thread code; the change adds no allocation, lock,
-   wait or logging and no control command; undo is untouched (`transport.tempo_map_*` still make one
-   step each).
-6. **Registration and gates.** No new files; `include/TempoMapPanel.h` and `src/gui/TempoMapPanel.cpp`
-   are already in `tests/fork-sources.txt` (`:1438`, `:2417`), so neither list changed.
-   `feature_check.py` prints `RESULT: PASS` with every row PASS (`gate-1-feature-check.log`, EXIT=0).
+   walk took 357913941 steps)`. GREEN with it: `test-2-green.log`, **EXIT=0**. 4b, from this commit:
+   `git apply -R logs/fix.patch` → **EXIT=0**, rebuild → **EXIT=0**, ctest → **EXIT=8** with the same
+   line (`test-4-4b-unfixed.log`); `git apply logs/fix.patch` → **EXIT=0**, rebuild → **EXIT=0**, ctest
+   → **EXIT=0** (`test-5-4b-fixed.log`). The patch was taken after the seam commit, so reversing it
+   leaves the test compiling.
+2. **The test is deterministic.** No wall-clock timing, sleeps, threads or process timing. It uses the
+   `LMMS_TESTING` seam `TempoMapPanel::barWalkStepsForTest()` (`include/TempoMapPanel.h:67-73`,
+   `src/gui/TempoMapPanel.cpp:339-343`), an exact integer step count for a map of two fixed events
+   (1/32 at tick 0, 120 BPM at 2147483647) plus the bar number that map must produce.
+3. **The fix is at the cause and complete.** The cause is the per-bar `while` in `barAt()`
+   (`src/gui/TempoMapPanel.cpp:139-149` now). `barAt()` has one caller, `refresh()` (`:323`); the only
+   other bar-stepping loop in the tree was this one (`++bar` appears nowhere else), and
+   `musicaltime::split` (`src/core/MusicalTime.cpp:87-88`) already divides. The metre-change branch
+   (`:152-164`) is a single `++bar` and was left as it was; the header declaration and definition of
+   the seam moved together, and every target that includes the header was rebuilt (above).
+4. **No collateral damage.** The fix computes the same bar the old loop computed (the test pins bar
+   `357913942` for tick 2147483647 in a 1/32 map), so saved projects show exactly the bars they did.
+   No limit or check was added anywhere, so no other caller can newly be refused. The seam is compiled
+   out of product and `zene` builds (`LMMS_TESTING` only, `tests/CMakeLists.txt:13`), and the test's own
+   edits leave the song's tempo map cleared at the end.
+5. **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not applicable: the verdict is FIXED, and item 1 is the
+   run that shows the defect was live on this branch before the change.
+
+Also checked: **realtime, undo, commands** — `refresh()` is GUI-thread code, the change adds no
+allocation, lock, wait, I/O or logging, adds no control command, and `transport.tempo_map_*` still make
+one undo step each (their tests pass unchanged). **Registration** — no new files; `include/TempoMapPanel.h`
+and `src/gui/TempoMapPanel.cpp` are already in `tests/fork-sources.txt` (`:1438`, `:2417`), so neither
+list changed. **Gates** — six pass, file-length passes, complexity cannot run here (see the table above
+and the exact refusal output).
 
 ## Other findings
 
