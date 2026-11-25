@@ -80,7 +80,23 @@ reference, and the proof manifest carries a `code-reference` artifact).
 
 ## Self-check
 
-See the submit_check notes appended below.
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p21-115 > .../logs/02-submit-check.log 2>&1; echo EXIT=$?`
+gave EXIT=1. Commits, clean tree, report and the claim-only closure PASS. The one FAIL is
+`gates (feature_check.py)`, the guard-blocked gate described above. I cannot fix it from this lane
+without working around bunny-guard, so that step stays BLOCKED, and I am leaving that FAIL for the
+gate tooling owners.
+
+- Regression test red/green: not applicable. The verdict is FALSE-POSITIVE, no product code changed, and
+  there is nothing to revert. The proof manifest carries a `code-reference` instead.
+- Determinism: not applicable, because no test was added.
+- Fix at cause / callers and siblings: no fix was made. I checked every emitter and every runtime caller of
+  the signal: AudioEngine.cpp:812/1427/1454, ProjectRenderer.cpp:267, RenderManager.cpp:48-51/219/233,
+  ExportProjectDialog.cpp:515, main.cpp:1541/1578, MasteringJob.cpp:324.
+- Collateral damage: none. The only change in this commit is this report file under docs/.
+- FALSE-POSITIVE evidence: `plugins/ConvolutionReverb/ConvolutionReverb.cpp:177` (a context-object
+  AutoConnection, so a cross-thread emit would be queued), `src/core/AudioEngine.cpp:1422,1427` and
+  `:1450,1454` (each emit comes after `stopProcessing()`), and `src/core/ProjectRenderer.cpp:265-267` (the
+  emit happens on the GUI thread before the render thread starts).
 
 Delegation: Haiku ran the feature_check gate and reported the guard refusal (I verified it in
 01-feature-check.log). I did the diagnosis myself: it was five targeted searches and two short reads, which took
