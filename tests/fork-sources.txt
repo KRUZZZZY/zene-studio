@@ -2532,6 +2532,7 @@ src/wasm/WasmAbi.h
 src/wasm/WasmLogBuffer.h
 src/wasm/WasmOfflineRender.cpp
 src/wasm/WasmOfflineRender.h
+src/wasm/WasmOfflineRenderLimits.h
 src/wasm/WasmSandbox.cpp
 src/wasm/WasmSandbox.h
 src/wasm/WasmSandboxHost.cpp
@@ -4129,3 +4130,7 @@ plugins/VstEffect/VstWetDryMix.h
 # Cluster ci-d3e29f18fa53a626: the Qt 5 QStringList fill-constructor build regression and its port report.
 tests/ci-d3e29f18-mixer-faders-portability-check.py
 docs/qwen-fixes-2026-10/cluster-ci-d3e29f18fa53a626-port.md
+# cluster 3647-port: the offline-render frame cap is tested without WANT_WASM through
+# test-only sandbox/worker stubs (fork-NEW test).
+tests/src/wasm/WasmOfflineRenderLimitStubs.cpp
+tests/src/wasm/WasmOfflineRenderLimitTest.cpp
