@@ -172,22 +172,50 @@ RESULT: PASS
 
 ## Self-check
 
+Answers to the five ASK items of `submit_check.py`, then the supporting evidence.
+
+1. **The regression test fails with the product change reverted and passes with it.** Reverted:
+   `git apply -R fix.patch` (`APPLY_REVERSE_EXIT=0`), rebuild (`BUILD_EXIT=0`), run
+   (`TEST_EXIT=8`, both new slots FAIL - `test-4.log`). Restored: `git apply fix.patch`
+   (`REAPPLY_EXIT=0`), rebuild (`BUILD_EXIT=0`), run (`TEST_EXIT=0` - `test-5.log`). The 17
+   pre-existing slots of the file pass in both runs, so the two new slots are exactly what the
+   product change turns from red to green.
+2. **The test is deterministic.** No wall clock, no sleep, no thread, no event loop: the seam is
+   the transform's own `apply()` (pure, one event in, one answer out) plus
+   `InstrumentTrack::processInEvent()` with `Engine::audioEngine()->audioDev()->stopProcessing()`
+   already run in `initTestCase`, and the readback is the synchronous
+   `InstrumentTrack::playingNote(key)` (`include/InstrumentTrack.h:126-129`). The events are
+   injected with fixed keys, channels and velocities; nothing is timed.
+3. **The fix is at the cause and complete.** `follow()` has exactly one caller, `apply()`
+   (`src/core/MidiInputTransform.cpp:67-75`), and it routes all three release shapes through it
+   (note-off, velocity-0 note-on with `ends = true`, key pressure with `ends = false`).
+   `apply()` has exactly one product caller, `InstrumentTrack::handleInputTransform()`
+   (`src/tracks/InstrumentTrackNotes.cpp:154-171`), whose early return for the identity path is
+   the reason the entry is missing - and the reason the fix must not depend on tracking. The
+   siblings - `Dropped` releases, tracked releases across a reconfiguration, the key range and
+   the transpose - are unchanged and each is pinned by a slot that passes (`test-3.log`).
+4. **No collateral damage.** The transform's stored form (`toJson`/`fromJson`/`save`/`load`) and
+   the `track.input_transform_set`/`_get` commands are untouched, so old projects load and
+   round-trip as before (the file's own `theCommandsUndoAndTheFile` slot passes). No limit or
+   range was added, so no other caller can be newly rejected. The `-R MidiInput` family passes
+   3/3 (`test-3.log`) and the gates pass (`gates-2.log`).
+5. **ALREADY-FIXED / FALSE-POSITIVE**: not claimed - the verdict is FIXED, reproduced on the
+   base and proven by the reverse-patch run above.
+
+Supporting evidence:
+
 - **Verdict backed by code and a reproduction**: the mechanism is quoted above with file:line,
   and the defect was observed twice - at the transform (`apply()` returned false for a release)
   and through the live path (`playingNote(60)` still set after the release). `test-1.log`.
-- **Test fails without the fix, passes with it**: `test-4.log` (product change reverted,
-  `TEST_EXIT=8`) and `test-5.log` (change applied, `TEST_EXIT=0`); the 17 pre-existing slots of
-  the file pass in both runs, so the two new slots are what fail without the fix.
-- **No collateral damage**: the transform's own slots and the `-R MidiInput` family pass
-  (`test-3.log`); the fix touches only the `NotHeld` branch of `follow()`; nothing outside the
-  bug changes - `Dropped` releases, tracked releases, key pressure, the identity path, the
-  file format and the commands are untouched.
-- **Realtime**: `follow()` is on the MIDI input thread and the change is one compare; no
-  allocation, free, lock, wait or log was added, and no member, header or command changed, so
-  nothing new runs on the audio thread and the command snapshot cannot move.
+- **Realtime**: `follow()` runs on the MIDI input thread and the change is one integer compare;
+  no allocation, free, lock, wait, I/O or log was added, and no member, header or command
+  changed, so nothing new runs on the audio thread and the command snapshot cannot move.
+- **Undo and commands**: no undo step is added or removed and no command is added or changed;
+  the fix is one product expression, two test slots and this report.
 - **Registration**: no new file; the changed product file is already listed in
   `tests/fork-sources.txt:2133`, and the gate's `fork-sources` check passes.
-- **Commit**: the report and the fix are in one commit naming cluster new-p12-137.
+- **Commit**: the report and the fix are in one commit naming cluster new-p12-137
+  (`a4bbaa8de0a6e56c3a15e82dec01a3ad427ec17c`).
 
 ## Other findings
 
