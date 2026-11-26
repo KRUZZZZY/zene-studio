@@ -138,9 +138,11 @@ The other four binaries pass: `BasicFiltersSampleRateTest`, `LommSampleRateTest`
 ## Gates
 
 ```
-python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>   EXIT=0   (logs/gates-1.log)
+# run three times: before the commit (logs/gates-1.log, 3 changed files), after the ledger and the
+# report were added (logs/gates-2.log, 5 changed files) and on the committed tree (logs/gates-3-final.log)
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>   EXIT=0
 
-feature-check kads-new-p15-73 (base 3436a808b, 3 changed files; logs in <worktree>/build/feature-check)
+feature-check kads-new-p15-73 (base 3436a808b, 5 changed files; logs in <worktree>/build/feature-check)
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
