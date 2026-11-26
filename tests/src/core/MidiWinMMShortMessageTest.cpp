@@ -21,7 +21,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <semaphore>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -31,6 +30,7 @@
 #include "MallocWatch.h"
 #include "MidiPort.h"
 #include "MidiWinMMShortMessage.h"
+#include "PortableSync.h"
 
 #include "MidiWinMMOutput.h"
 
@@ -94,12 +94,12 @@ public:
 	}
 
 	std::vector<Sent> sent;
-	std::binary_semaphore arrived{0};
+	lmms::testsupport::BinarySemaphore arrived{0};
 	std::thread::id thread;
 };
 
-//! Holds the worker inside a driver call until the test releases it. Two tokens fit: the test's
-//! own release plus the failure-path guard that keeps a failed check from leaving the worker stuck.
+//! Holds the worker inside a driver call until the test releases it. A second release (the
+//! failure-path guard that keeps a failed check from leaving the worker stuck) is harmless.
 class GatedSink final : public lmms::MidiWinMMSink
 {
 public:
@@ -112,8 +112,8 @@ public:
 	}
 
 	std::vector<Sent> sent;
-	std::binary_semaphore entered{0};
-	std::counting_semaphore<2> release{0};
+	lmms::testsupport::BinarySemaphore entered{0};
+	lmms::testsupport::BinarySemaphore release{0};
 	std::atomic<bool> finished{false};
 };
 

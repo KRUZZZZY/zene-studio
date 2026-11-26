@@ -29,7 +29,6 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <semaphore>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -38,6 +37,7 @@
 #include <QMap>
 #include <QString>
 
+#include "AudioWorkerWake.h"
 #include "MidiHandoffQueue.h"
 #include "MidiWinMMOutRouting.h"
 
@@ -176,27 +176,18 @@ public:
 		}
 
 		const std::uint64_t generation = m_generation.load( std::memory_order_seq_cst );
-		const MidiWinMMOutRouting::Snapshot* published = m_routing.snapshot();
 		bool queued = false;
-		if( published != nullptr )
+		m_routing.forEachDevice( port, [&]( const MidiWinMMOutRoute& route )
 		{
-			for( std::size_t i = 0; i < published->count; ++i )
+			if( m_queue.push( Command{ route.device, message, generation } ) )
 			{
-				const MidiWinMMOutRoute& route = published->routes[i];
-				if( route.port != port )
-				{
-					continue;
-				}
-				if( m_queue.push( Command{ route.device, message, generation } ) )
-				{
-					queued = true;
-				}
-				else
-				{
-					m_overflow.fetch_add( 1, std::memory_order_relaxed );
-				}
+				queued = true;
 			}
-		}
+			else
+			{
+				m_overflow.fetch_add( 1, std::memory_order_relaxed );
+			}
+		} );
 
 		m_submitInFlight.fetch_sub( 1, std::memory_order_seq_cst );
 		if( queued && m_threaded )
@@ -240,7 +231,9 @@ private:
 	{
 		if( !m_wakePending.exchange( true, std::memory_order_seq_cst ) )
 		{
-			m_wake.release();
+			// The word moving is the signal; the post never locks, allocates or waits.
+			m_wake.fetch_add( 1, std::memory_order_release );
+			workerwake::notifyOne( m_wake );
 		}
 	}
 
@@ -290,13 +283,22 @@ private:
 
 	void run()
 	{
-		while( !m_stop.load( std::memory_order_acquire ) )
+		for( ;; )
 		{
+			// Read the word BEFORE clearing the pending flag and draining: a wake posted
+			// after this load moves the word, so the wait below returns at once and nothing
+			// between the drain and the wait can be lost. The stop check follows the load for
+			// the same reason: stop() stores m_stop, then moves the word with release.
+			const std::uint32_t seen = m_wake.load( std::memory_order_acquire );
+			if( m_stop.load( std::memory_order_acquire ) )
+			{
+				break;
+			}
 			m_wakePending.store( false, std::memory_order_seq_cst );
 			while( takeAndSend() )
 			{
 			}
-			m_wake.acquire();
+			workerwake::wait( m_wake, seen );
 		}
 	}
 
@@ -307,9 +309,10 @@ private:
 		if( m_worker.joinable() )
 		{
 			m_stop.store( true, std::memory_order_seq_cst );
-			// Unconditional: the pending flag may describe a token this loop has already
+			// Unconditional: the pending flag may describe a wake this loop has already
 			// consumed, and that must not leave the worker asleep past the stop.
-			m_wake.release();
+			m_wake.fetch_add( 1, std::memory_order_release );
+			workerwake::notify( m_wake );
 			m_worker.join();
 		}
 	}
@@ -331,8 +334,9 @@ private:
 
 	std::atomic<bool> m_stop{false};
 	std::atomic<bool> m_wakePending{false};
-	//! At most one normal wake token plus the unconditional stop token.
-	std::counting_semaphore<2> m_wake{0};
+	//! Wake generation for lmms::workerwake: moving it is the signal (no semaphore, which is
+	//! unavailable below macOS 11).
+	std::atomic<std::uint32_t> m_wake{0};
 
 #ifdef LMMS_TESTING
 	std::atomic<bool> m_teardownObservedInFlight{false};

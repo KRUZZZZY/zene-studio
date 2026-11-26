@@ -10,7 +10,7 @@ documents that call can wait for the device
 (`https://learn.microsoft.com/en-us/windows/win32/api/mmeapi/nf-mmeapi-midioutshortmsg`).
 The product is now: published routing snapshot -> bounded queue -> worker thread -> driver.
 
-## Root cause and fix (round 3 changed no product code)
+## Root cause and fix
 
 - `src/core/midi/MidiWinMM.cpp:63-70` `processOutEvent` packs the event and calls
   `MidiWinMMOutput::processOutEvent()`. `midiOutShortMsg()` now appears only in
@@ -125,7 +125,59 @@ python3 .../feature_check.py <worktree>   # EXIT 0, RESULT: PASS (feature-check-
   TSan-verified.
 - **Control commands.** None changed; no `ControlCommandsSnapshot` canary moves.
 
-## Re-verification (session after round 3, no product change)
+## Round 4: macOS 10.13 sync availability and dead code (this session)
+
+Review found `include/MidiWinMMOutput.h` (`<semaphore>`, `std::counting_semaphore<2> m_wake`) and
+the test (`<semaphore>`, `std::binary_semaphore`/`std::counting_semaphore`) reintroducing the
+cluster-ci-61ad26e4f8b135f9 defect: Apple libc++ marks those unavailable below macOS 11 and the
+product floor is 10.13 (`MacosSyncAvailabilityCheck`, ctest #830, EXIT 8 on those lines).
+
+- `include/MidiWinMMOutput.h`: `<semaphore>` removed. `m_wake` is now a
+  `std::atomic<std::uint32_t>` wake word driven by `lmms::workerwake` (`AudioWorkerWake.h`, the
+  tree's futex / `__ulock` wake that never locks or allocates). `requestWake()`: after the
+  `m_wakePending` exchange, `fetch_add(1, release)` then `workerwake::notifyOne`. `stop()`:
+  `fetch_add(1, release)` then `workerwake::notify` before `join()`, unconditional.
+  `run()` loads the word (acquire) BEFORE the stop check, the `m_wakePending.store(false)` and
+  the drain, and ends the iteration with `workerwake::wait(m_wake, seen)`, so a wake posted
+  between drain and wait moves the word and the wait returns at once (no lost wakeup). The stop
+  check sits after the load on purpose: `stop()` stores `m_stop` then moves the word with
+  release, so a worker that sees the moved word also sees `m_stop`; a worker that loaded the old
+  word waits on a word that is about to change. (Deviation from the instruction text: the
+  `fetch_add`s are `release`, not `relaxed`, to make that argument hold; no cost on x86.)
+- `processOutEvent()` now reads the snapshot through `MidiWinMMOutRouting::forEachDevice()`,
+  which was dead code; the class comment ("the playback path reads through it") is now true.
+- `tests/src/core/MidiWinMMShortMessageTest.cpp`: `<semaphore>` dropped;
+  `lmms::testsupport::BinarySemaphore` (`tests/src/core/PortableSync.h`) for `arrived`,
+  `entered` and `release`. GatedSink performs one `acquire()`; an extra failure-path `release()`
+  is idempotent for a binary permit, so it stays harmless.
+- Mutation patches `allocating-search`, `inline-send`, `overflow-uncounted`,
+  `overflow-drains-inline` were regenerated for the lambda-based loop (they edit the same
+  semantics as before); `publish-noop`, `no-generation-bump`, `no-inflight-wait` applied as is.
+- Races: local TSan does not run here; the wake protocol above is argued, not TSan-verified.
+
+## Round 4 commands and exits (logs in `~/.config/kads/zene/state/runs/new-p9-276.r4/logs`)
+
+```text
+cmake --build build --target zene MidiWinMMShortMessageTest -j4                  # first try EXIT 2 (build-40.log): one stop() call
+                                                                                 # still used the removed m_wake.release(); fixed
+cmake --build build --target zene MidiWinMMShortMessageTest -j4                  # EXIT 0 (build-41.log)
+cd build/tests && ctest -R '^MidiWinMMShortMessageTest$' --output-on-failure     # 6 runs, EXIT 0 each (test-51.log .. test-56.log)
+cd build/tests && ctest -R MacosSyncAvailabilityCheck --output-on-failure        # EXIT 8 (test-57.log): the only FAIL lines are the six
+        '<X>Test.moc: No such file' lines (tests never built in this tree); the six
+        MidiWinMMOutput.h / MidiWinMMShortMessageTest.cpp lines are gone
+python3 tests/mutations/new-p9-276/run-mutations.py --build-dir build --scratch <logs>/mutations-1 --jobs 4
+        # EXIT 0 (mutations-run-1.log): RESULT: PASS, every mutant built and failed exactly the
+        # predicted slots through QCOMPARE/QVERIFY; baseline and restored baseline pass
+RED     git apply tests/mutations/new-p9-276/allocating-search.patch                    # EXIT 0
+        CCACHE_DISABLE=1 cmake --build build --target MidiWinMMShortMessageTest -j4   # EXIT 0 (build-60-red.log)
+        cd build/tests && ctest -R '^MidiWinMMShortMessageTest$' --output-on-failure    # EXIT 8 (test-60-red.log)
+              FAIL! submissionIsAllocationFree(): Compared values are not the same, MidiWinMMShortMessageTest.cpp(382)
+        git apply -R tests/mutations/new-p9-276/allocating-search.patch                 # EXIT 0
+GREEN   CCACHE_DISABLE=1 cmake --build build --target MidiWinMMShortMessageTest -j4   # EXIT 0 (build-61-green.log)
+        cd build/tests && ctest -R '^MidiWinMMShortMessageTest$' --output-on-failure    # EXIT 0 (test-61-green.log)
+```
+
+## Re-verification (round 3 session, before the round-4 change; logs in the r3/r4-earlier folders)
 
 ```text
 CCACHE_DISABLE=1 cmake --build build --target MidiWinMMShortMessageTest -j4   # EXIT 0 (build-40-green.log)
