@@ -50,6 +50,7 @@
 #include <QtTest>
 
 #include <QCryptographicHash>
+#include <QDataStream>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -65,7 +66,12 @@
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "Engine.h"
+#include "PathUtil.h"
 #include "ReversibilityTestSupport.h"
+#include "SampleClip.h"
+#include "SampleTrack.h"
+#include "Song.h"
+#include "Track.h"
 
 using namespace lmms;
 using namespace revtest;
@@ -169,6 +175,83 @@ QByteArray referenceDocument(const QStringList& paths)
 		"  </track></trackcontainer></song>\n"
 		"</zene-project>\n");
 	return xml.toUtf8();
+}
+
+/*! A REAL 16-bit mono PCM WAV. The verbs under test only hash bytes, but the
+ *  live half of the collect_media regression has to DECODE its sample, so this
+ *  fixture is a file a decoder reads (fakeWave() deliberately is not). */
+QByteArray pcmWave(int frames, int rate = 44100)
+{
+	QByteArray bytes;
+	QDataStream stream(&bytes, QIODevice::WriteOnly);
+	stream.setByteOrder(QDataStream::LittleEndian);
+	const quint32 dataBytes = static_cast<quint32>(frames) * 2;
+	stream.writeRawData("RIFF", 4);
+	stream << quint32(36 + dataBytes);
+	stream.writeRawData("WAVE", 4);
+	stream.writeRawData("fmt ", 4);
+	stream << quint32(16) << quint16(1) << quint16(1) << quint32(rate) << quint32(rate * 2)
+		<< quint16(2) << quint16(16);
+	stream.writeRawData("data", 4);
+	stream << dataBytes;
+	for (int frame = 0; frame < frames; ++frame) { stream << qint16((frame % 32) * 400); }
+	return bytes;
+}
+
+//! The sample clip of the open session, or nullptr when it holds none.
+SampleClip* firstSampleClip()
+{
+	for (Track* track : Engine::getSong()->tracks())
+	{
+		auto* sampleTrack = dynamic_cast<SampleTrack*>(track);
+		if (sampleTrack == nullptr) { continue; }
+		for (Clip* clip : sampleTrack->getClips())
+		{
+			if (auto* sampleClip = dynamic_cast<SampleClip*>(clip)) { return sampleClip; }
+		}
+	}
+	return nullptr;
+}
+
+//! @a project's `<sampleclip>` reference as project.missing_assets reports it, or
+//! an empty object when the document carries none.
+QJsonObject sampleClipReference(const QString& project)
+{
+	const ControlResult scanned = run(QStringLiteral("project.missing_assets"),
+		QJsonObject{{QStringLiteral("project"), project}});
+	for (const QJsonValue& value : scanned.result.value(QStringLiteral("references")).toArray())
+	{
+		const QJsonObject reference = value.toObject();
+		if (reference.value(QStringLiteral("tag")).toString() == QLatin1String("sampleclip")) { return reference; }
+	}
+	return QJsonObject();
+}
+
+/*! The finding's situation, built the way the application builds it: a session
+ *  with one sample clip whose media is OUTSIDE the project's folder, saved to
+ *  @a project and then REOPENED, so the live clip and the file name the same
+ *  external file and the session is clean. */
+bool openProjectWithAnExternalSample(const QString& dir, QString* sample, QString* project)
+{
+	const QString outside = dir + QStringLiteral("/library");
+	const QString projectDir = dir + QStringLiteral("/song");
+	if (!QDir().mkpath(outside) || !QDir().mkpath(projectDir)) { return false; }
+	*sample = outside + QStringLiteral("/clip.wav");
+	if (!writeBytes(*sample, pcmWave(64))) { return false; }
+	// A new document first: the clip this builds is then the session's only one,
+	// whatever the tests before it left on the shared engine.
+	if (!run(QStringLiteral("project.new")).ok) { return false; }
+	const QString track = addTrack(QStringLiteral("sample"));
+	if (track.isEmpty()) { return false; }
+	if (!run(QStringLiteral("clip.add"), QJsonObject{{QStringLiteral("track"), track},
+		{QStringLiteral("position"), 0}}).ok) { return false; }
+	SampleClip* clip = firstSampleClip();
+	if (clip == nullptr) { return false; }
+	clip->setSampleFile(*sample);
+	*project = projectDir + QStringLiteral("/song.mmp");
+	if (!Engine::getSong()->saveProjectFile(*project)) { return false; }
+	Engine::getSong()->loadProject(*project);
+	return Engine::getSong()->loadRefusal().isEmpty() && !Engine::getSong()->isModified();
 }
 
 /*! Sets a test-seam environment variable for one scope and restores whatever was
@@ -832,6 +915,88 @@ private slots:
 		QVERIFY2(!QFileInfo::exists(outside + QStringLiteral("/media")),
 			"nothing may be written through the link");
 		QCOMPARE(readBytes(project), before);  // the project file is untouched
+	}
+
+	/*! BUG 13 (cluster new-p11-25): collecting media for the project the session
+	 *  has OPEN rewrote the file to name the copies while the live song kept the
+	 *  external originals, so the next save from the application wrote them back
+	 *  over the collected references - the collection silently undone. The
+	 *  collected document is now the session's own state, and ONE control.undo
+	 *  puts the file's bytes and the session back together. */
+	void collectingTheOpenProjectsMediaLeavesTheSessionSayingWhatTheFileSays()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QString sample;
+		QString project;
+		QVERIFY(openProjectWithAnExternalSample(dir.path(), &sample, &project));
+		const QString projectDir = QFileInfo(project).absolutePath();
+		const QString copy = projectDir + QStringLiteral("/media/clip.wav");
+		const QByteArray before = readBytes(project);
+
+		// The fixture's own negative control: what the file and the live clip name
+		// is OUTSIDE the project, so a collection has something to move.
+		QCOMPARE(QFileInfo(sampleClipReference(project).value(QStringLiteral("path")).toString())
+			.canonicalFilePath(), QFileInfo(sample).canonicalFilePath());
+		SampleClip* live = firstSampleClip();
+		QVERIFY2(live != nullptr, "the fixture session holds no sample clip");
+		QCOMPARE(QFileInfo(PathUtil::toAbsolute(live->sample().sampleFile())).canonicalFilePath(),
+			QFileInfo(sample).canonicalFilePath());
+		QVERIFY2(!Engine::getSong()->isModified(), "the fixture session should be freshly opened");
+
+		const ControlResult collected = run(QStringLiteral("project.collect_media"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(collected.ok, qPrintable(collected.errorMessage));
+		QVERIFY2(QFileInfo::exists(copy), "the media was not copied beside the project");
+		// The session now says what its file says: same file, nothing left to save.
+		const ControlResult state = run(QStringLiteral("project.get_state"));
+		QCOMPARE(QFileInfo(state.result.value(QStringLiteral("file")).toString()).canonicalFilePath(),
+			QFileInfo(project).canonicalFilePath());
+		QVERIFY2(!state.result.value(QStringLiteral("modified")).toBool(),
+			"the session was left claiming to be out of step with the file the command wrote");
+
+		// THE FINDING: save the open project the way the application does, and read
+		// back what the file says. A save must not put the external path back.
+		const QString resaved = dir.path() + QStringLiteral("/resaved.mmp");
+		QVERIFY2(Engine::getSong()->saveProjectFile(resaved), "the open session could not be saved");
+		const QString written = sampleClipReference(resaved).value(QStringLiteral("path")).toString();
+		QCOMPARE(QFileInfo(written).canonicalFilePath(), QFileInfo(copy).canonicalFilePath());
+
+		// ONE undo puts the file's bytes back AND the session back with them.
+		REV_UNDO_OR_FAIL();
+		QCOMPARE(readBytes(project), before);
+		const QString undone = dir.path() + QStringLiteral("/undone.mmp");
+		QVERIFY2(Engine::getSong()->saveProjectFile(undone), "the session could not be saved after the undo");
+		QCOMPARE(QFileInfo(sampleClipReference(undone).value(QStringLiteral("path")).toString()).canonicalFilePath(),
+			QFileInfo(sample).canonicalFilePath());
+	}
+
+	/*! The other half of the same contract: the session is adopted from the file,
+	 *  so the file may only be rewritten when the session holds nothing the
+	 *  rewrite would drop. An unsaved session is REFUSED with a typed error, and
+	 *  nothing is copied or written. */
+	void collectingTheOpenProjectRefusesWhileTheSessionHasUnsavedChanges()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		QString sample;
+		QString project;
+		QVERIFY(openProjectWithAnExternalSample(dir.path(), &sample, &project));
+		const QByteArray before = readBytes(project);
+
+		QVERIFY2(run(QStringLiteral("track.add"), QJsonObject{{QStringLiteral("type"), QStringLiteral("sample")}}).ok,
+			"the fixture edit failed");
+		QVERIFY2(Engine::getSong()->isModified(), "the edit did not make the session dirty");
+
+		const ControlResult refused = run(QStringLiteral("project.collect_media"),
+			QJsonObject{{QStringLiteral("project"), project}});
+		QVERIFY2(!refused.ok, "an unsaved session was collected over");
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(refused.errorMessage.contains(QStringLiteral("unsaved")),
+			qPrintable(QStringLiteral("the refusal does not say why: %1").arg(refused.errorMessage)));
+		QCOMPARE(readBytes(project), before);
+		QVERIFY2(!QFileInfo::exists(QFileInfo(project).absolutePath() + QStringLiteral("/media")),
+			"media was copied for a collection that was refused");
 	}
 
 	void relinkRepointsTheReferenceAndUndoRestoresTheFile()

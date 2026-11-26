@@ -2083,6 +2083,22 @@ transcript** — the group's registered proof is the in-process ctest
 carries the negative control (an intact project reports no missing assets). Nothing in `src/gui/` lists
 a project's references, offers a relink or reports a hash.
 
+- **Collecting media for the OPEN project reopens it, and refuses while it is dirty (cluster
+  new-p11-25).** `project.collect_media` copies the files and rewrites the project file. When the
+  file it was given is the one the session has open, the collected document is then REOPENED in
+  that session (the load `project.open` runs), so the live references name the copies and the next
+  save writes the collection instead of putting the old external paths back — before this fix the
+  session kept the old paths, and a save from the application silently undid the collection (BUG
+  13). The reopen needs the session to hold nothing the file-based rewrite would drop, so a session
+  with UNSAVED changes is refused (`Refused`, naming `project.save`) before a single file is
+  copied: save it, then collect. One `control.undo` puts both halves back — the file's previous
+  bytes and the session they were collected from — so disk and memory never disagree, and the
+  copies stay on disk as they always did. The other two verbs of the family are unchanged file
+  verbs: `project.relink` and `project.restore_revision` rewrite the file and do NOT touch the
+  session (`project.open` is how a caller works on the new bytes). The reopen is one session load
+  per collection — bounded by the same 256 MiB project-document cap the rewrite already enforces —
+  so collecting a project of that size in an open session costs that load.
+
 ## The plugin hosts chunk, and the WASM pool renders offline — what is still not there (CODE-4, CODE-5)
 
 **Chunking the plugin host paths has no interface.** `plugin.host_chunking` (read-only) reports the contract and
