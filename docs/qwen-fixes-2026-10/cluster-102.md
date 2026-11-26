@@ -17,7 +17,7 @@ file decoded all of it before discarding everything past 30 s.
 
 The earlier attempt's verdict (`SKIPPED-SCOPE`) was correct about the cause and wrong about there
 being no seam: `SampleDecoder::decodeLimited()` (`:408`) and its `LMMS_TESTING` full/limited call
-counters (`include/SampleDecoder.h:60-75`, `src/core/SampleDecoder.cpp:437-451`) already existed.
+counters (`include/SampleDecoder.h:67-74`, `src/core/SampleDecoder.cpp:434-444`) already existed.
 
 ## Fix (product code, 15 lines changed, 1 file)
 
@@ -141,41 +141,75 @@ Log: `gates-5.log`.
 
 ## Self-check
 
-- **Is the fix at the cause?** Yes: the cap moved from a post-decode `resize()` to the decode call
-  itself (`decodeLimited(key, PreviewSeconds)`), which is what the finding asked for.
-- **Could the test pass without the fix?** No: with the product patch reverted, all three slots fail
-  on `full: 1` (`test-8-red.log`, exit 8); with it, exit 0 (`test-9-green.log`).
-- **Does the test prove the window, not just a call?** It proves the handler no longer performs a
-  full decode (the only way the whole file entered memory) and that the played length is still the
-  30 s window; the decoder's own window behaviour is `SampleDecoderLimitTest` /
-  `BrowserFeaturesWindowTest`. The 35 s fixture is 5 s past the cap, so the two claims are separated.
-- **No wall-clock timing, sleeps or races?** The invoke is synchronous and the counters are process
-  globals read right after it returns; no timer, no thread.
-- **Collateral damage?** Old projects and saved data are untouched (no serialisation, no schema, no
-  result keys changed). Other callers of `decode()`/`decodeLimited()` are unchanged and their tests
-  pass (`test-10-family.log`). A limit was not made stricter anywhere: `decodeLimited()` is called
-  with the same 30 s the handler already enforced, and short files are still played whole.
-- **Undo / control commands?** No control command was added or removed, no undo step touched
+Answers to the pre-submit check's ASK items, each with the evidence in this report.
+
+- **The regression test FAILS with the product change reverted and PASSES with it.** Delivered test:
+  with `git apply -R logs/fix.patch` in place, `cmake --build build --target BrowserPreviewWindowTest -j4`
+  (exit 0) and `ctest -R BrowserPreviewWindowTest --output-on-failure` gave **exit 8** with three
+  failures, each `Actual (…full): 1 / Expected: 0` (`test-8-red.log`); after `git apply logs/fix.patch`,
+  `cmake --build build --target zene BrowserPreviewWindowTest -j4` (exit 0) and the same ctest gave
+  **exit 0**, `100% tests passed out of 1` (`test-9-green.log`). The same loop was run first on the
+  in-file version of the test (`test-5-revert.log` exit 8, `test-6-reapply.log` exit 0).
+- **The test is deterministic: no wall-clock timing, sleeps or races.** The seam is
+  `SampleDecoder::resetDecodeCallCountsForTesting()` and `SampleDecoder::decodeCallCountsForTesting()`
+  (`include/SampleDecoder.h:67-74`, `src/core/SampleDecoder.cpp:434-444`), read immediately around a
+  *synchronous* `ControlRegistry::instance()->invoke()` (`tests/src/core/BrowserPreviewWindowTest.cpp:110-115`).
+  There is no timer, no sleep, no thread and no tolerance window; the only numeric tolerance is a
+  range on the played length (`29.0 < seconds <= 30.0`), which is a contract, not a duration.
+- **The fix is at the cause and complete: every caller and sibling checked.** See "Callers, siblings
+  and the wider types" above: the only caller of `preview()` is `browser.preview` through the
+  registry (`src/gui/BrowserResults.cpp:160-172`), the whole-file `decode()` call is gone from the
+  handler, `decodeLimited()`'s return type (`BoundedResult::window`, `totalFrames`) is used
+  correctly, and the other `SampleDecoder::decode()` callers (`SampleBuffer.cpp:95`,
+  `ImportDetection.cpp:128`) are untouched and outside this bug.
+- **No collateral damage.** Old projects and saved data load as before: no serialisation, save
+  format, command schema or result key changed, and `browser.preview` creates no project state. The
+  30 s limit is the same figure the handler already enforced (only its position moved), so no other
+  caller is newly rejected; a 2 s file is still played whole (slot `aShortPreviewIsPlayedWhole`), and
+  the sibling suite `SampleDecoderLimitTest`, `BrowserFeaturesWindowTest`, `LibraryBrowserTest`,
+  `ControlBrowserCommandsTest`, `BrowserTempoKeyTest` and the three `SampleDecoderOgg*/ShortRead`
+  suites all pass (`test-10-family.log`, 9/9, exit 0).
+- **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not applicable: the verdict is FIXED. The code that
+  showed it was REAL is quoted in "Verdict" above (`src/core/ControlCommandsBrowserMedia.cpp:244-253`
+  at base, `src/core/SampleDecoder.cpp:393`, `:145`).
+- **Sibling commands in the changed command file, and the rest of the browser group.** Only
+  `src/core/ControlCommandsBrowserMedia.cpp` changed, and only its `preview()` handler
+  (`:244-265`). None of the others go through `SampleDecoder::decode()`:
+
+| Sibling | Where it lives | Why it stays consistent |
+|---|---|---|
+| `browser.preview` | `ControlCommandsBrowserMedia.cpp:244` | the fixed handler: reads the window, plays it, reports the same keys |
+| `browser.preview_stop` | `:273` | bumps the generation atomic; no decode, unchanged |
+| `browser.thumbnail` | `:116` | draws from `BrowserPeakCache`, writes a PNG; no `SampleDecoder` call, unchanged |
+| `browser.load` | `:315` | builds a track/clip; loading a file whole is its job (the clip must play all of it), unchanged |
+| `browser.browse`, `browser.history`, `browser.history_go` | `ControlCommandsBrowserNavigation.cpp:158` | history records and re-runs a query; no audio decode |
+| `browser.categories`, `browser.category.set`, `browser.category.clear` | `ControlCommandsBrowser.cpp:339`, `ControlCommandsBrowserTags.cpp:222-270` | tag/category store edits, one undo step each; no audio decode |
+| `browser.collections`, `browser.collection_save`, `browser.collection_run`, `browser.collection_remove` | `ControlCommandsBrowserCollections.cpp:207` | saved query definitions; a run re-runs the query, no audio decode |
+| `browser.index_query`, `browser.index_status` | `ControlCommandsBrowserIndex.cpp:207-243` | read the library index; measurements come from `BrowserFeatures::analyse` (`decodeLimited`, unchanged) |
+| `browser.peaks`, `browser.peaks_start` | `ControlCommandsBrowser.cpp:360`, `:393` | waveform peak cache; no `SampleDecoder::decode()` |
+
+- **Undo / control commands.** No control command was added or removed, no undo step touched
   (`browser.preview` is session audio and records nothing). The ControlCommandsSnapshot canary is
-  therefore unmoved — `complexity` and `file-length` gates report "no new item", and the command
-  registry's own tests (`ControlBrowserCommandsTest`) pass.
-- **Registration?** The new test is in `tests/CMakeLists.txt`, `tests/all-sources.txt` (the recipe
+  therefore unmoved — the `complexity`/`file-length` gates report "no new item in your files" and
+  `ControlBrowserCommandsTest` (the surface: schemas, typed refusals, the A16 undo proof) passes.
+- **Registration.** The new test is in `tests/CMakeLists.txt`, `tests/all-sources.txt` (the recipe
   reproduces, `gates-4-all-sources.log`) and `tests/fork-sources.txt` (with a note naming the
-  cluster). No product file was added; the changed product file was already registered
+  cluster); the changed inherited file `tests/CMakeLists.txt` is in `tests/upstream-modifications.txt`
+  with its reason. No product file was added; the changed product file was already registered
   (`tests/fork-sources.txt:1720`).
-- **GUI?** No `src/gui` change, so no screenshot/recording artifact. The preview's GUI entry
+- **GUI.** No `src/gui` change, so no screenshot/recording artifact. The preview's GUI entry
   (`BrowserResultActions::preview`) calls the same command and its behaviour is unchanged.
-- **Platforms?** Libsndfile WAV, the path every supported platform builds; the test uses no
-  Qt-6-only API, no `QString::midRef`, no `LMMS_PLUGIN_DIR`.
-- **What is not verified here?** A real multi-hour file was not previewed by hand; the claim rests
-  on the decoder's counters and on `decodeLimited()`'s implementation (tested by its own suite,
-  including a 10-minute-file case in `BrowserFeaturesWindowTest`). TSan does not run on this box, so
-  the audio-thread reasoning above is static, not measured.
+- **Platforms.** Libsndfile WAV, the path every supported platform builds; the test uses no
+  Qt-6-only API, no `QString::midRef`, and never sets `LMMS_PLUGIN_DIR`.
+- **What is not verified here.** A real multi-hour file was not previewed by hand; the claim rests on
+  the decoder's counters and on `decodeLimited()`'s implementation (its own suite covers a 10-minute
+  file in `BrowserFeaturesWindowTest`). TSan does not run on this box, so the audio-thread reasoning
+  above is static, not measured.
 
 ## Other findings
 
 - `SampleDecoder::decodeLimited()`'s DrumSynth branch still synthesises the whole file before cutting
-  it to the window (`src/core/SampleDecoder.cpp:432-436`); a preview of a very long `.ds` file can
+  it to the window (`src/core/SampleDecoder.cpp:420-431`); a preview of a very long `.ds` file can
   still grow with the enclosing duration. Documented as a known limit of Q050-048; not touched here.
 - `docs/050-features/Q050-048.md:17` still states that the preview is unchanged; it is the record of
   that feature, so it was left as written rather than rewritten by this cluster.
