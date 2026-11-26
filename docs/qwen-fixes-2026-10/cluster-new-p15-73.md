@@ -30,7 +30,7 @@ The finding's mechanism is the connection type, not the DSP:
   are read from `m_sampleRate`: `:132` (`minLatency = value() * m_sampleRate`), `:141`
   (`m_glideCoef`), `:145` (`sizeSamples = m_sampleRate / size`), and `m_ringBufLength`, which
   `applyPreparedBuffers()` (`:322-355`) keeps in step with the rate.
-- Every other listener in the tree already uses the emitting thread: `plugins/Dispersion/Dispersion.cpp:70-71`,
+- Every other listener I checked connects without an explicit queued delivery, i.e. it runs in the emitting thread: `plugins/Dispersion/Dispersion.cpp:70-71`,
   `plugins/FrequencyShifter/FrequencyShifterEffect.cpp:60-61`, `plugins/NeuralAmp/NeuralAmpEffect.cpp:75-76`,
   `plugins/ConvolutionReverb/ConvolutionReverb.cpp:177`, `plugins/Stk/Mallets/Mallets.cpp:284`,
   `plugins/FreeBoy/FreeBoy.cpp:329`, `plugins/CarlaVst2Effect/CarlaVst2Effect.cpp:129`,
@@ -178,8 +178,9 @@ RESULT: PASS
    `GranularPitchShifterControls::updateRange()` (`GranularPitchShifterControls.cpp:104`); (b) all
    three producers of `sampleRateChanged` (`AudioEngine.cpp:812`, `:1427`, `:1454`) fire off the
    audio thread with the backend stopped (`AudioDevice.cpp:137-155`); (c) every sibling listener in
-   the tree already runs in the emitting thread (list above, 12 sites), so nothing else needs the
-   same change, and no listener needed its own ordering fix. Local TSan does not run on this box, so
+   the tree already runs in the emitting thread (the eleven sites listed above), so nothing else needs the, so nothing else needs the
+   same change, and no listener needed its own ordering fix; a ranked repo-wide search for
+   `Qt::QueuedConnection` returned no `plugins/` hit. Local TSan does not run on this box, so
    the thread-safety statement is the design argument above, not a detector report.
 4. **No collateral damage.** The DSP (`processImpl`), `sampleRateNeedsUpdate()`,
    `applyPreparedBuffers()`, the retired-buffer reclamation and the control models are byte-for-byte
