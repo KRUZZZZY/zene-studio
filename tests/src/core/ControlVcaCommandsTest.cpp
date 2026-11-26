@@ -37,6 +37,7 @@
 
 #include <QtTest>
 
+#include <QDomDocument>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QString>
@@ -746,6 +747,144 @@ private slots:
 
 		QVERIFY2(refused, qPrintable(attempted.errorMessage));
 		QVERIFY(unchanged);
+	}
+
+	//! BUG 10 (cluster new-p10-73): a `<member>` naming an index outside the live
+	//! channel range must never reach a channel lookup. `staleMembersAreSkippedFromStateReads`
+	//! above proves the read skips a stale position; this slot is the finding's
+	//! own reproduction, which that one does not cover: the index arrives from a
+	//! PROJECT FILE (through `Mixer::loadSettings`, which refuses it) and from a
+	//! group whose channel list shrank under it (`VcaGroup::addMember` takes any
+	//! non-zero index), and the reads are then driven through the command surface.
+	//! The refusal counter is what makes this an assertion about the GUARD rather
+	//! than about a lucky value: `Mixer::mixerChannel()` counts an out-of-range
+	//! read and answers nullptr under LMMS_TESTING, so an unguarded read here is
+	//! `channel->vcaGain()` on a null pointer, not a silently wrong number.
+	void aStaleMemberIndexNeverReachesAChannelQuery()
+	{
+		Mixer* mixer = Engine::mixer();
+		QVERIFY(mixer != nullptr);
+		clearGroups();
+
+		// The mix the rest of the suite was using. The malformed load below
+		// replaces the channel list, so it is restored at the end: this file's
+		// other slots assume the four channels initTestCase() gave them.
+		const int channelsBefore = static_cast<int>(mixer->numChannels());
+		QDomDocument original;
+		QDomElement originalRoot = original.createElement(QStringLiteral("mixer"));
+		original.appendChild(originalRoot);
+		mixer->saveSettings(original, originalRoot);
+
+		// -- 1. the load path: a file that names -1 and 70000 -----------------
+		static const char* kMalformedXml =
+			"<mixer>\n"
+			"  <mixerchannel num=\"0\" muted=\"0\" volume=\"1\" name=\"Master\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"  <mixerchannel num=\"1\" muted=\"0\" volume=\"1\" name=\"Kick\">\n"
+			"    <fxchain numofeffects=\"0\" enabled=\"0\"/>\n"
+			"  </mixerchannel>\n"
+			"  <vcagroup id=\"0\" name=\"Bad\">\n"
+			"    <member channel=\"-1\"/>\n"
+			"    <member channel=\"70000\"/>\n"
+			"  </vcagroup>\n"
+			"</mixer>\n";
+		QDomDocument malformed;
+		QVERIFY2(malformed.setContent(QString::fromUtf8(kMalformedXml)),
+			"the malformed fixture is not valid XML");
+		mixer->takeRefusedLookupsForTesting();
+		mixer->loadSettings(malformed.documentElement());
+
+		// The file describes two channels. A member index outside that range
+		// must not allocate (`70000`) and must not wrap to 65535 (`-1`).
+		QCOMPARE(static_cast<int>(mixer->numChannels()), 2);
+		QCOMPARE(static_cast<int>(mixer->vcaGroups().size()), 1);
+		VcaGroup* group = mixer->vcaGroups().front();
+		QVERIFY(group != nullptr);
+		QVERIFY2(group->members().empty(),
+			qPrintable(QStringLiteral("a malformed member joined the group (%1 members)")
+				.arg(group->members().size())));
+
+		const ControlResult listed = run(QStringLiteral("vca.list"));
+		QVERIFY2(listed.ok, qPrintable(listed.errorMessage));
+		QCOMPARE(listed.result.value(QStringLiteral("count")).toInt(), 1);
+		const QJsonObject listedGroup =
+			listed.result.value(QStringLiteral("groups")).toArray().at(0).toObject();
+		// The file's own id is preserved, so a later save writes it back.
+		const QString groupId = listedGroup.value(QStringLiteral("id")).toString();
+		QCOMPARE(groupId, QStringLiteral("vca-0"));
+		QCOMPARE(listedGroup.value(QStringLiteral("member_count")).toInt(), 0);
+		QCOMPARE(listedGroup.value(QStringLiteral("members")).toArray().size(), 0);
+
+		const ControlResult loadedState =
+			run(QStringLiteral("vca.get_state"), {{QStringLiteral("group"), groupId}});
+		QVERIFY2(loadedState.ok, qPrintable(loadedState.errorMessage));
+		QCOMPARE(loadedState.result.value(QStringLiteral("member_count")).toInt(), 0);
+		QCOMPARE(loadedState.result.value(QStringLiteral("members")).toArray().size(), 0);
+		QCOMPARE(mixer->takeRefusedLookupsForTesting(), 0);
+
+		// -- 2. the query path: a stale position a live group still holds -----
+		// addMember() takes any non-zero index, which is exactly the position a
+		// mix leaves behind when its channel list shrinks. The read must skip it.
+		QVERIFY2(group->addMember(1), "the live member was refused");
+		QVERIFY2(group->addMember(static_cast<mix_ch_t>(65535)),
+			"the stale member was refused, so this case would pass vacuously");
+		QCOMPARE(static_cast<int>(group->members().size()), 2);
+		group->vcaModel()->setValue(0.5f);
+		const QString liveId = channelId(1);
+		QVERIFY2(!liveId.isEmpty(), "the fixture channel has no id");
+
+		mixer->takeRefusedLookupsForTesting();  // zero the counter
+		const ControlResult staleState =
+			run(QStringLiteral("vca.get_state"), {{QStringLiteral("group"), groupId}});
+		QVERIFY2(staleState.ok, qPrintable(staleState.errorMessage));
+		// The stale position is skipped, the live member is reported as always.
+		QCOMPARE(staleState.result.value(QStringLiteral("member_count")).toInt(), 1);
+		const QJsonArray staleMembers = staleState.result.value(QStringLiteral("members")).toArray();
+		QCOMPARE(staleMembers.size(), 1);
+		const QJsonObject staleMember = staleMembers.at(0).toObject();
+		QCOMPARE(staleMember.value(QStringLiteral("channel")).toString(), liveId);
+		QCOMPARE(staleMember.value(QStringLiteral("gain_for_member")).toDouble(), 0.5);
+
+		const ControlResult staleList = run(QStringLiteral("vca.list"));
+		QVERIFY2(staleList.ok, qPrintable(staleList.errorMessage));
+		QCOMPARE(staleList.result.value(QStringLiteral("count")).toInt(), 1);
+		const QJsonObject staleListed =
+			staleList.result.value(QStringLiteral("groups")).toArray().at(0).toObject();
+		QCOMPARE(staleListed.value(QStringLiteral("member_count")).toInt(), 1);
+		QCOMPARE(staleListed.value(QStringLiteral("members")).toArray().size(), 1);
+		// Neither read looked the stale index up: the guard, not a null answer.
+		QCOMPARE(mixer->takeRefusedLookupsForTesting(), 0);
+
+		// -- 3. the valid membership round trip is unchanged -------------------
+		// Removing the stale position first, so the saved file is the file a
+		// real project writes: same group id, same ch-<n>, same published gain.
+		QVERIFY(group->removeMember(static_cast<mix_ch_t>(65535)));
+		QDomDocument savedDoc;
+		QDomElement savedRoot = savedDoc.createElement(QStringLiteral("mixer"));
+		savedDoc.appendChild(savedRoot);
+		mixer->saveSettings(savedDoc, savedRoot);
+		mixer->loadSettings(savedRoot);
+
+		const ControlResult reopened = run(QStringLiteral("vca.list"));
+		QVERIFY2(reopened.ok, qPrintable(reopened.errorMessage));
+		QCOMPARE(reopened.result.value(QStringLiteral("count")).toInt(), 1);
+		const QJsonObject reopenedGroup =
+			reopened.result.value(QStringLiteral("groups")).toArray().at(0).toObject();
+		QCOMPARE(reopenedGroup.value(QStringLiteral("id")).toString(), groupId);
+		QCOMPARE(reopenedGroup.value(QStringLiteral("volume")).toDouble(), 0.5);
+		QCOMPARE(reopenedGroup.value(QStringLiteral("member_count")).toInt(), 1);
+		const QJsonObject reopenedMember =
+			reopenedGroup.value(QStringLiteral("members")).toArray().at(0).toObject();
+		QCOMPARE(reopenedMember.value(QStringLiteral("channel")).toString(), liveId);
+		QCOMPARE(reopenedMember.value(QStringLiteral("gain_for_member")).toDouble(), 0.5);
+
+		// Restore the mix the other slots were given.
+		mixer->loadSettings(originalRoot);
+		QCOMPARE(static_cast<int>(mixer->numChannels()), channelsBefore);
+		QCOMPARE(static_cast<int>(mixer->vcaGroups().size()), 0);
+		evidence(QStringLiteral("malformed_members=2 allocated_channels=0 member_count=0 "
+			"stale_member_skipped=1 refused_lookups=0 roundtrip_member=%1 gain=0.5").arg(liveId));
 	}
 };
 
