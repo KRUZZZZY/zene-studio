@@ -88,6 +88,28 @@ EXIT=0                                    (test-7.log)
 100% tests passed out of 1
 ```
 
+The same pair, replayed from the stored patch `logs/guard-removed.patch` (the one-line removal
+of `| PlayHandle::Type::InputMonitorHandle`, generated with `git diff --
+src/tracks/SampleTrack.cpp` after applying that line removal by hand, `PATCH_EXIT=0`):
+
+```
+cd <worktree> && git apply .../logs/guard-removed.patch \
+  && cmake --build build --target InputMonitorTest -j4 > .../logs/build-6.log 2>&1   # EXIT=0
+  && cd build/tests && ctest -R InputMonitorTest --output-on-failure > .../logs/test-8.log 2>&1
+EXIT=8                                    (build-6.log EXIT=0, test-8.log EXIT=8)
+  DELETION_EVIDENCE the monitor handle SURVIVED in the render list after track.remove
+  FAIL!  : InputMonitorTest::deletingAMonitoredTrackRemovesItsHandle() '!survived'
+
+cd <worktree> && git apply -R .../logs/guard-removed.patch \
+  && cmake --build build --target InputMonitorTest -j4 > .../logs/build-7.log 2>&1   # EXIT=0
+  && cd build/tests && ctest -R InputMonitorTest --output-on-failure > .../logs/test-9.log 2>&1
+EXIT=0                                    (build-7.log EXIT=0, test-9.log EXIT=0)
+  100% tests passed out of 1
+```
+
+`git status --porcelain` after the reverse apply: empty.
+
+
 Corroborating runs made this session, same worktree:
 
 ```
