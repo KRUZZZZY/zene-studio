@@ -189,6 +189,30 @@ void InstrumentRoutingTest::outputBusMasterIndexIsCached() {
 	QCOMPARE(mixerIndexCacheHitsForTesting(), 1);
 	QCOMPARE(mixerIndexFallbacksForTesting(), 0);
 }
+void InstrumentRoutingTest::outputBusReroutedDelayLineStartsEmpty() {
+	const TestChannel target = newChannel();
+	const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+	Engine::mixer()->mixerChannel(target.index)->setInputLatencyFrames(static_cast<int>(frames));  // one period of PDC delay
+	InstrumentOutputBuses buses;
+	buses.setLayout({{QStringLiteral("Main"), 2, 0}, {QStringLiteral("Out"), 2, 2}});
+	PlanarBlock loud(frames);
+	PlanarBlock quiet(frames);
+	std::fill(quiet.data[2].begin(), quiet.data[2].end(), 0.0f);
+	std::fill(quiet.data[3].begin(), quiet.data[3].end(), 0.0f);
+
+	QVERIFY(buses.route(1, target.id));
+	buses.deliver(loud.pointers, 4, frames, false);  // the loud block now sits in the delay line
+	QVERIFY(buses.route(1, -1));                     // unrouted: the line must not keep it
+	QVERIFY(buses.route(1, target.id));
+	silenceChannel(target.index);
+	buses.deliver(quiet.pointers, 4, frames, false);
+
+	const MixerChannel* channel = Engine::mixer()->mixerChannel(target.index);
+	QCOMPARE(channel->m_buffer[frames - 1][0], 0.0f);  // stale loud audio would emerge here
+	QCOMPARE(channel->m_buffer[frames - 1][1], 0.0f);
+	silenceChannel(target.index);
+	Engine::mixer()->mixerChannel(target.index)->setInputLatencyFrames(0);
+}
 void InstrumentRoutingTest::outputBusSlotPublicationWaitsForRenderPeriod() {
 	const TestChannel target = newChannel();
 	InstrumentOutputBuses buses;

@@ -162,7 +162,11 @@ void InstrumentOutputBuses::storeRoute(int bus, int channelId)
 	auto& slot = m_slots[static_cast<std::size_t>(bus)];
 	const f_cnt_t frames = Engine::audioEngine() != nullptr ? Engine::audioEngine()->framesPerPeriod() : 0;
 	std::unique_ptr<Slot> prepared;
-	if (slot == nullptr || (channelId >= 0 && frames != 0 && slot->block.size() != static_cast<std::size_t>(frames)))
+	// A route that changes (removed, or moved to another channel) starts from an empty delay line, so audio
+	// buffered for the old route never emerges on the new one. Re-publishing the same channel keeps it.
+	const bool routeChanged = slot != nullptr && slot->channelId.load(std::memory_order_relaxed) != channelId;
+	if (slot == nullptr || routeChanged
+		|| (channelId >= 0 && frames != 0 && slot->block.size() != static_cast<std::size_t>(frames)))
 	{
 		prepared = std::make_unique<Slot>();
 		// Prepare detached storage before the guard; render readers only see it after publication.
