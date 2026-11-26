@@ -95,7 +95,7 @@ heap-backed state, because step 4 shows the ordinary handle is still deleted the
 | 8 | `cmake --build build --target SamplePlayHandleRetireTest zene -j4` | `build-11-green-final.log` | 0 |
 | 9 | `ctest -R SamplePlayHandleRetireTest --output-on-failure` | `test-8-green-final.log` | 0 (1/1 passed) |
 | 10 | `ctest -R "SamplePlayHandleRetireTest\|AudioBusPlayHandleQueueTest\|TakeLaneCompTest\|FrozenTakeHandoffTest\|ClipFadesRenderTest\|AudioClipLoopTest" --output-on-failure` | `test-9-family.log` | 0 (6/6 passed) |
-| 11 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | `gates-3.log` (detail in `gate-detail/`) | 0, RESULT: PASS |
+| 11 | `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | `gates-3.log`, `gates-4.log` (detail in `gate-detail/`) | 0, RESULT: PASS (both) |
 
 The RED failure, verbatim from `test-7-red.log`:
 
@@ -153,18 +153,21 @@ artifact.
    heap-backed state returns false, so every ordinary clip handle, preview and metronome handle is
    deleted exactly where it was - asserted by the test's last check. The people who exceed no new
    limit: there is no limit; the retire list is unbounded and drained every 100 ms.
-5. **Realtime.** The new render-path work is one relaxed load, one compare-and-swap and one
+5. **If the verdict were ALREADY-FIXED or FALSE-POSITIVE - it is neither.** Not applicable, and the
+   evidence that it is not: before this change `SamplePlayHandle` declared no `handOverToOwner`
+   (the only override in the tree was `TestTonePlayHandle`,
+   `src/core/ControlCommandsAudioTestTone.cpp:102`), and the RED run above frees the handle's heap
+   state on the render path in this tree at this commit.
+6. **Realtime.** The new render-path work is one relaxed load, one compare-and-swap and one
    pointer store per retired handle, plus a `RealtimeScope::isActive()` read - no allocation, no
    free, no lock, no wait, no logging, no Qt call. `reclaimRetired()` refuses to free inside a
    `RealtimeScope`, so it cannot run on the audio thread even if it is called from one.
-6. **Registration and gates.** `tests/upstream-modifications.txt` gained a reason for each of the
+7. **Registration and gates.** `tests/upstream-modifications.txt` gained a reason for each of the
    three inherited product files; the new test file is registered in `tests/CMakeLists.txt` and in
    both scope manifests; `fork-sources`, `all-sources-reproduce`, `no-upstream-regression`,
    `check-namespace`, `no-tautology`, `doc-figures`, `complexity` and `file-length` all PASS
-   (`gates-3.log`). No gate limit, baseline or ratchet was touched.
-7. **Not an "already fixed" claim.** The verdict is FIXED, on the evidence above: before this
-   change `SamplePlayHandle` had no `handOverToOwner` override (only `TestTonePlayHandle` did), and
-   the RED run shows the free on the render path in this tree at this commit.
+   (`gates-4.log`, run at the commit this report is committed with). No gate limit, baseline or
+   ratchet was touched.
 
 ## Other findings (not fixed here)
 
