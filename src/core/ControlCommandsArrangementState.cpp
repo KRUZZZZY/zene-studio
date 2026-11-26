@@ -153,6 +153,70 @@ int trackRouteOf(const Track* track)
 	return -1;
 }
 
+//! The route @a track has a capture running on, whatever row it stands on now: the route it armed
+//! itself and that is still armed, or -1. The route a track maps to is its POSITION (trackRouteOf),
+//! and positions move when a track above it is inserted, removed or reordered; this is what keeps
+//! a running capture attached to the track that started it (cluster 4736).
+int routeArmedByTrack(const MultiTrackRecorder& recorder, const Track* track)
+{
+	if (track == nullptr) { return -1; }
+	for (int i = 0; i < recorder.trackCount(); ++i)
+	{
+		const TrackRecorder& route = recorder.track(i);
+		if (route.isArmed() && route.armedTrackId() == track->id()) { return i; }
+	}
+	return -1;
+}
+
+//! True when @a target is armed by a DIFFERENT track than @a track. A route armed by number
+//! (record.arm_track) binds no track, so it is nobody else's capture. @a track is never null here.
+bool holdsAnotherTracksCapture(const TrackRecorder& target, const Track* track)
+{
+	const int owner = target.armedTrackId();
+	return target.isArmed() && owner >= 0 && owner != track->id();
+}
+
+/*! The route a track.set_arm call addresses: the route this track's own capture runs on (by its
+ *  stable id, cluster 4736), else the position in the song that trackRouteOf names. False with
+ *  @a error filled when the track has no route at all, when the recorder prepared no route at
+ *  that position, or - for a DISARM - when the route there is ANOTHER track's running capture:
+ *  an armed capture belongs to the track that started it, so a row that moved onto it cannot
+ *  stop it. Arming keeps its existing answer to an occupied route: a Busy refusal. */
+bool resolveArmRoute(const MultiTrackRecorder& recorder, const Track* track, bool armed,
+	int* route, ControlResult* error)
+{
+	const int own = routeArmedByTrack(recorder, track);
+	const int addressed = own >= 0 ? own : trackRouteOf(track);
+	if (addressed < 0)
+	{
+		*error = ControlResult::failure(ControlErrorKind::NotFound,
+			QStringLiteral("the track is not in the song container, so it has no route in the "
+				"recorder"));
+		return false;
+	}
+	if (addressed >= recorder.trackCount())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("this track is at position %1 in the song and the engine prepared "
+				"%2 record route(s) (MultiTrackRecorder::MaxRoutes, fixed at start): a track "
+				"past the last route has nowhere to record to")
+				.arg(addressed).arg(recorder.trackCount()));
+		return false;
+	}
+	const TrackRecorder& target = recorder.track(addressed);
+	if (!armed && own < 0 && holdsAnotherTracksCapture(target, track))
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("route %1 is recording track %2, not this one: an armed capture stays "
+				"bound to the track that started it when tracks above it are inserted, removed or "
+				"reordered - stop it from that track, or by number with record.disarm_track")
+				.arg(addressed).arg(control::trackId(target.armedTrackId())));
+		return false;
+	}
+	*route = addressed;
+	return true;
+}
+
 //! The track.set_arm reply for a route: the route's own state plus the address
 //! the caller used, so a client can match a reply to its request.
 QJsonObject armReply(const TrackRecorder& target, const QString& trackId, int route)
@@ -244,6 +308,9 @@ ControlResult armTrackArm(MultiTrackRecorder& recorder, Track* track, const QStr
 			QStringLiteral("route %1 could not be armed: the take file %2 could not be opened "
 				"for writing").arg(route).arg(takePath));
 	}
+	// The capture now belongs to THIS track, by its stable id, not to the row it stands on: a track
+	// inserted, removed or reordered later must not detach it (cluster 4736).
+	target.setArmedTrackId(track->id());
 
 	QJsonObject result = armReply(target, trackId, route);
 	result.insert(QStringLiteral("sample_rate"), sampleRate);
@@ -271,24 +338,12 @@ ControlResult setArm(const QJsonObject& args)
 	}
 	MultiTrackRecorder& recorder = engine->recorder();
 
-	const int route = trackRouteOf(track);
-	if (route < 0)
-	{
-		return ControlResult::failure(ControlErrorKind::NotFound,
-			QStringLiteral("the track is not in the song container, so it has no route in the "
-				"recorder"));
-	}
-	if (route >= recorder.trackCount())
-	{
-		return ControlResult::failure(ControlErrorKind::Refused,
-			QStringLiteral("this track is at position %1 in the song and the engine prepared "
-				"%2 record route(s) (MultiTrackRecorder::MaxRoutes, fixed at start): a track "
-				"past the last route has nowhere to record to")
-				.arg(route).arg(recorder.trackCount()));
-	}
+	const bool armed = args.value(QStringLiteral("armed")).toBool();
+	int route = -1;
+	if (!resolveArmRoute(recorder, track, armed, &route, &error)) { return error; }
 
 	const QString trackId = args.value(QStringLiteral("track")).toString();
-	if (!args.value(QStringLiteral("armed")).toBool())
+	if (!armed)
 	{
 		return disarmTrackArm(recorder.track(route), trackId, route);
 	}
@@ -464,9 +519,20 @@ namespace control
 bool trackRecordArmed(const Track* track)
 {
 	AudioEngine* engine = Engine::audioEngine();
+	if (engine == nullptr) { return false; }
+	const MultiTrackRecorder& recorder = engine->recorder();
+	// The capture this track started outlives its row: ask the route it is bound to first
+	// (cluster 4736), so its arm button keeps showing state once other tracks move around it.
+	if (routeArmedByTrack(recorder, track) >= 0) { return true; }
 	const int route = trackRouteOf(track);
-	if (engine == nullptr || route < 0 || route >= engine->recorder().trackCount()) { return false; }
-	return engine->recorder().track(route).isArmed();
+	if (route < 0 || route >= recorder.trackCount()) { return false; }
+	const TrackRecorder& target = recorder.track(route);
+	if (!target.isArmed()) { return false; }
+	// A route armed by ANOTHER track is that track's capture, not this row's: this header must not
+	// claim it. A route armed by number (record.arm_track) binds no track and stays this row's, as
+	// it always was.
+	const int owner = target.armedTrackId();
+	return owner < 0 || owner == track->id();
 }
 
 } // namespace control
