@@ -4,7 +4,7 @@ IMPLEMENTED
 
 Worktree `/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-Q050-211`, branch
 `feat/050-Q050-211-oc`, base `3436a808b6` (`050/m0-train-53`, the FIX-BASE commit). Product commit `7092bdae0c`;
-this report and the feature record are the commit after it. Logs are in
+the feature record and this report are the commits after it (documentation only). Logs are in
 `/home/kruzzzzy/.config/kads/zene/state/runs/Q050-211.r1/logs` (`$LOGDIR` below).
 
 ## What was missing, measured on the base
@@ -154,10 +154,15 @@ this is a design argument plus the existing signal's own contract, not a measure
    proven by the undo-depth assertions (+1 per step, three undos empty the clip) and by the socket check (one undo takes
    a two-note chord, the earlier step stays). `window.note_editor_set` stays `not_mutating` (view/edit state), and the
    test asserts the undo depth does not move when the button arms the mode.
-4. **Nothing added on the audio thread.** The diff touches no `process*`/`render*`/`AudioEngine`/`NotePlayHandle` code.
-   `note.step_input` runs on the GUI thread; the editor's MIDI path is the instrument track's existing `midiNoteOn`
-   signal on a queued connection (classic roll's own hop); the cursor is a `QHash` only the control thread touches. No
-   allocation, lock, wait, I/O or signal emission added there. TSan does not run on this box - reasoned, not measured.
+4. **Nothing added on the audio thread.** The check's audio-path hint fires on the *test* and on comments only:
+   `NotePlayHandleManager::init()` in `tests/src/gui/NoteEditorStepInputTest.cpp` (`initTestCase` - the same setup the
+   classic roll's test uses, so the transport can play the clip) and the comments in `src/gui/noteeditor/NoteStepInput.cpp`
+   that explain which signal is being followed. No product function on the audio path changed: the diff touches no
+   `process*`/`render*`/`AudioEngine`/`NotePlayHandle` code. `note.step_input` runs on the GUI/control thread; the
+   editor's MIDI path is the instrument track's existing `midiNoteOn` signal on a queued connection (the classic
+   roll's own hop), so the audio thread only appends to Qt's event, as it already did; the cursor is a `QHash` only the
+   control thread touches. No allocation, lock, wait, I/O or signal emission added there. TSan does not run on this box
+   - reasoned, not measured.
 5. **Old projects load and render exactly as before; new data round-trips through save and load.** No project-reading
    or project-writing code changed: the cursor is edit state (not saved, not journalled), and a step writes ordinary
    `Note`s that the owner `MidiClip` already serializes. `ClipSerialisationTest` and `ProjectOpenIntegrityTest`:
