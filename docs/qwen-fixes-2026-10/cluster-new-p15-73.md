@@ -225,8 +225,11 @@ no FAIL), five ASK items. Answers, each with the evidence this session saw:
    three producers of `sampleRateChanged` (`AudioEngine.cpp:812`, `:1427`, `:1454`) fire off the
    audio thread with the backend stopped (`AudioDevice.cpp:137-155`); (c) every sibling listener in
    the tree already runs in the emitting thread (the eleven sites listed above), so nothing else
-   needs the same change, and no listener needed its own ordering fix; a ranked repo-wide search for
-   `Qt::QueuedConnection` returned no `plugins/` hit. Local TSan does not run on this box, so
+   needs the same change, and no listener needed its own ordering fix. A repo-wide search for
+   `sampleRateChanged` returns 21 connect sites in product code, and only this one passed a connection
+   type; the `Qt::QueuedConnection` uses that do exist under `plugins/` are not rate listeners
+   (`SfzPlayer.cpp:244` a queued sample reload, `Vestige.cpp:167` `ConfigManager::valueChanged`,
+   `CarlaVst2Effect.cpp:102` a thread-hop helper). Local TSan does not run on this box, so
    the thread-safety statement is the design argument above, not a detector report.
 4. **No collateral damage.** The DSP (`processImpl`), `sampleRateNeedsUpdate()`,
    `applyPreparedBuffers()`, the retired-buffer reclamation and the control models are byte-for-byte
