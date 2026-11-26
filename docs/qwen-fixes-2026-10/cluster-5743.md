@@ -3,10 +3,10 @@ FIXED
 # Cluster 5743 - `rack.wrap` can reorder selected effects
 
 ## Verdict: REAL, FIXED
-- Cause: `namedDevices` (`src/core/ControlCommandsRackWrap.cpp:56-80`) pushed devices in the order of the `plugins` argument.
-  `wrap` (`:147`) captured state XML (`states << controlEffectStateXml(effect)`) and recreated the devices (`recreateDevices`) in that
+- Cause: `namedDevices` (`src/core/ControlCommandsRackWrap.cpp:56-86`) pushed devices in the order of the `plugins` argument.
+  `wrap` (`:153`) captured state XML (`states << controlEffectStateXml(effect)`) and recreated the devices (`recreateDevices`) in that
   order, so `plugins: [B, A]` on a chain A,B produced a chain B,A. The file header (`:24-28`) and the command description
-  (`:181-186`) promise "in order".
+  (`:187-192`) promise "in order".
 - Fix: at the end of `namedDevices` the resolved devices are `std::stable_sort`ed by their position in `target.chain->effects()`
   (the source chain). Every device is already verified to be in that chain, so the position lookup is always valid. With `plugins`
   left out the chain order is used as before; duplicate / foreign-chain refusals are unchanged. No command was added, no schema change,
@@ -15,33 +15,38 @@ FIXED
 - Siblings checked: `plugin.copy` / `chain.copy` take their own argument paths (`ControlDeviceMoves.h`); this finding concerns rack.wrap only.
 
 ## Regression test
-`tests/src/core/DeviceCopyTest.cpp` `wrappingKeepsTheSourceChainOrder`: loads two effects on a fresh channel, bypasses the first, wraps with
-`plugins: [second, first]`, asserts the new rack chain's device 0 is the bypassed one (the first) and device 1 is enabled. Deterministic: no timing.
-`tests/CMakeLists.txt`: `DeviceCopyTest` now depends on the `amplifier` module target. Without it a build of just `zene DeviceCopyTest`
-loads no effect and every effect test (including this one) SKIPs (seen in `test-1.log`: 10 skipped).
+`tests/src/core/DeviceMovesUndoTest.cpp` `wrappingKeepsTheSourceChainOrder` (round 2: moved from `DeviceCopyTest.cpp`, which it had
+pushed over the 500-line ratchet, 495 -> 514; `DeviceCopyTest.cpp` is back to 495). On a fresh channel it loads `amplifier` then
+`bassbooster` by name (QVERIFY2 if a fixture is missing, so it cannot silently skip), wraps with `plugins: [bassbooster, amplifier]`, and
+`QCOMPARE`s the new rack chain's device names with `{amplifier, bassbooster}`. Deterministic: no timing, sleeps or threads.
+`tests/CMakeLists.txt`: `DeviceCopyTest` and `DeviceMovesUndoTest` depend on `amplifier`, and `DeviceMovesUndoTest` on `bassbooster`,
+so a targeted build of those test targets has its fixtures.
 
-## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/5743.r1/logs)
-- `cmake --build build --target zene DeviceCopyTest -j4` (build-1.log) EXIT=0; `ctest -R DeviceCopyTest` from build/tests (test-1.log) EXIT=8: no amplifier module built, new test SKIPped, unrelated `aChainIsBypassedAndCleaned` failed at `DeviceCopyTest.cpp:580` (`loadAnEffect` empty) - same missing-module cause.
-- `cmake --build build --target amplifier -j4` (build-2.log) EXIT=0; `ctest -R DeviceCopyTest` (test-2.log) EXIT=8: RED, before the fix: `wrappingKeepsTheSourceChainOrder` FAIL at `DeviceCopyTest.cpp:460` (`!wrappedEffects[0]->isEnabled()` FALSE; 15 passed, 1 failed, 1 skipped).
-- GREEN: `cmake --build build --target zene DeviceCopyTest -j4` (build-3.log) EXIT=0; `ctest -R DeviceCopyTest` (test-3.log) EXIT=0.
-- 4b: `git diff -- src/core/ControlCommandsRackWrap.cpp > .../fix.patch && git apply -R .../fix.patch` EXIT=0; build (build-4.log) EXIT=0; ctest (test-4.log) EXIT=8, FAIL at `DeviceCopyTest.cpp:460` (the same test).
-  `git apply .../fix.patch` EXIT=0; build (build-5.log) EXIT=0; ctest (test-5.log) EXIT=0.
+## Commands and EXIT codes (round 2; logs in /home/kruzzzzy/.config/kads/zene/state/runs/5743.r2/logs)
+- `bash tests/file-length-gate.sh --check` (flen-3.log) EXIT=0: "PASS (check mode: no regressions; baseline not written)".
+- GREEN: `cmake --build build --target zene DeviceCopyTest DeviceMovesUndoTest -j4` (build-3.log) EXIT=0; from build/tests
+  `ctest -R 'DeviceCopyTest|DeviceMovesUndoTest' --output-on-failure` (test-2.log) EXIT=0, "100% tests passed out of 2".
+- RED (4b): `git diff 9913d36d53 9bb33dd3e9 -- src/core/ControlCommandsRackWrap.cpp > logs/fix.patch && git apply -R logs/fix.patch` EXIT=0;
+  build (build-4.log) EXIT=0; ctest (test-3.log) EXIT=8, "1 tests failed out of 2" (DeviceMovesUndoTest):
+  `FAIL! DeviceMovesUndoTest::wrappingKeepsTheSourceChainOrder() Compared lists differ at index 0. Actual "bassbooster", Expected "amplifier"`,
+  `Loc: tests/src/core/DeviceMovesUndoTest.cpp(182)`.
+- `git apply logs/fix.patch` EXIT=0; build (build-5.log) EXIT=0; ctest (test-4.log) EXIT=0, "100% tests passed out of 2"; `git status --short` empty.
+- Round-1 logs (runs/5743.r1/logs) no longer exist; the round-1 RED/GREEN on `DeviceCopyTest.cpp` is superseded by the run above.
 
 ## Gates
-`python3 .../feature_check.py <worktree>` (gates-1.log) EXIT=1: BLOCKED, not a code result. The script runs
-`git -C .../gate-baselines/tree checkout -q --detach 9913d36d53...` and the lane's bunny-guard refuses it
-("is not allowed in a Bunny lane"), so it died with a CalledProcessError before printing a table. I did not work around the guard.
-Manual checks: no new file (so no tests/fork-sources.txt entry needed; `src/core/ControlCommandsRackWrap.cpp` is already listed at
-`tests/fork-sources.txt:1866`); the only new function logic is two small lambdas in `namedDevices` (CCN well under 10).
+`python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (gates-1.log) EXIT=0: fork-sources, all-sources-reproduce,
+no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity ("no new item in your files") and file-length ("no new item in
+your files") all PASS; RESULT: PASS. No new file, so no registration entry is needed (`src/core/ControlCommandsRackWrap.cpp` is already in
+`tests/fork-sources.txt`).
 
 ## Other findings
 - `DeviceCopyTest::aChainIsBypassedAndCleaned` (`DeviceCopyTest.cpp:580`) hard-fails (not skips) when no effect module is built; with the new `amplifier` dependency it passes here.
 
 ## Self-check
-- Red/green: with `ControlCommandsRackWrap.cpp` reverted the test fails (test-4.log, `ctest` EXIT=8, `DeviceCopyTest.cpp:460`); with the fix it passes (test-3.log and test-5.log, EXIT=0).
-- Deterministic: no timers, sleeps or threads. It drives `rack.wrap` through `ControlRegistry::invoke` on a fresh channel and tells the two devices apart by a bypass flag set via `plugin.bypass`.
-- Cause and completeness: `ControlCommandsRackWrap.cpp` holds only `rack.wrap` (`registerRackWrapCommand`); the only path that resolves the device list is `namedDevices` (called once, from `devicesToWrap`, from `wrap`), so ordering there covers the named and the omitted-`plugins` cases. The `rack.*` commands the check lists (add_chain, get_state, layer_*, macro_*, remove_chain) live in other files, share no code with this change, and are untouched.
-- Collateral: no saved-data or schema change; duplicate and foreign-chain refusals are unchanged; callers that omit `plugins` or pass them in chain order get exactly the previous result (stable sort of an already ordered list). No new limit.
+- Red/green: with the `ControlCommandsRackWrap.cpp` hunk reversed the test fails (test-3.log, ctest EXIT=8, `DeviceMovesUndoTest.cpp:182`); with the fix it passes (test-2.log and test-4.log, EXIT=0).
+- Deterministic: no timers, sleeps or threads. It drives `rack.wrap` through `ControlRegistry::invoke` on a fresh channel and tells the two devices apart by descriptor name.
+- Cause and completeness: `ControlCommandsRackWrap.cpp` holds only `rack.wrap` (`registerRackWrapCommand`); the only path that resolves the device list is `namedDevices` (`:56-86`), so ordering there covers the named and the omitted-`plugins` cases. Other `rack.*` commands live in other files and share no code with this change.
+- Collateral: no saved-data or schema change; duplicate and foreign-chain refusals are unchanged; callers that omit `plugins` or pass them in chain order get exactly the previous result (stable sort of an already ordered list). No new limit, nothing on the audio thread, no command added.
 - Verdict is FIXED, not a not-real verdict, so no ALREADY-FIXED/FALSE-POSITIVE reference is needed.
-- Unresolved: the `gates (feature_check.py)` item stays FAIL: the script's internal `git checkout --detach` is refused by bunny-guard (see Gates), so I could not produce its table. Unverified: complexity/file-length gate numbers (checked by hand only).
-- Delegation: Haiku ran every build and ctest (build-1..5, test-1..5) and the revert/re-apply proof; I read the logs' key lines, the diff stat and wrote the test, fix, report and manifest.
+- Gates: feature_check.py EXIT=0, RESULT: PASS (gates-1.log); file-length gate EXIT=0 (flen-3.log).
+- Delegation: round 2: Haiku ran every build and ctest and the reverse/re-apply proof (build-3..5, test-2..4); I applied the test move, ran the file-length gate and feature_check, checked the logs' key lines, and wrote the report, manifest and commits. No Sonnet or DeepSeek use: the test was already written (leftover patch), so there was no engineering left to hand off.
