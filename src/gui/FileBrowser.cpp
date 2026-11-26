@@ -43,6 +43,7 @@
 #include <cassert>
 
 #include "AudioEngine.h"
+#include "ArrangerFileDrop.h"
 #include "ControlTrackRouting.h"
 #include "BrowserTagMenu.h"
 #include "ConfigManager.h"
@@ -61,6 +62,7 @@
 #include "PatternStore.h"
 #include "Plugin.h"
 #include "PluginFactory.h"
+#include "PluginInstantiationFailure.h"
 #include "PreviewOutput.h"
 #include "PresetPreviewPlayHandle.h"
 #include "Sample.h"
@@ -984,12 +986,21 @@ void FileBrowserTreeWidget::handleFile(FileItem * f, InstrumentTrack * it)
 		{
 			const QString e = f->extension();
 			Instrument * i = it->instrument();
-			if( i == nullptr ||
+			// Q050-359: a placeholder instrument (a module that declined, a project whose device is not
+			// installed) has no descriptor to ask about file types.
+			if( i == nullptr || i->descriptor() == nullptr ||
 				!i->descriptor()->supportsFileType( e ) )
 			{
 				PluginFactory::PluginInfoAndKey piakn =
 					getPluginFactory()->pluginSupportingExtension(e);
 				i = it->loadInstrument(piakn.info.name(), &piakn.key);
+				// Q050-359: the module declined; the track keeps the instrument it had and the user is told why.
+				if( i == nullptr )
+				{
+					arrangerdrop::reportRefusedInstrument(piakn.info.name(),
+						pluginload::takeInstantiationFailure());
+					break;
+				}
 			}
 			i->loadFile( f->fullName() );
 			break;

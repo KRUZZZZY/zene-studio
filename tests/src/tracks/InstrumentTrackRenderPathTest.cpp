@@ -203,6 +203,17 @@ ProbeCounts countAllocationsOf(Work&& work)
 	return {static_cast<int>(lmms::test::tlAllocationCount), static_cast<int>(lmms::test::tlFreeCount)};
 }
 
+/*! Q050-359: a module this build cannot instantiate is refused, and the track it was
+ *  asked for keeps the silent DummyInstrument placeholder - every render-path reader
+ *  dereferences the instrument, so a fresh track still has one. Both halves are
+ *  asserted: the refusal (loadInstrument answers nullptr) and the placeholder, which
+ *  is the live instrument the slots below drive. */
+void loadPlaceholderInstrument(InstrumentTrack& track)
+{
+	QVERIFY(track.loadInstrument(QStringLiteral("no_such_instrument_in_this_test")) == nullptr);
+	QVERIFY(track.instrument() != nullptr);
+}
+
 } // namespace
 
 class InstrumentTrackRenderPathTest : public QObject
@@ -240,9 +251,9 @@ private slots:
 	void theRenderPathTakesTheRecordingStateFromThePublishedFlag()
 	{
 		InstrumentTrack track(Engine::getSong());
-		// A plugin that does not exist leaves the DummyInstrument in place: a live
-		// instrument on the track, which is all the render path needs.
-		QVERIFY(track.loadInstrument(QStringLiteral("no_such_instrument_in_this_test")) != nullptr);
+		// A module that does not exist is refused; the track keeps the silent
+		// DummyInstrument placeholder, which is all the render path needs.
+		loadPlaceholderInstrument(track);
 
 		auto detuning = std::make_shared<DetuningHelper>();
 		const Note note(TimePos(48), TimePos(0), 60, volume_t(100), DefaultPanning, detuning);
@@ -292,8 +303,9 @@ private slots:
 		QVERIFY(std::atomic<int>::is_always_lock_free);
 
 		InstrumentTrack track(Engine::getSong());
-		// A plugin that does not exist leaves the DummyInstrument in place; the probe replaces it.
-		QVERIFY(track.loadInstrument(QStringLiteral("no_such_instrument_in_this_test")) != nullptr);
+		// A module that does not exist is refused; the track keeps the DummyInstrument
+		// placeholder, and the probe replaces it.
+		loadPlaceholderInstrument(track);
 		auto* instrument = new LockWatchingInstrument(&track);
 		track.setInstrumentForTest(instrument);
 		QCOMPARE(track.instrument(), instrument);
@@ -343,7 +355,7 @@ private slots:
 	void runningNotesOnOneKeyKeepTheirCount()
 	{
 		InstrumentTrack track(Engine::getSong());
-		QVERIFY(track.loadInstrument(QStringLiteral("no_such_instrument_in_this_test")) != nullptr);
+		loadPlaceholderInstrument(track);
 		auto* instrument = new LockWatchingInstrument(&track);
 		track.setInstrumentForTest(instrument);
 
@@ -406,7 +418,7 @@ private slots:
 		for (const auto& [mode, notesSounding] : cases)
 		{
 			InstrumentTrack track(Engine::getSong());
-			QVERIFY(track.loadInstrument(QStringLiteral("no_such_instrument_in_this_test")) != nullptr);
+			loadPlaceholderInstrument(track);
 			enableArpeggio(track, mode);
 			QVERIFY(track.isArpeggioEnabled());
 
@@ -460,7 +472,7 @@ private slots:
 	void sortModeArpeggioStillPlaysTheAscendingKeys()
 	{
 		InstrumentTrack track(Engine::getSong());
-		QVERIFY(track.loadInstrument(QStringLiteral("no_such_instrument_in_this_test")) != nullptr);
+		loadPlaceholderInstrument(track);
 		// Range 2 with one repeat and a one-pitch chord: six steps - the three base keys in
 		// ascending order, then the same three an octave up.
 		enableArpeggio(track, SortArpMode, 2);

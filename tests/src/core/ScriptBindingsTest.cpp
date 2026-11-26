@@ -44,6 +44,7 @@
 #include "MidiClip.h"
 #include "Note.h"
 #include "PatternStore.h"
+#include "PluginFactory.h"
 #include "SampleTrack.h"
 #include "ScriptBindings.h"
 #include "ScriptApiVersion.h"
@@ -133,6 +134,11 @@ private slots:
 	void initTestCase()
 	{
 		using namespace lmms;
+#ifdef LMMS_TEST_PLUGIN_DIR
+		// Q050-359: this binary's cases replace one real instrument with another, so the build's own modules
+		// (tripleoscillator, kicker) have to be discoverable before the engine scans for them.
+		qputenv("LMMS_PLUGIN_DIR", QStringLiteral(LMMS_TEST_PLUGIN_DIR).toLocal8Bit());
+#endif
 		Engine::init(true);
 		ControlRegistry::setReady(true);
 	}
@@ -641,8 +647,15 @@ print('opened views are inert')
 		auto* rawTrack = dynamic_cast<InstrumentTrack*>(engine->trackAt(0));
 		QVERIFY(rawTrack != nullptr);
 
-		// The DummyInstrument fallback gives a live instrument with no plugin module.
-		rawTrack->loadInstrument(QString());
+		// Two real modules of this build: the first is the instrument the saved view names, the second the
+		// replacement. Q050-359: a name this build cannot load no longer installs a stand-in (it is refused and
+		// the track keeps what it had), so the case has to replace between two real instruments.
+		const PluginFactory* factory = getPluginFactory();
+		if (factory->pluginInfo("tripleoscillator").isNull() || factory->pluginInfo("kicker").isNull())
+		{
+			QSKIP("this build does not ship the two instrument modules this case replaces between");
+		}
+		QVERIFY(rawTrack->loadInstrument(QStringLiteral("tripleoscillator")) != nullptr);
 		QVERIFY(rawTrack->instrument() != nullptr);
 		QVERIFY(!track.instrumentName().isEmpty());
 
@@ -651,7 +664,7 @@ print('opened views are inert')
 		QVERIFY(!saved.name().isEmpty());
 
 		// Replacing the instrument deletes the old one.
-		rawTrack->loadInstrument(QString());
+		QVERIFY(rawTrack->loadInstrument(QStringLiteral("kicker")) != nullptr);
 		QVERIFY(!saved.isValid());
 		QVERIFY(saved.name().isEmpty());
 		QCOMPARE(saved.parameterCount(), 0);
