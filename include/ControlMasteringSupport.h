@@ -221,6 +221,14 @@ LMMS_EXPORT QJsonObject masteringCaptureJson(const QString& directory,
  *  says so"). Also: the removal half is what takes the FIRST run into an empty
  *  directory back - restoring captured revisions alone would leave every file
  *  that had no earlier revision exactly where the run put it.
+ *
+ *  A file operation the step could NOT complete - a removal the directory
+ *  refused, a write-back that could not open or wrote short - is REPORTED, not
+ *  swallowed: the closure records the refusal through
+ *  control::recordActionRestoreFailure, so `control.undo` answers a typed
+ *  `Refused` naming the file instead of `undone: true` over files that are still
+ *  on disk (cluster 4056, BUG 8). Every operation is still attempted, so one
+ *  refused file does not abandon the rest of the inverse.
  */
 LMMS_EXPORT void recordMasteringUndo(const QStringList& created,
 	const QMap<QString, QByteArray>& before);

@@ -2883,6 +2883,9 @@ tests/src/core/Lv2StateTest.cpp
 tests/src/core/McuSurfaceFeedbackTest.cpp
 tests/src/core/MasteringTest.cpp
 tests/src/core/MasteringTestSourceMix.cpp
+# cluster 4056 (BUG 8): the mastering undo reports a removal or write-back it could not
+# complete, instead of answering "undone" over the files it left on disk.
+tests/src/core/MasteringUndoFailureTest.cpp
 tests/src/core/McuSurfaceTest.cpp
 tests/src/core/MidiClockTest.cpp
 tests/src/core/MidiClockCaptureOutputTest.cpp
