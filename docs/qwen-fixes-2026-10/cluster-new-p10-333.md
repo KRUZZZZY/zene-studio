@@ -224,6 +224,13 @@ feature-check kads-new-p10-333 (base 3436a808b, 7 changed files; logs in .../bui
 RESULT: PASS
 ```
 
+**If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended
+contract that shows it.** Not applicable - the verdict is FIXED, and the opposite is what the
+evidence shows: on the parent revision neither ring and neither capture header contains
+`is_always_lock_free` (`evidence-1-prefix-headers.log`; the only `static_assert` in either ring is
+`RetroMidiRing.h:96`'s 16-byte slot size), and the regression tests do not build against those
+headers (`build-1-red.log`, `build-9-red-final-midi.log`, `build-10-red-final-audio.log`).
+
 ## Other findings (not fixed here)
 
 - `include/RecordRingBuffer.h:172-174` (`m_writePos`, `m_readPos`, `m_overflow`) carries the same
