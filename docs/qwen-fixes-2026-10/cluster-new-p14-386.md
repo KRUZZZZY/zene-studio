@@ -163,6 +163,37 @@ worktree, tests from `build/tests`.
 | `ctest -R '^LinkPhaseLockTest$' --output-on-failure` (committed tip, fix back) | **0** | test-12-green-committed.log |
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (fix + tests) | **0** | gates-1.log |
 | same, after this report was written (6 changed files) | **0** | gates-2.log |
+| `python3 logs/make-red.py` (the two behavioural hunks reverted); `git diff -R -- src/core/AbletonLinkBridge.cpp src/core/LinkAudioFollower.cpp > logs/fix.patch` | 0 / 0 | - |
+| `git apply --check -R logs/fix.patch` (from the fixed tip) and `git apply --check logs/fix.patch` (from the red state) | 0 / 0 | - |
+
+### Second pass - the stored direction, re-run from the committed tip
+
+| Command | Exit | Log |
+| --- | --- | --- |
+| `git apply -R logs/fix.patch` (RED: pre-fix behaviour, API left in place) | 0 | - |
+| `cmake --build build --target LinkPhaseLockTest -j4` (RED) | 0 | build-12-red.log |
+| `ctest -R '^LinkPhaseLockTest$' --output-on-failure` (RED) | **8** | test-13-red.log |
+| `git apply logs/fix.patch` (GREEN: the fix back) | 0 | - |
+| `cmake --build build --target zene LinkPhaseLockTest -j4` (GREEN) | 0 | build-13-green.log |
+| `ctest -R '^LinkPhaseLockTest$' --output-on-failure` (GREEN) | **0** | test-14-green.log |
+| same, immediately again (determinism) | **0** | test-15-green-repeat.log |
+| `ctest -R '^(LinkPhaseLockTest\|AbletonLink.*\|LinkAudio.*\|ControlLinkCommandsTest)$' --output-on-failure` | 8 (9 of 10 pass; the same `AbletonLinkSessionTest` SEGFAULT) | test-16-family.log |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (final state) | **0** | gates-3.log |
+| `git status --porcelain` after the restore | empty | - |
+
+The RED output of the second pass (`test-13-red.log`), the product change reverted:
+
+```
+FAIL!  : LinkPhaseLockTest::anApplicationTempoCommitWaitsForThePeriodInFlight() '!periodStillRunning' returned FALSE. (declareTempo() committed to the session from the application thread while the audio thread was inside it)
+   Loc: [../../tests/src/core/LinkPhaseLockTest.cpp(397)]
+FAIL!  : LinkPhaseLockTest::anApplicationCommitKeepsTheNextPeriodOutOfTheSession() Compared values are not the same
+   Actual   (claimed.periods): 70
+   Expected (before.periods) : 69
+   Loc: [../../tests/src/core/LinkPhaseLockTest.cpp(467)]
+Totals: 12 passed, 2 failed, 0 skipped, 0 blacklisted, 836ms
+0% tests passed, 1 tests failed out of 1
+```
+
 
 The RED output (test-5-red-final.log), the product change reverted:
 
@@ -175,7 +206,7 @@ FAIL!  : LinkPhaseLockTest::anApplicationCommitKeepsTheNextPeriodOutOfTheSession
 Totals: 12 passed, 2 failed, 0 skipped, 0 blacklisted, 849ms
 ```
 
-Gates (`gates-2.log`, the final state):
+Gates (`gates-3.log`, the final state; `gates-2.log` and `gates-1.log` are the earlier runs, same table):
 
 ```
   PASS  fork-sources            exit 0
@@ -191,25 +222,35 @@ RESULT: PASS
 
 Note on `fix.patch`. It carries the two behavioural hunks only - `commitTempo()` back to its
 `if (...) { requestTempo } else { appSetTempo }` form, and `process()` without the claim check - and it was
-produced with the fixed product files staged, so the patch transforms the fixed worktree into the pre-fix
-behaviour. The claim's API (`beginAppCommit`/`endAppCommit`, `m_appCommit`, the RAII scope) is present in
-both the red and the green build, because the regression test does not compile without it; reversing it
-would fail the build instead of failing the test. This is the same shape cluster-new-p9-220 used for its
-seam. One command in the table is recorded because it failed: reversing `fix.patch` a second time
-(`git apply -R`) exits 1 with "patch does not apply" when the worktree is already fixed, which is why the
-revert for the SEGFAULT check above used `git apply` (forward).
+stored in the direction the procedure uses: `git apply fix.patch` applies the fix, `git apply -R
+fix.patch` puts the worktree back to the pre-fix behaviour. The claim's API
+(`beginAppCommit`/`endAppCommit`, `m_appCommit`, the RAII scope) is present in both the red and the green
+build, because the regression test does not compile without it; reversing the whole product change would
+fail the build instead of failing the test. This is the same shape cluster-new-p9-220 used for its seam.
+The first pass of this run stored the patch in the opposite direction, so those rows say `git apply` where
+the red run was meant and `git apply -R` where the green one was; they are kept as the record of what was
+run. The patch was then regenerated in the stored direction (the two hunks reverted with
+`logs/make-red.py`, `git diff -R` over the two files, exit 0 both ways) and the pair was re-run from the
+committed tip under "Second pass" below, so the reproduction is `git apply -R` -> red, `git apply` ->
+green.
 
 ## Self-check
 
-- **The regression test fails with the product change reverted and passes with it.** Reverted:
-  `git apply -R logs/fix.patch` (exit 0), rebuild (exit 0), `ctest -R '^LinkPhaseLockTest$'` -> exit **8**,
-  `!periodStillRunning` false and `claimed.periods 70 != 69`. Restored: `git apply logs/fix.patch` (exit 0),
-  rebuild (exit 0), same test -> exit **0**, 14 passed. Logs build-4/test-5 and build-5/test-6.
-  The same pair was then run once more from the committed tip, so the recorded commands are
-  reproducible as written: `git apply logs/fix.patch` (exit 0) -> build (exit 0) -> ctest exit **8**
-  (build-10-red-committed.log, test-11-red-committed.log), `git apply -R logs/fix.patch` (exit 0) ->
-  build (exit 0) -> ctest exit **0** (build-11-green-committed.log, test-12-green-committed.log),
-  with `git status` clean after the restore.
+- **The regression test fails with the product change reverted and passes with it.** Second pass, from the
+  committed tip, with `fix.patch` stored in the procedure's direction: `git apply -R logs/fix.patch`
+  (exit 0), `cmake --build build --target LinkPhaseLockTest -j4` (exit 0),
+  `ctest -R '^LinkPhaseLockTest$' --output-on-failure` -> exit **8**, `!periodStillRunning` false at
+  `LinkPhaseLockTest.cpp:397` and `claimed.periods 70 != 69` at `:467` (build-12-red.log, test-13-red.log).
+  Then `git apply logs/fix.patch` (exit 0), `cmake --build build --target zene LinkPhaseLockTest -j4`
+  (exit 0), same ctest -> exit **0**, and again exit **0** (build-13-green.log, test-14-green.log,
+  test-15-green-repeat.log); `git status --porcelain` empty after the restore. The first pass recorded the
+  same pair with the patch stored the other way round: build-4/test-5 (exit 8) and build-5/test-6 (exit 0),
+  then again from the committed tip as build-10/test-11 (exit 8) and build-11/test-12 (exit 0).
+- **The test family.** `ctest -R '^(LinkPhaseLockTest|AbletonLink.*|LinkAudio.*|ControlLinkCommandsTest)$'`
+  exits 8 with 9 of 10 passing: `AbletonLinkSessionTest` SEGFAULTs (test-16-family.log) exactly as it does
+  with this fix reverted (test-9-linksession-red.log) - same `SKIP` for "this host did not deliver a
+  multicast datagram on 224.76.78.75:20808" and the same `SIGSEGV` at 0.63 s in both states, in a test that
+  never touches `LinkAudioFollower`. It is a host/environment failure, not this change.
 - **The test is deterministic.** No wall clock, no sleep, no `QTest::qWait`, no retry. Three seams decide the
   order: `LinkFollowerSeam::inPeriod` parks one period inside the follower on its own thread,
   `LinkFollowerSeam::attachWait` runs on the control thread inside the claim's wait loop, and the two
