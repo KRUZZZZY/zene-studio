@@ -117,11 +117,39 @@ Wider `ctest -R Midi` sweep (`test-5-midi-sweep.log`, exit 8): the 11 targets th
 worktree passed; the other 40 were **Not Run** because their binaries are not built here, which is what
 the non-zero exit is. It is not a regression claim either way.
 
+## Re-verification (second session, tree at 9035c5c95e)
+
+The chain was re-run on the committed tree. The fix is in the commit, so `git diff` is empty and the patch
+has to come from the fix commit's parent (`3436a808b6..HEAD`). A first attempt also exposed a stale build
+object: `make` believed `MidiOutQueueTest` up to date and the suite reported the pre-fix symptom
+(`test-18-verify-family.log`, exit 8) although the header on disk was fixed. Deleting the test object and
+binary before each build made every red/green result a genuine recompile (`build-19-force-recompile.log`,
+exit 0, is that recompile passing). Commands and exit codes (`red-green-definitive-3.log`):
+
+| # | Command | Exit | Log |
+|---|---|---|---|
+| 1 | `git diff 3436a808b6 HEAD -- include/MidiOutQueue.h src/core/midi/MidiAlsaSeq.cpp > logs/fix.patch` | 0 | `red-green-definitive-3.log` |
+| 2 | `git apply -R logs/fix.patch` | 0 | `red-green-definitive-3.log` |
+| 3 | `rm -f` the test object and binary, then `cmake --build build --target MidiOutQueueTest -j4` | 0 | `build-23-red-definitive.log` |
+| 4 | `cd build/tests && ctest -R '^MidiOutQueueTest$' --output-on-failure` | **8** | `test-23-red-definitive.log` |
+| 5 | `git apply logs/fix.patch` | 0 | `red-green-definitive-3.log` |
+| 6 | `rm -f` the test object and binary, then `cmake --build build --target MidiOutQueueTest -j4` | 0 | `build-24-green-definitive.log` |
+| 7 | `ctest -R '^MidiOutQueueTest$' --output-on-failure` | **0** | `test-24-green-definitive.log` |
+| 8 | `cmake --build build --target zene MidiAlsaSeqShutdownTest MidiOutTimingTest MidiClockCaptureOutputTest RetroMidiCaptureCommandsTest -j4` | 0 | `build-25-family-after.log` |
+| 9 | `ctest -R '^(MidiOutQueueTest\|MidiAlsaSeqShutdownTest\|MidiOutTimingTest\|MidiClockCaptureOutputTest\|RetroMidiCaptureCommandsTest)$' --output-on-failure` | **0** (5/5) | `test-25-family-after.log` |
+
+The red run is the same two assertions on the same two lines (`test-23-red-definitive.log`); the green run
+prints `100% tests passed out of 1` and the family `100% tests passed out of 5`. Gate re-run
+(`gate-8-session2.log`, exit 0): all eight rows PASS. `submit_check.py`
+(`submit-check-3-session2.log`, exit 0): `RESULT: PASS - submit`.
+
 ## Self-check
 
 - **The regression test FAILS with the product change reverted and PASSES with it:** steps 2-4 give exit
   **8** with both new cases failing on the finding's exact symptom; steps 5-7 give exit **0**
-  (`red-green-definitive.log`, `test-15-red-definitive.log`, `test-16-green-definitive.log`).
+  (`red-green-definitive.log`, `test-15-red-definitive.log`, `test-16-green-definitive.log`), and again in
+  the second session with the patch taken from the fix commit (`red-green-definitive-3.log`:
+  `test-23-red-definitive.log` exit **8**, `test-24-green-definitive.log` exit **0**).
 - **Deterministic, no wall clock, sleeps or races:** the new cases fill and drain one `MidiOutQueue` on
   the test thread; there is no thread, no clock, no device and no sleep. The seam is none - the queue is
   a plain object, and the real transport path into it stays covered by the existing
