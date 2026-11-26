@@ -1099,6 +1099,7 @@ private slots:
 	void nonRealtimeLadspaEffectsAreInvalid();
 	void monoDelayUpdatesItsDelayAcrossSampleRateChanges();
 	void zeroLengthDelayPassesInputThrough();
+	void subSampleDelayInterpolatesBetweenAdjacentSamples();
 	void zeroCapacityDelayPassesInputThrough();
 	void monoDelayCannotBeCopied();
 	void nesNoiseFrequencyControlsRetuneHeldNotes();
@@ -5403,6 +5404,90 @@ void PluginPortsMigrationTest::zeroLengthDelayPassesInputThrough()
 	sample = 17.0f;
 	delay.tick(&sample);
 	QCOMPARE(sample, 17.0f);
+}
+
+void PluginPortsMigrationTest::subSampleDelayInterpolatesBetweenAdjacentSamples()
+{
+	// The read offset was truncated to int, so a positive delay shorter than one
+	// sample became a zero offset and read the write slot before it is
+	// overwritten: the sample from a full ring earlier. A sub-sample delay is now
+	// interpolated between the two samples that bracket it - the incoming sample
+	// (delay zero) and the newest stored sample (delay one).
+
+	// One full ring of history: the write slot holds the sample from four ticks
+	// ago (1.0) while the newest stored sample is 4.0, so a half-sample delay of
+	// 20 is 0.5 * 4 + 0.5 * 20 and not the full-ring-old 1.0.
+	{
+		lmms::MonoDelay delay{1, 4};
+		delay.setLength(1.0f);
+		for (int frame = 1; frame <= 4; ++frame)
+		{
+			lmms::sample_t history = static_cast<lmms::sample_t>(frame);
+			delay.tick(&history);
+		}
+		QCOMPARE(delay.m_writeIndex, 0);
+
+		delay.setLength(0.5f);
+		lmms::sample_t sample = 20.0f;
+		delay.tick(&sample);
+		QCOMPARE(sample, 12.0f);
+	}
+
+	// Empty ring: only the incoming sample exists, so half a sample is half of
+	// it. The truncated read returned the untouched write slot, 0 here.
+	{
+		lmms::MonoDelay delay{1, 4};
+		delay.setLength(0.5f);
+		lmms::sample_t sample = 4.0f;
+		delay.tick(&sample);
+		QCOMPARE(sample, 2.0f);
+	}
+
+	// Five ticks wrap a four-frame ring twice; every output is the exact midpoint
+	// between the previous input and the current one.
+	{
+		lmms::MonoDelay delay{1, 4};
+		delay.setLength(0.5f);
+		const float input[] = {4.0f, 6.0f, 8.0f, 10.0f, 12.0f};
+		const float expected[] = {2.0f, 5.0f, 7.0f, 9.0f, 11.0f};
+		constexpr std::size_t frameCount = 5;
+		for (std::size_t frame = 0; frame < frameCount; ++frame)
+		{
+			lmms::sample_t sample = input[frame];
+			delay.tick(&sample);
+			QCOMPARE(sample, expected[frame]);
+		}
+	}
+
+	// The smallest legal ring holds one frame: the newest stored sample is the
+	// slot that is about to be written, which still holds the previous input.
+	{
+		lmms::MonoDelay delay{1, 1};
+		QCOMPARE(delay.m_maxLength, 1);
+		delay.setLength(0.25f);
+		lmms::sample_t first = 8.0f;
+		delay.tick(&first);
+		QCOMPARE(first, 2.0f);
+		lmms::sample_t second = 16.0f;
+		delay.tick(&second);
+		QCOMPARE(second, 10.0f);
+	}
+
+	// Longer delays keep the whole-sample read: 2.7 samples still reads the
+	// sample two ticks back, exactly as 2.0 samples does.
+	{
+		lmms::MonoDelay delay{1, 8};
+		delay.setLength(1.0f);
+		for (int frame = 1; frame <= 4; ++frame)
+		{
+			lmms::sample_t history = static_cast<lmms::sample_t>(frame);
+			delay.tick(&history);
+		}
+		delay.setLength(2.7f);
+		lmms::sample_t sample = 100.0f;
+		delay.tick(&sample);
+		QCOMPARE(sample, 3.0f);
+	}
 }
 
 void PluginPortsMigrationTest::zeroCapacityDelayPassesInputThrough()
