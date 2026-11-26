@@ -167,9 +167,22 @@ ControlResult retroToTake(const QJsonObject& args)
 			QStringLiteral("'file' must be absolute: a relative path names a different file "
 				"in the next process"));
 	}
-	const QString path = file.isEmpty()
-		? QDir(defaultRecoveryDir()).absoluteFilePath(QStringLiteral("zene-retro-take.wav"))
-		: file;
+	// A default take names its own file (cluster new-p12-63-port): the fixed
+	// zene-retro-take.wav is reused by every default take, so the second take
+	// replaces the first one's audio. The reservation is the same control-thread
+	// allocator record.arm_track and track.set_arm use.
+	QString path = file;
+	if (path.isEmpty())
+	{
+		path = reserveDefaultTake(defaultRecoveryDir(), QStringLiteral("zene-retro-take"));
+		if (path.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("the take could not be written: all %1 default take names beside "
+					"this instance's recovery file already hold a take or journal; name the file "
+					"with 'file'").arg(TakeNameProbeBound));
+		}
+	}
 
 	const RetroAudioCapture::Window window = capture->takeWindow();
 	// Label the take with the rate the retained frames were actually recorded
@@ -181,6 +194,9 @@ ControlResult retroToTake(const QJsonObject& args)
 	QString error;
 	if (!writeRetroAudioTake(path, window.frames, rate, &written, &error))
 	{
+		// The write left no take behind, so the reserved name must not be left
+		// holding an empty placeholder either: the next default take gets it.
+		if (file.isEmpty()) { releaseDefaultTake(path); }
 		return ControlResult::failure(ControlErrorKind::Refused, error);
 	}
 
