@@ -85,6 +85,7 @@ cd build/tests && ctest -R '^ClipConsolidateTest$' --output-on-failure > "$LOG/t
 cd build/tests && ctest -R '^RangeEditsTest$' --output-on-failure > "$LOG/test-6-range.log" 2>&1; echo TEST_EXIT=$? >> "$LOG/test-6-range.log"
 cd build/tests && ctest -R '^LibraryBrowserTest$' --output-on-failure > "$LOG/test-7-library.log" 2>&1; echo TEST_EXIT=$? >> "$LOG/test-7-library.log"
 python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py "$PWD" > "$LOG/gates-1.log" 2>&1; echo EXIT=$? >> "$LOG/gates-1.log"
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py "$PWD" > "$LOG/gates-2.log" 2>&1; echo EXIT=$? >> "$LOG/gates-2.log"
 ```
 
 `mutation.patch` is `git diff -- src/core/ClipConsolidate.cpp` of the uncommitted mutation; it adds
@@ -106,9 +107,10 @@ tree carries no product change: `git diff --name-only -- src include plugins` pr
 | `ClipConsolidateTest` family | `test-5-clipconsolidate.log` | `TEST_EXIT=0` (1/1 passed) |
 | `RangeEditsTest` (`range.consolidate` path) | `test-6-range.log` | `TEST_EXIT=0` (1/1 passed) |
 | `LibraryBrowserTest` (`browser.save_clip` path) | `test-7-library.log` | `TEST_EXIT=0` (1/1 passed) |
-| Gates | `gates-1.log` | `EXIT=0`, `RESULT: PASS` (8 PASS rows, 0 FAIL) |
+| Gates (before the report existed) | `gates-1.log` | `EXIT=0`, `RESULT: PASS` (8 PASS rows, 0 FAIL) |
+| Gates again, with the report in the tree (2 changed files) | `gates-2.log` | `EXIT=0`, `RESULT: PASS` (8 PASS rows, 0 FAIL) |
 
-Gate table from `gates-1.log`:
+Gate table from `gates-2.log`, the run on the tree this commit contains:
 
 ```text
   PASS  fork-sources            exit 0
