@@ -84,13 +84,16 @@ protected:
 
 	using SampleFunction = sample_t (*)(const float);
 
-	// Written by the speed/multiplier/waveform slots on the UI thread (direct
+	// Written by the speed/multiplier slots on the UI thread (direct
 	// connections) while updateValueBuffer() reads them on the render thread.
 	std::atomic<float> m_duration;
-	float m_phaseOffset;
-	float m_currentPhase;
+	std::atomic<float> m_phaseOffset;
+	std::atomic<float> m_currentPhase;
 
+	//! The sample function of the wave shape the render used last. The render
+	//! owns it: a change of the shape is what makes it draw a fresh sample.
 	std::atomic<SampleFunction> m_sampleFunction;
+	int m_renderedWaveShape;
 
 private:
 	std::atomic<float> m_heldSample;
@@ -112,7 +115,6 @@ private:
 
 protected slots:
 	void updatePhase();
-	void updateSampleFunction();
 	void updateDuration();
 
 	friend class gui::LfoControllerDialog;

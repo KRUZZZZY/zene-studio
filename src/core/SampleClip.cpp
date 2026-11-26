@@ -450,6 +450,9 @@ void SampleClip::setSampleBuffer(std::shared_ptr<const SampleBuffer> sb)
 		m_sample = Sample(std::move(sb));
 		// a new source means a new window: the whole buffer (Slice 0)
 		resetWindowToFullBuffer();
+		// BUG new-p9-402: live handles snapshot the old window and length but read this Sample;
+		// retired under the same guard, so no period renders the new buffer through them.
+		playbackPositionChanged();
 	}
 	updateLength();
 
@@ -478,6 +481,7 @@ void SampleClip::replaceSample(std::shared_ptr<const SampleBuffer> sb, const Sam
 		const auto frames = static_cast<f_cnt_t>(m_sample.sampleSize());
 		const auto clamped = SampleWindow::clamped(window.sourceIn, window.sourceOut, frames);
 		installWindow(clamped.empty() ? SampleWindow::full(frames) : clamped);
+		playbackPositionChanged();  // BUG new-p9-402: as setSampleBuffer() above
 	}
 	updateLength();
 	// A window that is not the whole buffer is a manual edit, as setSampleWindow() has it.
