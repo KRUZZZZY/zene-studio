@@ -193,6 +193,24 @@ void NoteEditor::addToolButtons(QWidget* bar, QHBoxLayout* row)
 		step->setChecked(m_state.stepInput);
 	});
 	row->addWidget(toolButton(bar, step));
+	// Q050-211: Record - what the MIDI keyboard plays is written as it is played (docs/NOTE-EDITOR.md §3b).
+	// Armed and disarmed through the same registered command an agent calls, and the button follows a
+	// command that changes the mode from elsewhere. Step input and Record are exclusive: arming one
+	// turns the other off in the editor, and both buttons follow.
+	QAction* record = checkable(this, QStringLiteral("record"), tr("Record"),
+		tr("Record what the MIDI keyboard plays: a key opens a note at the playhead on the grid and its release "
+			"closes it where the key came up - one note.record_on / note.record_off pair and ONE undo step for the "
+			"whole take, which the transport's stop ends"));
+	record->setProperty("controlCommand", QStringLiteral("window.note_editor_set"));
+	connect(record, &QAction::triggered, this, [this](bool on) {
+		run(QStringLiteral("window.note_editor_set"), {{QStringLiteral("record"), on}});
+	});
+	connect(this, &NoteEditor::stateChanged, record, [this, record]() {
+		if (record->isChecked() == m_state.record) { return; }
+		const QSignalBlocker quiet(record);
+		record->setChecked(m_state.record);
+	});
+	row->addWidget(toolButton(bar, record));
 	row->addSpacing(tokens::space::md);
 }
 

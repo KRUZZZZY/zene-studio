@@ -98,6 +98,7 @@ struct NoteEditorState
 	bool keepInScale = false;     //!< drawn and moved notes land on the nearest key of the scale
 	QString controllerLane;       //!< the controller lane shown instead of the note lane ("cc:1", ...), or empty
 	bool stepInput = false;       //!< Q050-211: Step input mode - a MIDI key or a computer key enters one step
+	bool record = false;          //!< Q050-211: Record mode - what a MIDI keyboard plays is written as it is played
 };
 
 //! The reworked piano roll (owner direction 2026-10-02; its gestures FL Studio's, 2026-10-03). Every edit it
@@ -144,6 +145,16 @@ public:
 	 */
 	void setStepInput(bool on);
 	bool stepInputArmed() const { return m_state.stepInput; }
+	/*! Q050-211: Record mode. While it is on, a MIDI key is written into the clip as it is played: the
+	 *  track's midiNoteOn opens one note at the playhead, snapped down to the grid, and midiNoteOff closes
+	 *  it where the key came up, through `note.record_on` / `note.record_off` - the same commands an agent
+	 *  sends. ONE undo step covers the whole take (include/ControlNoteRecord.h): `note.record_end`, which
+	 *  the editor sends when Record goes off and when another clip opens, keeps a key that is still held
+	 *  as one grid step long instead of losing it (the transport's stop ends the take in the command layer).
+	 *  Record and Step input are the editor's two entry modes: arming one turns the other off.
+	 */
+	void setRecord(bool on);
+	bool recording() const { return m_state.record; }
 	//! Put the clip's step cursor at @a ticks (window.note_editor_set `step_cursor`; edit state, not saved).
 	void setStepCursor(int ticks);
 	//! The clip track's name for @a key (key_names.*), or empty.
@@ -228,6 +239,15 @@ private:
 	//! Keep the step cursor on screen while a phrase is entered.
 	void revealStepCursor();
 	void onMidiNoteOn(const lmms::Note& note);
+	//! The key-up of a recording take: close the note `note.record_off` is holding for it.
+	void onMidiNoteOff(const lmms::Note& note);
+	//! One key of a recording take: `note.record_on` where the playhead is (the same command an agent sends).
+	void recordEnter(int key);
+	//! Connect the clip track's midiNoteOn / midiNoteOff while Record is on; drop the old one.
+	void followRecord();
+	void dropRecord();
+	//! End the clip's take (note.record_end): keep what is still held, close the take's undo step.
+	void finishRecordTake();
 	//! Show the playhead at @a tick (-1: none) in the note area and the lanes under it.
 	void showPlayhead(int tick);
 	void onClipDestroyed();
@@ -261,6 +281,10 @@ private:
 	//! it is off). One connection, dropped on disarm and on a clip change, so a key pressed after either
 	//! writes nothing.
 	QMetaObject::Connection m_stepConnection;
+	//! Q050-211: Record mode's two MIDI edges (note-on and note-off), empty when the mode is off. Both are
+	//! queued, and both are dropped on a disarm or a clip change, so a key pressed after either writes nothing.
+	QMetaObject::Connection m_recordConnection;
+	QMetaObject::Connection m_recordOffConnection;
 	class QTimer* m_playheadTimer = nullptr;
 };
 

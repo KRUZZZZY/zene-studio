@@ -51,6 +51,7 @@
 #include <QJsonObject>
 #include <QKeyEvent>
 
+#include "ControlNoteRecord.h"
 #include "ControlRegistry.h"
 #include "ControlStepInput.h"
 #include "Engine.h"
@@ -132,6 +133,7 @@ void NoteEditor::setStepInput(bool on)
 		emit stateChanged();  // the toggle follows the state even when nothing changed
 		return;
 	}
+	if (on && m_state.record) { setRecord(false); }  // the two entry modes are exclusive
 	m_state.stepInput = on;
 	if (on)
 	{
@@ -155,7 +157,90 @@ void NoteEditor::setStepInput(bool on)
 
 void NoteEditor::onMidiNoteOn(const lmms::Note& note)
 {
+	// The two entry modes are exclusive (setRecord / setStepInput turn the other off), and the mode is
+	// asked here rather than at connect time so a command that moved the switch is obeyed at once.
+	if (m_state.record) { recordEnter(note.key()); return; }
 	stepEnter(note.key());
+}
+
+void NoteEditor::onMidiNoteOff(const lmms::Note& note)
+{
+	if (!m_state.record || m_state.clip == nullptr) { return; }
+	// The key-up closes the note where the playhead is now: its length is what was played. A release
+	// with nothing open writes nothing (note.record_off's own rule).
+	run(QStringLiteral("note.record_off"),
+		{{QStringLiteral("clip"), clipId()}, {QStringLiteral("key"), note.key()},
+		 {QStringLiteral("step"), std::max(1, m_state.gridTicks)}});
+	emit stateChanged();
+}
+
+void NoteEditor::recordEnter(int key)
+{
+	if (!m_state.record || m_state.clip == nullptr || key < 0 || key >= NumKeys) { return; }
+	// No `position`: the command takes the playhead inside the clip, snapped down to the grid the
+	// header shows, so a take records where the transport is - the note itself exists from this edge.
+	const QJsonObject placed = run(QStringLiteral("note.record_on"),
+		{{QStringLiteral("clip"), clipId()}, {QStringLiteral("key"), key},
+		 {QStringLiteral("step"), std::max(1, m_state.gridTicks)},
+		 {QStringLiteral("velocity"), m_state.lastVelocity}});
+	if (placed.isEmpty()) { return; }  // refused, and run() has already shown why
+	updatePlayhead(true);
+	emit stateChanged();
+}
+
+void NoteEditor::followRecord()
+{
+	dropRecord();
+	if (!m_state.record || m_state.clip == nullptr) { return; }
+	InstrumentTrack* track = m_state.clip->instrumentTrack();
+	if (track == nullptr) { return; }
+	// Both edges queued for the same reason Step input queues its note-on: the emitter can be the MIDI
+	// input thread, and the commands that write the note run here, on the GUI thread. The note-on half
+	// reuses onMidiNoteOn, so a session has one MIDI path whichever mode is armed.
+	m_recordConnection = connect(track, &InstrumentTrack::midiNoteOn, this, &NoteEditor::onMidiNoteOn,
+		Qt::QueuedConnection);
+	m_recordOffConnection = connect(track, &InstrumentTrack::midiNoteOff, this, &NoteEditor::onMidiNoteOff,
+		Qt::QueuedConnection);
+}
+
+void NoteEditor::dropRecord()
+{
+	if (m_recordConnection) { disconnect(m_recordConnection); m_recordConnection = QMetaObject::Connection(); }
+	if (m_recordOffConnection) { disconnect(m_recordOffConnection); m_recordOffConnection = QMetaObject::Connection(); }
+}
+
+void NoteEditor::finishRecordTake()
+{
+	if (m_state.clip == nullptr) { return; }
+	const QString id = clipId();
+	if (!control::recordTakeOpen(id)) { return; }
+	// The take's end: what is still held stays (one step long) and the take's undo step is closed, so
+	// the next key starts a new one. A stop with nothing held still ends the take, silently.
+	run(QStringLiteral("note.record_end"), {{QStringLiteral("clip"), id}});
+	emit stateChanged();
+}
+
+void NoteEditor::setRecord(bool on)
+{
+	if (on == m_state.record)
+	{
+		emit stateChanged();  // the toggle follows the state even when nothing changed
+		return;
+	}
+	m_state.record = on;
+	if (on)
+	{
+		if (m_state.stepInput) { setStepInput(false); }  // the two entry modes are exclusive
+		// The transport's stop finalises the take in the command layer itself (note.record_on installs one
+		// Song::stopped listener, so an agent's take on the socket ends the same way); nothing to hook here.
+		followRecord();
+	}
+	else
+	{
+		finishRecordTake();
+		dropRecord();
+	}
+	emit stateChanged();
 }
 
 void NoteEditor::stepEnter(int key)
