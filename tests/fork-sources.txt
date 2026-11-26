@@ -4158,3 +4158,7 @@ tests/src/core/AudioSampleRecorderTest.cpp
 # frame with another's direction. This white-box regression compiles the plugin and drives the shipping note-start
 # path through the LMMS_TESTING note-start hook (fork-NEW test).
 tests/src/plugins/SamplerStutterContinuationTest.cpp
+# cluster ci-64efb7585b33898b (2026-11): Qt5/Clang portability of C++ test sources (ambiguous QAbstractSocket::bind with a SpecialAddress, QVERIFY_EXCEPTION_THROWN expression parsed as a declaration) - source scan plus clang compile probe (fork-NEW test).
+tests/qt5-clang-test-portability-check.py
+# cluster ci-64efb7585b33898b: report
+docs/qwen-fixes-2026-10/cluster-ci-64efb7585b33898b.md
