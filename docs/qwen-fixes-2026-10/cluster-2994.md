@@ -187,6 +187,9 @@ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktr
   still reports `open_starts`/`dropped`/`landable_pairs` from the same pairing and is read-only;
   `stop_all`, `set_grid`, `set_slot` are untouched. Only `arrangement_record_land`'s internal gate
   and its reply entries changed.
+- **ALREADY-FIXED / FALSE-POSITIVE evidence: not applicable.** The verdict is FIXED; the finding
+  reproduced on this tree (`test-1-red.log` EXIT=8, `test-4-red-reverted.log` EXIT=8), so there is
+  no claim to support with a code reference.
 - **Known limitation, stated rather than hidden.** The command's `description` still says
   "REFUSED ... while any recorded start is still open". That text lives in
   `commands_snapshot.json:29607`, so changing it would move the ControlCommandsSnapshot canary for a
