@@ -126,7 +126,8 @@ Prerequisites confirmed to exist before editing: `Rack` with `addChain` / `clear
 | 12 | `cd build/tests && ctest -R Rack -E ZeneRackTest --output-on-failure > $L/test-6-rack-family.log 2>&1` | 8 — the un-built `*Rack*` binaries report "Not Run", and `ControlDrumRackPads` / `ControlDrumRackChains` fail with `build lists no loadable audiofileprocessor module`; see Other findings |
 | 13 | `python3 …/feature_check.py <worktree> > $L/gate-1-feature-check.log 2>&1` | 0 — `RESULT: PASS`, 8/8 PASS (`fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`, `no-tautology`, `doc-figures`, `complexity` "no new item in your files", `file-length` "no new item in your files") |
 | 14 | `python3 …/submit_check.py <worktree> new-p19-5 > $L/check-1-submit.log 2>&1` (before the commit) | 1 — the expected "nothing committed / report missing" rows |
-| 15 | `python3 …/submit_check.py <worktree> new-p19-5 > $L/check-2-submit.log 2>&1` (after the commit) | see below |
+| 15 | `python3 …/feature_check.py <worktree> > $L/gate-2-feature-check.log 2>&1` (on the committed tree) | 0 — `RESULT: PASS`, 8/8 PASS |
+| 16 | `python3 …/submit_check.py <worktree> new-p19-5 > $L/check-2-submit.log 2>&1` (on the committed tree) | 0 — `RESULT: PASS - submit`, 5/5 PASS, no FAIL left |
 
 Log folder: `/home/kruzzzzy/.config/kads/zene/state/runs/new-p19-5.r1/logs`.
 
