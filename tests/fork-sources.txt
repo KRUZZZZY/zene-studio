@@ -4141,3 +4141,6 @@ docs/qwen-fixes-2026-10/cluster-ci-d3e29f18fa53a626-port.md
 # test-only sandbox/worker stubs (fork-NEW test).
 tests/src/wasm/WasmOfflineRenderLimitStubs.cpp
 tests/src/wasm/WasmOfflineRenderLimitTest.cpp
+# cluster new-p10-505: the wide, checked frame total AudioSampleRecorder::createSampleBuffer()
+# sizes its destination with, and its INT_MAX / SIZE_MAX boundaries (fork-NEW test).
+tests/src/core/AudioSampleRecorderTest.cpp
