@@ -2,101 +2,104 @@ FIXED
 
 # cluster new-p11-64: authored patcher wiring is not saved with the chain
 
-The finding is **REAL** and is now **FIXED**. `EffectChain::saveSettings` writes an authored wiring as a
-`<patchwiring>` child of `<fxchain>`, and `loadSettings` restores it (or the derived wiring when the
-element is absent) before the graph rebuild that applies it.
+The finding is **REAL** and is now **FIXED**. `EffectChain::saveSettings` writes an authored wiring
+as a `<patchwiring>` child of `<fxchain>`, and `loadSettings` restores it (or the derived wiring when
+the element is absent) before the graph rebuild that applies it.
 
-History: an earlier session wrote the fix and the test and saw the test RED, but the host disk was
-full and it could not build (commit 7c85ff576f, verdict BLOCKED). This session the disk had 145G
-free (`df -h .`), and the build, the GREEN run, the step-4b red/green proof and the gates all ran.
-I re-reviewed the committed diff before building it; the only change this session is the
-`tests/all-sources.txt` registration line and this report.
+History: the product fix and the regression test were committed earlier on this branch
+(`7c85ff576f`), but that session could not build (host disk full), so the GREEN half was unproven
+then. This session re-verified the whole chain of evidence: the test was seen RED with the product
+change reverted (EXIT 8) and GREEN with it (EXIT 0), the family and wider save/load tests pass, and
+the gates pass. The one product change made this session is the header comment in
+`include/PatchWiring.h` that still claimed the opposite of the implemented behaviour (see below).
 
 ## Evidence that the bug is real (read this session)
 
-- `src/core/EffectChain.cpp:158-187` (`EffectChain::saveSettings`) writes `enabled`,
-  `numofeffects` and one `<effect>` per device. It never writes `m_patch`, the authored wiring
-  (`include/EffectChain.h:136` `patchWiring()`; `:138` `patchActive()` = `!m_patch.isEmpty()`).
-- `src/core/EffectChain.cpp:192-272` (`loadSettings`) never restores `m_patch` and never resets
-  it. `clear()` (`src/core/EffectChain.cpp:541-577`) resets `m_patchDropped` but not `m_patch`.
-  - A reload therefore loses an authored wiring.
-  - Loading XML into a chain that already has a wiring keeps the stale wiring.
-- No other serializer saves the wiring. The only writers of `m_patch` are `setPatchWiring` and
-  `rebuildRoutingGraph` (`src/core/EffectChainPatcher.cpp:168-174`, `:215-246`).
-- This was a documented gap, not an intended contract. `docs/PATCHER-GRAPH.md` §5 ("What is NOT
-  done") said: "The wiring is session state ... a patch does not survive a save/load".
-  - The GUI authors wiring: `src/gui/PatcherCanvas.cpp:258` and the "Wire the Chain..." menu at
-    `src/gui/shell/ShellCommandMenus.cpp:451`. So a user loses those edits when saving.
-  - It is not on the brief's by-design list. An fff search of AGENTS.md for `wiring` and `patcher`
-    found 0 matches.
+- The pre-fix `EffectChain::saveSettings` (`git show 7c85ff576f~1:src/core/EffectChain.cpp`,
+  function at `158`) ends after the `<effect>` loop: it writes `enabled` and `numofeffects` and the
+  devices, and never writes `m_patch`, the authored wiring (`include/EffectChain.h:136`
+  `patchWiring()`, `:138` `patchActive()`).
+- The pre-fix `loadSettings` (same revision, tail at `258`) never restores `m_patch` and never resets
+  it, and `clear()` (`src/core/EffectChain.cpp:543`, `m_patchDropped = false` at `:565`) does not
+  reset `m_patch` either. A reload therefore loses an authored wiring, and loading XML into a chain
+  that already has one keeps the stale wiring.
+- This was a documented gap, not an intended contract: `docs/PATCHER-GRAPH.md` §5 ("What is NOT
+  done") said "The wiring is session state ... a patch does not survive a save/load"; §5 now
+  documents the element. `include/PatchWiring.h` carried the same stale claim, which this session
+  corrected (see "The fix").
+- The GUI authors wiring through the same command (`src/gui/PatcherCanvas.cpp`, the "Wire the
+  Chain..." menu in `src/gui/shell/ShellCommandMenus.cpp`), so the loss was reachable by a user.
+- Not on the brief's by-design list; an fff search of `AGENTS.md` for `wiring` / `patcher` found no
+  entry.
+- Proof by execution: with the product change reverted the regression test fails on exactly the two
+  persistence cases (`38-test-red.log`, EXIT 8), which cannot happen if the pre-fix code persisted
+  the wiring.
 
 ## The fix
 
-- **`include/PatchWiring.h`, `src/core/PatchWiring.cpp`:**
-  - `PatchWiring::saveXml()` writes
-    `<patchwiring output="effect:N"><edge from=".." fromport=".." to=".." toport=".."/>..</patchwiring>`.
-    An empty (derived) wiring writes nothing, so a chain that is not patched saves exactly as before.
-  - `PatchWiring::loadXml()` reads that element.
-    - No element (every older file): the wiring is derived.
-    - A malformed element: the wiring is derived and the call returns false.
-- **`src/core/EffectChain.cpp`:**
-  - `saveSettings` calls `m_patch.saveXml()` after the effects.
-  - `loadSettings` calls `loadPatchWiring(_this)` before the `rebuildRoutingGraph()` that applies
-    it. That rebuild still drops a wiring the loaded effects cannot take, and sets `patchDropped()`,
-    as it did before.
-  - This runs on the control thread, inside the model-change guard that is already held. The audio
-    thread gets no new work.
-- **`include/EffectChain.h`, `src/core/EffectChainPatcher.cpp`:** the new private
+- **`include/PatchWiring.h`, `src/core/PatchWiring.cpp`:** `PatchWiring::saveXml`
+  (`src/core/PatchWiring.cpp:257`) writes
+  `<patchwiring output="effect:N"><edge from=".." fromport=".." to=".." toport=".."/>..</patchwiring>`.
+  An empty (derived) wiring writes nothing, so a chain that is not patched saves exactly as before.
+  `PatchWiring::loadXml` (`:275`) reads that element: no element (every older file) means the
+  derivation; a malformed element means the derivation and returns false.
+- **`src/core/EffectChain.cpp`:** `saveSettings` calls `m_patch.saveXml()` after the effects
+  (`:187`); `loadSettings` calls `loadPatchWiring(_this)` before `rebuildRoutingGraph()` (`:269`).
+  That rebuild still drops a wiring the loaded effects cannot take, and sets `patchDropped()`, as
+  before.
+- **`include/EffectChain.h:237`, `src/core/EffectChainPatcher.cpp:249`:** the private
   `EffectChain::loadPatchWiring()` reports a malformed element through `Song::collectError`.
-- **Docs and row text:** `src/core/ControlReversibilityTableRouting.cpp` (the reason text of the
-  `patcher.set_wiring` row) and `docs/PATCHER-GRAPH.md` §5 are updated to match. The row stays
-  `snapshot`, and no control command is added.
-- **Registration:**
-  - `tests/fork-sources.txt` lists the new test file.
-  - `tests/upstream-modifications.txt` has reasons for `include/EffectChain.h` and
-    `src/core/EffectChain.cpp`.
-  - `tests/CMakeLists.txt` registers `PatcherWiringPersistenceTest`.
-  - `tests/all-sources.txt` lists the new test file (added this session; the `fork-sources` and
-    `all-sources-reproduce` gates failed without it, log `30-feature-check.log`).
+- **This session's product change:** `include/PatchWiring.h` (the file's opening comment) still
+  said "no `<routinggraph>` element is written into `<fxchain>`, so a patch does not survive a
+  save/load", which is the behaviour this fix removes. The bullet is replaced by a paragraph that
+  states an authored wiring is written as `<patchwiring>` and restored by `loadSettings()`, while a
+  derived wiring writes nothing. Comment only; no behaviour change.
+- **Docs and row text:** `docs/PATCHER-GRAPH.md` §5 and the reason text of the
+  `patcher.set_wiring` row (`src/core/ControlReversibilityTableRouting.cpp:219`) say the chain's
+  `<fxchain>` form now saves an authored wiring. The row stays `snapshot`, and no control command
+  was added.
+- **Registration:** `tests/fork-sources.txt` and `tests/all-sources.txt` list the new test file;
+  `tests/upstream-modifications.txt` gives reasons for `include/EffectChain.h` and
+  `src/core/EffectChain.cpp`; `tests/CMakeLists.txt` registers `PatcherWiringPersistenceTest`.
 
 ## Regression test
 
 `tests/src/core/PatcherWiringPersistenceTest.cpp` has four cases:
 
-1. `authoredWiringSurvivesSaveAndLoad`
-2. `loadingXmlWithoutWiringRestoresDerivation`
-3. `derivedChainSavesNoWiringElement` (guards the old format)
-4. `malformedWiringFallsBackToDerivation`
+1. `authoredWiringSurvivesSaveAndLoad` (`:159`) - a non-linear wiring (input -> effect:1 ->
+   effect:0) is saved, loaded into a fresh chain and compared edge for edge; the chain still routes
+   through its graph and nothing was dropped.
+2. `loadingXmlWithoutWiringRestoresDerivation` (`:182`) - loading XML without `<patchwiring>` over
+   a chain that had an authored wiring puts it back on the derivation (the stale-wiring path).
+3. `derivedChainSavesNoWiringElement` (`:201`) - a derived chain writes no child, so old projects
+   keep their format.
+4. `malformedWiringFallsBackToDerivation` (`:213`) - a malformed `<patchwiring>` loads without
+   crashing and leaves the chain on its derivation.
 
 ### Commands and EXIT codes
 
-All logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p11-64.r1/logs`. The test runs were
-made from `build/tests`.
-
-Earlier session (logs 00-19): the RED run before the fix was `ctest -R PatcherWiringPersistenceTest`
-(`02-test-red.log`), EXIT 8. Every GREEN build attempt failed with ENOSPC/SIGBUS (logs 03-17).
-
-This session:
+All logs are in `/home/kruzzzzy/.config/kads/zene/state/runs/new-p11-64.r1/logs`. Test runs were
+made from `build/tests`; builds with `-j4`.
 
 | Step | Command (log) | EXIT | Result |
 |---|---|---|---|
-| GREEN build | `cmake --build build --target zene PatcherWiringPersistenceTest -j4` (`20-build-green.log`) | 0 | |
-| GREEN test | `ctest -R PatcherWiringPersistenceTest --output-on-failure` (`21-test-green.log`) | 0 | 100% passed out of 1 |
-| 4b patch | `git diff HEAD~1 HEAD -- include/EffectChain.h include/PatchWiring.h src/core/EffectChain.cpp src/core/EffectChainPatcher.cpp src/core/PatchWiring.cpp src/core/ControlReversibilityTableRouting.cpp > logs/fix.patch` | 0 | The fix was already committed, so the patch was taken from HEAD~1..HEAD (product files only, no tests). |
-| 4b revert | `git apply -R logs/fix.patch` | 0 | |
-| 4b RED build | `cmake --build build --target zene PatcherWiringPersistenceTest -j4` (`23-build-red.log`) | 0 | |
-| 4b RED test | `ctest -R PatcherWiringPersistenceTest --output-on-failure` (`24-test-red.log`) | 8 | `FAIL! authoredWiringSurvivesSaveAndLoad() 'loaded.patchActive()' returned FALSE`; `FAIL! loadingXmlWithoutWiringRestoresDerivation() '!chain.patchActive()' returned FALSE`; 4 passed, 2 failed |
-| 4b reapply | `git apply logs/fix.patch` | 0 | `git status --short` was empty afterwards |
-| 4b GREEN build | same build (`25-build-green2.log`) | 0 | |
-| 4b GREEN test | `ctest -R PatcherWiringPersistenceTest --output-on-failure` (`26-test-green2.log`) | 0 | 100% passed out of 1 |
-| Family build | `cmake --build build --target zene ControlArmReversibilityTest ReversibilityContractTest ReversibilityUndoTest ReversibilityUndoDeviceTest PatcherCommandsTest PatcherWiringPersistenceTest PatcherCanvasTest -j4` (`28-build-family.log`) | 0 | |
-| Family test | `ctest -R 'ControlArmReversibilityTest\|ReversibilityContractTest\|ReversibilityUndoTest\|ReversibilityUndoDeviceTest\|PatcherCommandsTest\|PatcherWiringPersistenceTest\|PatcherCanvasTest\|ControlReversibilityTranscript\|ControlCommandsSnapshot' --output-on-failure` (`29-test-family.log`) | 0 | 100% passed out of 9; this includes the ControlCommandsSnapshot canary |
-| Wider build | `cmake --build build --target <23 matching targets> -j4` (`32-build-wide.log`) | 0 | |
-| Wider test | `ctest -R 'RoutingGraph\|MissingDevices\|Rack\|MixerRoutingBackwardCompat\|StableTrackIds\|ClipEffects\|MixerStrip\|EffectChain\|ProjectRoundTrip\|SaveLoad' --output-on-failure` (`33-test-wide.log`) | 0 | 100% passed out of 25 |
-| Gates (1st) | `python3 .../qwen/feature_check.py <worktree>` (`30-feature-check.log`) | 1 | fork-sources and all-sources-reproduce FAIL: `tests/all-sources.txt` was missing the new test |
-| Gates (final) | same command, after adding the line (`31-feature-check.log`) | 0 | every row PASS, `RESULT: PASS` |
+| GREEN build | `cmake --build build --target zene PatcherWiringPersistenceTest -j4` (`35-build-green.log`) | 0 | |
+| GREEN test | `ctest -R PatcherWiringPersistenceTest --output-on-failure` (`36-test-green.log`) | 0 | 100% passed out of 1 |
+| 4b patch | `git diff 7c85ff576f~1 -- include/EffectChain.h include/PatchWiring.h src/core/EffectChain.cpp src/core/EffectChainPatcher.cpp src/core/PatchWiring.cpp src/core/ControlReversibilityTableRouting.cpp > logs/fix.patch` | 0 | 242 lines, 6 product files, no test files |
+| 4b revert | `git apply -R logs/fix.patch` | 0 | six product files reverted |
+| 4b RED build | `cmake --build build --target zene PatcherWiringPersistenceTest -j4` (`37-build-red.log`) | 0 | |
+| 4b RED test | `ctest -R PatcherWiringPersistenceTest --output-on-failure` (`38-test-red.log`) | 8 | `FAIL! authoredWiringSurvivesSaveAndLoad() 'loaded.patchActive()' returned FALSE`; `FAIL! loadingXmlWithoutWiringRestoresDerivation() '!chain.patchActive()' returned FALSE`; 4 passed, 2 failed |
+| 4b reapply | `git apply logs/fix.patch` | 0 | only the header comment left modified |
+| 4b GREEN build | `cmake --build build --target zene PatcherWiringPersistenceTest -j4` (`39-build-green2.log`) | 0 | |
+| 4b GREEN test | `ctest -R PatcherWiringPersistenceTest --output-on-failure` (`40-test-green2.log`) | 0 | 100% passed out of 1 |
+| Family build | `cmake --build build --target zene ControlArmReversibilityTest ReversibilityContractTest ReversibilityUndoTest ReversibilityUndoDeviceTest PatcherCommandsTest PatcherWiringPersistenceTest PatcherCanvasTest -j4` (`41-build-family.log`) | 0 | |
+| Family test | `ctest -R 'ControlArmReversibilityTest\|ReversibilityContractTest\|ReversibilityUndoTest\|ReversibilityUndoDeviceTest\|PatcherCommandsTest\|PatcherWiringPersistenceTest\|PatcherCanvasTest\|ControlReversibilityTranscript\|ControlCommandsSnapshot' --output-on-failure` (`42-test-family.log`) | 0 | 100% passed out of 9, including the ControlCommandsSnapshot canary |
+| Wider build | `cmake --build build --target zene MissingDevicesRound2Test ModulationLayerProjectRoundTripTest HybridTrackRoundTripTest RoutingGraphTest -j4` (`43-build-wide.log`) | 0 | |
+| Wider test | `ctest -R 'MissingDevicesRound2Test\|ModulationLayerProjectRoundTripTest\|HybridTrackRoundTripTest\|RoutingGraphTest' --output-on-failure` (`44-test-wide.log`) | 0 | 100% passed out of 4 |
+| Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`45-feature-check.log`) | 0 | every row PASS, `RESULT: PASS` |
+| Submit check (pre-commit) | `python3 .../qwen/submit_check.py <worktree> new-p11-64` (`46-submit-check-pre.log`) | 0 | only FAIL: `working tree clean - M include/PatchWiring.h` (the comment was not committed yet) |
 
-Final gate table (`31-feature-check.log`):
+Final gate table (`45-feature-check.log`):
 ```
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
@@ -111,55 +114,59 @@ RESULT: PASS
 
 ## Self-check
 
-- **Verdict evidence:** REAL rests on the code citations above. Before the fix, `saveSettings`
-  never wrote `m_patch` and `loadSettings` never restored or reset it. FIXED rests on logs 24
-  (EXIT 8 without the fix) and 26 (EXIT 0 with it).
-- **Regression test fails without the fix, passes with it:** yes. The two cases named in the 4b RED
-  row fail, and all four cases pass with the fix. The test is deterministic: no timing, sleeps or
-  threads. The dummy audio device is stopped in `initTestCase`.
-- **Cause and completeness:** the fix is at the chain's own serializer. That serializer is the only
-  `<fxchain>` writer and reader, and every chain owner (mixer channels, instrument tracks, clip
-  effects) goes through it. No other writer saves the wiring. `setPatchWiring` and the
-  `patcher.set_wiring` command (`src/core/ControlCommandsPatcherEdit.cpp:330-354`) always give a
-  non-empty wiring an output, so `loadXml`'s required `output` attribute cannot reject a wiring
-  the app saved.
-- **Old projects:** an `<fxchain>` without `<patchwiring>` loads as the derived wiring, as before.
-  A derived chain writes no new element (case 3, `derivedChainSavesNoWiringElement`). The
-  `<effect>` loop in `loadSettings` only reads `effect` elements, so the new child does not disturb
-  it. Older readers ignore the unknown element. The wider round-trip, missing-devices and
-  backward-compat tests pass (25/25).
-- **Audio thread:** nothing new runs there. The save and load code runs on the control thread, and
-  `loadSettings` already holds the model-change guard (`src/core/EffectChain.cpp:201`) across the
-  new call and the rebuild. Local TSan does not run here; this is reasoned from the design.
-- **Undo and commands:** no control command was added, and the ControlCommandsSnapshot canary
-  passes. The `patcher.set_wiring` row stays `snapshot`, with its inverse-command undo, and only
-  its reason text changed. The Reversibility tests pass.
-- **Sibling commands** (the completion check lists app.about ... arrangement.get_state): the only change in
-  `src/core/ControlReversibilityTableRouting.cpp` is the reason text of the `patcher.set_wiring` row,
-  at about line 219. Its class (`RC::Snapshot`), its flag and its undo text are unchanged. No other
-  row and no command handler changed, so the listed `app.*` and `arrangement.*` commands are not
-  affected. The ReversibilityContractTest and ControlReversibilityTranscript tests that read this
-  table pass (`29-test-family.log`).
-- **ALREADY-FIXED / FALSE-POSITIVE item:** not applicable; the verdict is FIXED.
-- **Header changed:** `include/EffectChain.h` (a private non-virtual declaration) and
-  `include/PatchWiring.h`. `zene` and every test target built this session were rebuilt
-  (logs 20, 25, 28, 32).
-- **Proof manifest:** `logs/proof.json`, with a `regression-test` artifact. No `src/gui` file
-  and no Song/Record/Undo/Transport/Take/AudioEngine file changed, so it needs no screenshot or
-  state-sequence.
-
-Delegation:
-- Earlier session: Sonnet wrote `PatcherWiringPersistenceTest` and its registration. Haiku made
-  the first (failed) GREEN build attempt.
-- This session: Haiku #1 ran the GREEN build and test and the whole step-4b red/green proof
-  (logs 20-26). Haiku #2 ran the Patcher/Reversibility/canary family and the first gate run
-  (logs 27-30). Haiku #3 ran the wider save/load/routing family (logs 31-33).
-- I reviewed the diff, made the one-line `tests/all-sources.txt` fix, reran the gates and wrote
-  the report and manifest. Sonnet and DeepSeek were not needed this session, because the
-  engineering was already written and only verification remained.
+- **The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
+  Yes: `git apply -R logs/fix.patch` EXIT 0, rebuild EXIT 0, `ctest` EXIT 8 (`38-test-red.log`,
+  two `FAIL!` lines quoted above); `git apply logs/fix.patch` EXIT 0, rebuild EXIT 0, `ctest`
+  EXIT 0 (`40-test-green2.log`). The patch holds only the six product files, not the test.
+- **Deterministic.** No timing, sleeps, threads or wall-clock values. The test builds chains and
+  hands them a fixed non-linear wiring (`reversedWiring()`), saves to a `QDomDocument` in memory and
+  loads that element back; the only engine setup is `Engine::init(true)` with the dummy device
+  stopped in `initTestCase()`, which the other chain tests in this tree do the same way.
+- **At the cause and complete.** The `<fxchain>` serializer is the only writer/reader of a chain:
+  `EffectChain::nodeName()` is `"fxchain"` (`include/EffectChain.h:73-75`), and a track, mixer
+  channel or rack chain reaches it through `saveState`/`restoreState`, while a clip's chain goes
+  through the same pair (`SampleClip::saveClipEffects`/`loadClipEffects`,
+  `src/core/SampleClipEffects.cpp:59-84`, which call `m_clipEffects->saveState`/`restoreState`).
+  No other code writes `m_patch` (`setPatchWiring` and `rebuildRoutingGraph`,
+  `src/core/EffectChainPatcher.cpp`). `loadSettings` calls `clear()` first, and `loadPatchWiring`
+  then replaces whatever wiring it kept - with the parsed one, or with the derivation when the
+  element is absent or malformed - before the rebuild. `patcher.set_wiring` always gives a non-empty
+  wiring an output, so `loadXml`'s required `output` attribute cannot reject a wiring the app
+  itself saved (round-trip case 1).
+- **No collateral damage.** An `<fxchain>` without `<patchwiring>` loads as the derived wiring, as
+  before; a derived chain writes no new element (case 3); a malformed element is reported and
+  falls back (case 4). The `<effect>` loop in `loadSettings` only reads `effect` elements, so the
+  new child does not disturb it (cases 1 and 2 load two effects each). No limit or check was added
+  that another caller must exceed. The adjacent save/load and routing tests pass: 4/4
+  (`44-test-wide.log`), and the patcher/reversibility family 9/9 (`42-test-family.log`).
+- **ALREADY-FIXED / FALSE-POSITIVE:** not applicable; the verdict is FIXED.
+- **Audio thread.** Nothing new runs there. Save and load run on the control thread;
+  `loadSettings` already holds `requestChangesGuard()` across `clear()` and both rebuilds
+  (`src/core/EffectChain.cpp:201`), and the new call sits inside that guard. The audio thread gets
+  no new work, allocation or lock. Local TSan does not run on this box, so this is reasoned from the
+  design and the guard, not measured.
+- **Undo and commands.** No control command was added and the `patcher.set_wiring` row stays
+  `snapshot` with its inverse-command undo; only its reason text changed. The ControlCommandsSnapshot
+  canary and the three Reversibility tests pass (`42-test-family.log`).
+- **Sibling commands in the changed command file.** The completion check lists `bus.create`,
+  `bus.list`, `bus.remove`, `feedback.disable`, `feedback.enable`, `feedback.get_state`,
+  `patcher.get_state`, `patcher.set_wiring`, `pdc.report`, `pdc.set_offset`, `port.get_state`,
+  `port.set_pin`, `port.set_pins`, `routing.get_state`, `routing.matrix`. The diff of
+  `src/core/ControlReversibilityTableRouting.cpp` in `fix.patch` is one hunk inside the
+  `patcher.set_wiring` row: four removed lines and four added lines of reason text. No row's class,
+  flag, undo text or handler changed, so `bus.*`, `feedback.*`, `pdc.*`, `port.*`, `routing.*` and
+  the read-only `patcher.get_state` are untouched; `patcher.set_wiring`'s class and undo are
+  unchanged too.
+- **Header changed:** `include/PatchWiring.h` (comment only) and `include/EffectChain.h` (the
+  private `loadPatchWiring` declaration, committed earlier). `zene` and every test target used here
+  were rebuilt from the final tree (`35`, `39`, `41`, `43` logs).
 
 ## Other findings
 
-- `EffectChain::clear()` (`src/core/EffectChain.cpp:541-577`) keeps `m_patch`. A chain that is
-  cleared and then refilled through `appendEffect` re-applies the old authored wiring, or drops it.
-  `loadSettings` no longer depends on this, but other `clear()` callers might. I left it unchanged.
+- `EffectChain::clear()` (`src/core/EffectChain.cpp:543-577`) resets `m_patchDropped` but not
+  `m_patch`. `loadSettings` is covered by `loadPatchWiring`, but a chain cleared for another reason
+  (a preset replacing the device list) keeps its authored wiring in memory; the next rebuild drops
+  it if it no longer fits, and the next save would now write it. This is pre-existing session-state
+  behaviour outside this finding (loss on save/reload), so it was not changed here.
+- `docs/ROUTING-GRAPH-LIVE.md` is still referenced from the `PatchWiring.h` header for a general
+  description of the re-wired session; no claim there contradicts the saved wiring.
