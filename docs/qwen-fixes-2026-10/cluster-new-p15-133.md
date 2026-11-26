@@ -6,7 +6,8 @@ The finding describes the instrument-lifetime hole that clusters 5186 / new-p12-
 this branch: the audio view's raw `Instrument*` is now covered by the SAME per-slot liveness token
 and writer drain as the parameter model, `InstrumentTrack` notifies before its instrument's derived
 destructor runs, and every instrument deletion goes through that one notifier. Both fix commits are
-ancestors of HEAD `3436a808b6`; no product change is needed or made in this unit.
+ancestors of the branch tip (`3436a808b6` was HEAD when the tests below ran; they remain ancestors
+of this report's commit); no product change is needed or made in this unit.
 
 The finding's line numbers are the pre-fix snapshot: `include/ModulationLayer.h:304` is
 `ModulationAudioView::Entry::instrument` at HEAD `:316`, and
