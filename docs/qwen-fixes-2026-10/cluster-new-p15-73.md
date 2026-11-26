@@ -196,7 +196,8 @@ EXIT 0, the same eight PASS rows (`logs/gates-4-verify.log`, per-gate logs in `l
 
 ## Self-check
 
-`submit_check.py` exit 0, no FAIL, five ASK items. Answers, each with the evidence this session saw:
+`submit_check.py` exit 0 (`logs/submit-check-4-verify.log`: `RESULT: PASS - submit`, five rows PASS,
+no FAIL), five ASK items. Answers, each with the evidence this session saw:
 
 1. **The regression FAILS with the product change reverted and PASSES with it.** The 4b pair is
    above: `git apply -R .../fix.patch` EXIT 0, rebuild EXIT 0 → ctest EXIT **8**
