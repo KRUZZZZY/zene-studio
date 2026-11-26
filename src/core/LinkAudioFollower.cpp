@@ -135,6 +135,24 @@ void LinkAudioFollower::pauseAttachWait() const
 	std::this_thread::yield();
 }
 
+void LinkAudioFollower::beginAppCommit()
+{
+	// Claim FIRST and wait after it, the order attach() uses: a period raises
+	// m_busy before it reads the claim (process), so once the flag is seen clear
+	// here no period is inside the session, and a period that starts after this
+	// store reads the claim and stays out of it until endAppCommit(). Both
+	// seq_cst: the claim store and the audio thread's claim load are the two sides
+	// of a Dekker pattern with the m_busy handshake, and only a total order over
+	// them makes "the claim was not seen, so the period raised m_busy first" hold.
+	m_appCommit.store(true, std::memory_order_seq_cst);
+	while (m_busy.load()) { pauseAttachWait(); }
+}
+
+void LinkAudioFollower::endAppCommit()
+{
+	m_appCommit.store(false, std::memory_order_seq_cst);
+}
+
 bool LinkAudioFollower::audioRunning(std::int64_t nowUs) const
 {
 	const std::int64_t last = m_lastPeriodUs.load(std::memory_order_relaxed);
@@ -160,6 +178,15 @@ LinkPeriod LinkAudioFollower::process(Song& song, bool rolling) noexcept
 	const BusyScope busy(m_busy);
 	AbletonLinkSession* session = m_session.load();
 	if (session == nullptr) { return disengaged(); }
+	// An application-thread commit holds the session (beginAppCommit): this period
+	// leaves it alone instead of capturing, changing and committing it at the same
+	// time (Link.hpp). One seq_cst load and a branch - the audio thread never waits
+	// for the control thread - and no follower state moves: the rate and play head
+	// of the last period still stand, so the block renders as usual.
+	if (m_appCommit.load(std::memory_order_seq_cst))
+	{
+		return m_wasEngaged ? LinkPeriod::Following : LinkPeriod::Off;
+	}
 	if (const LinkFollowerSeam* const seam = m_seam.load(std::memory_order_acquire))
 	{
 		if (seam->inPeriod != nullptr) { seam->inPeriod(seam->context); }

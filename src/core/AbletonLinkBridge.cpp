@@ -71,6 +71,21 @@ void applyFollowedTempo(Song* song, int bpm)
 	model.restoreJournallingState();
 }
 
+/*! Holds the audio thread out of the session for the length of an
+ *  application-thread commit (LinkAudioFollower::beginAppCommit), and lets it
+ *  back in whatever happens to the commit itself. */
+class AppCommitScope
+{
+public:
+	explicit AppCommitScope(LinkAudioFollower& follower) : m_follower(follower) { m_follower.beginAppCommit(); }
+	~AppCommitScope() { m_follower.endAppCommit(); }
+	AppCommitScope(const AppCommitScope&) = delete;
+	AppCommitScope& operator=(const AppCommitScope&) = delete;
+
+private:
+	LinkAudioFollower& m_follower;
+};
+
 } // namespace
 
 AbletonLinkBridge::AbletonLinkBridge() : m_session(std::make_unique<AbletonLinkSession>(120.0))
@@ -101,7 +116,9 @@ void AbletonLinkBridge::setEnabled(bool on)
 	}
 	// The audio thread is not engaged yet, so this application-thread commit
 	// cannot race an audio-thread one: joining brings the tempo this engine plays,
-	// and a session that is already running replaces it as Link decides.
+	// and a session that is already running replaces it as Link decides. It still
+	// goes through the one application-commit path, so every such commit is made
+	// with the audio thread held out of the session.
 	Song* song = Engine::getSong();
 	const double tempo = song != nullptr ? static_cast<double>(song->getTempo()) : 120.0;
 	if (song != nullptr && !m_transportEdges)
@@ -109,7 +126,7 @@ void AbletonLinkBridge::setEnabled(bool on)
 		m_transportEdges = QObject::connect(song, &Song::playbackStateChanged,
 			[] { LinkAudioFollower::instance().noteTransportEdge(); });
 	}
-	m_session->appSetTempo(tempo);
+	appCommitTempo(tempo);
 	m_appliedTempo = tempo;
 	m_sessionTempo = tempo;
 	m_tempoIsLocal = true;
@@ -197,8 +214,20 @@ void AbletonLinkBridge::commitTempo(double bpm)
 	LinkAudioFollower& follower = LinkAudioFollower::instance();
 	// Link's rule: while the audio thread runs, it is the one that modifies the
 	// session; the application-thread commit is for when it does not.
-	if (m_enabled && follower.audioRunning(m_session->clockMicros())) { follower.requestTempo(bpm); }
-	else { m_session->appSetTempo(bpm); }
+	if (m_enabled && follower.audioRunning(m_session->clockMicros())) { follower.requestTempo(bpm); return; }
+	appCommitTempo(bpm);
+}
+
+void AbletonLinkBridge::appCommitTempo(double bpm)
+{
+	// audioRunning() is a reading of the last period, not a lock: the audio thread
+	// can start one between that reading and this commit, and Link prescribes that
+	// the application-thread commit is for when the audio thread is not running
+	// (Link.hpp; include/AbletonLinkSession.h). So the commit is made while the
+	// follower holds the periods out of the session - and the audio thread never
+	// waits for it, it skips the session for that period.
+	const AppCommitScope claim(LinkAudioFollower::instance());
+	m_session->appSetTempo(bpm);
 }
 
 double AbletonLinkBridge::enginePhase(double quantum) const

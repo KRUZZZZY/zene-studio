@@ -19,6 +19,13 @@
  * may destroy it there. The test parks one period inside the follower through the
  * seam (LinkFollowerSeam) and lets attach()'s own wait loop release it.
  *
+ * The commit half: AbletonLinkBridge::commitTempo's application-thread commit
+ * (Link's appSetTempo, for when the audio thread is not running) takes the
+ * follower's application-commit claim, which waits for the period in flight and
+ * keeps the next one out of the session - so a point-in-time audioRunning()
+ * reading never lets an application commit and an audio-thread one overlap. The
+ * same parked period proves it: a commit without the claim returns into it.
+ *
  * Copyright (c) 2026 Zene Studio contributors
  *
  * This file is part of LMMS - https://lmms.io
@@ -44,12 +51,14 @@
 #include <atomic>
 #include <thread>
 
+#include "AbletonLinkBridge.h"
 #include "AbletonLinkSession.h"
 #include "AudioDevice.h"
 #include "AudioEngine.h"
 #include "Engine.h"
 #include "LinkAudioFollower.h"
 #include "LinkPhaseLock.h"
+#include "LinkSync.h"
 #include "Song.h"
 // The shared allocation probe (its operator new replaces the whole program's; naming it here is
 // what links it - tests/CMakeLists.txt) and the Link tests' allocationsDuring() helper over it.
@@ -75,11 +84,12 @@ PhaseLockInput at(double linkBeat, double zeneBeat, bool started = false)
 	return in;
 }
 
-/*! The follower's test seam handles for the attach() lifetime test: one period is
- *  parked inside the follower, holding its session, until attach()'s own wait
- *  loop - or, without that wait, the test - lets it go. Everything is a flag the
- *  two threads set and read, so the order of events is the test's, not the
- *  scheduler's: no sleeps and no clock. */
+/*! The follower's test seam handles for the lifetime and commit tests: one period
+ *  is parked inside the follower, holding its session, until the control thread's
+ *  own wait loop - attach()'s, or the application-commit claim's - or, without
+ *  that wait, the test itself lets it go. Everything is a flag the two threads set
+ *  and read, so the order of events is the test's, not the scheduler's: no sleeps
+ *  and no clock. */
 struct AttachGate
 {
 	std::atomic<bool> inPeriod{false};       //!< a period is holding the session
@@ -331,6 +341,133 @@ private slots:
 
 		QVERIFY2(periodStillRunning, "a re-attach of the same session waited for the period in flight");
 		QVERIFY2(!enteredTheWait, "a re-attach of the same session entered attach()'s wait loop");
+	}
+
+	/*! A local tempo change committed from the application thread must not land
+	 *  in the session while a period is inside it. `audioRunning()` is a reading
+	 *  of the last period, not a lock (Link.hpp: an application thread may modify
+	 *  the session only while the audio thread is not running, and committing from
+	 *  both "will potentially lead to unexpected behavior"), so the bridge takes
+	 *  the follower's application-commit claim, which waits for the period in
+	 *  flight before it calls appSetTempo().
+	 *
+	 *  The seam parks one period inside the follower holding the session - the
+	 *  audio thread starting while no period has reported yet, so audioRunning()
+	 *  reads "not running" - and only the claim's wait loop releases it. A bridge
+	 *  that commits on the strength of audioRunning() alone returns into the live
+	 *  period and the first assertion fails; no clock and no sleep decide this. */
+	void anApplicationTempoCommitWaitsForThePeriodInFlight()
+	{
+		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		Song* song = Engine::getSong();
+		bool periodStillRunning = true;
+		bool enteredTheWait = false;
+		{
+			AbletonLinkBridge bridge;   // publishes its session to the follower
+			LinkAudioFollower& follower = LinkAudioFollower::instance();
+			follower.setQuantum(4.0);
+			follower.setStartStopSync(false);
+			follower.setEngaged(true);
+
+			AttachGate gate;
+			LinkFollowerSeam seam;
+			seam.context = &gate;
+			seam.inPeriod = &parkInPeriod;
+			seam.attachWait = &releaseFromAttachWait;
+			follower.setTestSeam(&seam);
+
+			std::thread period([&] { followLinkSession(*song, true); });
+			gate.waitForPeriod();
+
+			bridge.declareTempo(133.5);   // the call under test
+			periodStillRunning = gate.inPeriod.load(std::memory_order_acquire);
+			enteredTheWait = gate.releasedByAttach.load(std::memory_order_acquire);
+			// A bridge that did not coordinate leaves the period parked; let it go
+			// so the thread joins and the failure is reported instead of a hang.
+			gate.release.store(true, std::memory_order_release);
+			period.join();
+
+			follower.setTestSeam(nullptr);
+			follower.setEngaged(false);
+			song->stop();
+		}
+		Engine::destroy();
+
+		QVERIFY2(!periodStillRunning,
+			"declareTempo() committed to the session from the application thread while the audio thread was inside it");
+		QVERIFY2(enteredTheWait, "declareTempo() did not wait for the period using the session");
+	}
+
+	/*! With no audio thread running there is nothing to coordinate with: the
+	 *  application-thread commit must reach the session at once, and at the exact
+	 *  tempo declared - the case the finding names (Link in use while the audio
+	 *  device is stopped). The claim must not turn that into a mailbox request
+	 *  that only a period would ever deliver. */
+	void anApplicationTempoCommitLandsWhileNoPeriodRuns()
+	{
+		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		Song* song = Engine::getSong();
+		double sessionTempo = 0.0;
+		int engineTempo = 0;
+		{
+			AbletonLinkBridge bridge;
+			bridge.declareTempo(133.5);
+			link::LinkSessionReport report;
+			bridge.fill(report);
+			sessionTempo = report.sessionTempo;
+			engineTempo = song->getTempo();
+			song->stop();
+		}
+		Engine::destroy();
+
+		// Link's session tempo comes back quantized to whole microseconds per beat
+		// (AbletonLinkBridge.cpp, sameSessionTempo): 133.5 is off by at most
+		// 133.5^2 * 0.5 / 60e6 = 0.00015 BPM, far inside this bound.
+		QVERIFY2(std::fabs(sessionTempo - 133.5) < 0.01,
+			qPrintable(QStringLiteral("the session tempo is %1, not the 133.5 declared")
+				.arg(sessionTempo, 0, 'f', 4)));
+		QCOMPARE(engineTempo, 134);
+	}
+
+	/*! The other side of the claim: while the application thread holds it, a period
+	 *  does not wait for the control thread (it never may) and does not touch the
+	 *  session either - it leaves the rate and play head of the last period where
+	 *  they are and moves no follower state, so the period that follows the commit
+	 *  carries on instead of re-locking. The period runs on its own thread and is
+	 *  joined, so there is no clock and no scheduler decision in the outcome. */
+	void anApplicationCommitKeepsTheNextPeriodOutOfTheSession()
+	{
+		Engine::init(true);
+		Engine::audioEngine()->audioDev()->stopProcessing();
+		Song* song = Engine::getSong();
+		AbletonLinkSession session(120.0);
+		LinkAudioFollower& follower = LinkAudioFollower::instance();
+		follower.attach(&session);
+		follower.setQuantum(4.0);
+		follower.setStartStopSync(false);
+		follower.setEngaged(true);
+		followLinkSession(*song, false);   // one ordinary engaged period
+
+		const LinkFollowerReading before = follower.reading();
+		follower.beginAppCommit();
+		std::thread period([&] { followLinkSession(*song, true); });
+		period.join();
+		const LinkFollowerReading claimed = follower.reading();
+		follower.endAppCommit();
+		followLinkSession(*song, false);
+		const LinkFollowerReading after = follower.reading();
+
+		follower.setEngaged(false);
+		follower.attach(nullptr);
+		song->stop();
+		Engine::destroy();
+
+		QCOMPARE(claimed.periods, before.periods);
+		QCOMPARE(claimed.lastHostTimeUs, before.lastHostTimeUs);
+		QVERIFY2(claimed.engaged, "the claim disengaged Link instead of skipping the session for one period");
+		QCOMPARE(after.periods, before.periods + 1);
 	}
 };
 

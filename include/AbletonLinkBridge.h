@@ -11,7 +11,11 @@
  *    seen as "the Song's tempo is not what this bridge last wrote or accepted"
  *    and committed to the session - through the audio thread's commit while it
  *    runs (Link's rule), through Link's application-thread commit only when no
- *    audio thread is running;
+ *    audio thread is running. Because that check is a reading of the last period
+ *    and not a lock, the application-thread commit is made under the follower's
+ *    application-commit claim (LinkAudioFollower::beginAppCommit): a period that
+ *    starts while it is held leaves the session alone, so the two commits cannot
+ *    overlap (Link.hpp, "will potentially lead to unexpected behavior");
  *  - a PEER's tempo is written to the Song with Song::setTempo - the call the
  *    tempo dial makes, so frames-per-tick, sounding notes, VST sync and the
  *    tempoChanged signal all follow - but with the tempo model's journalling
@@ -94,6 +98,8 @@ private:
 	void followSessionTempo(Song* song, const LinkTimelinePoint& point);
 	void followStartStop(Song* song, const LinkTimelinePoint& point);
 	void commitTempo(double bpm);
+	//! Link's application-thread commit, with the audio thread held out of the session.
+	void appCommitTempo(double bpm);
 	double enginePhase(double quantum) const;
 	void fillSession(link::LinkSessionReport& report) const;
 	void fillFollower(link::LinkSessionReport& report) const;

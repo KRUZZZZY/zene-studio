@@ -24,9 +24,11 @@
  * on this thread. LinkPhaseLockTest measures the allocation count.
  *
  * Every control-side setter is a relaxed or release atomic store: the UI thread
- * never waits on the audio thread, except in attach(), which waits for the
- * period in flight to let go of the session it replaces or withdraws before that
- * session may be destroyed.
+ * never waits on the audio thread, except in attach() and beginAppCommit(), which
+ * wait for the period in flight to let go of the session before the caller
+ * destroys or modifies it. The audio thread never waits on the UI thread: a
+ * period that finds the application-commit claim set leaves the session alone for
+ * that period.
  *
  * Copyright (c) 2026 Zene Studio contributors
  *
@@ -92,9 +94,10 @@ struct LinkFollowerReading
  *   - inPeriod:   audio thread, inside a period, after the session pointer is
  *                 loaded and while it is held (BusyScope). Lets a test keep one
  *                 period in flight at a point the test chooses.
- *   - attachWait: control thread, once per poll of attach()'s wait loop, in place
- *                 of the yield. Lets a test see that attach() waits and release
- *                 the period it is waiting for. */
+ *   - attachWait: control thread, once per poll of a control-thread wait loop
+ *                 (attach()'s or the application-commit claim's), in place of the
+ *                 yield. Lets a test see that the caller waits and release the
+ *                 period it is waiting for. */
 struct LinkFollowerSeam
 {
 	void (*inPeriod)(void* context) = nullptr;
@@ -131,6 +134,16 @@ public:
 	//! True when a period ran within the last 200 ms of \a nowUs (Link clock):
 	//! the audio thread is running, so session changes must go through it.
 	bool audioRunning(std::int64_t nowUs) const;
+	/*! The application thread is about to modify the session itself - Link's
+	 *  application-thread commit (AbletonLinkSession::appSetTempo), which Link
+	 *  prescribes for when the audio thread is NOT running. audioRunning() is a
+	 *  reading of the last period, not a lock, so a period can start in the moment
+	 *  between that reading and the commit; this claim makes the two exclusive:
+	 *  it returns once no period is inside the session, and every period that
+	 *  starts after it leaves the session alone until endAppCommit(). Control
+	 *  thread only; the pair does not nest. */
+	void beginAppCommit();
+	void endAppCommit();
 	LinkFollowerReading reading() const;
 
 	// ---- audio thread ------------------------------------------------------
@@ -161,6 +174,8 @@ private:
 
 	std::atomic<AbletonLinkSession*> m_session{nullptr};
 	std::atomic<bool> m_busy{false};
+	//! Held from beginAppCommit() to endAppCommit(): no period touches the session.
+	std::atomic<bool> m_appCommit{false};
 	//! Test seam (LinkFollowerSeam); read once per engaged period and per poll below.
 	std::atomic<const LinkFollowerSeam*> m_seam{nullptr};
 	std::atomic<bool> m_engaged{false};
