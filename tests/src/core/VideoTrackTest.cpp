@@ -46,6 +46,7 @@
 #if defined(Q_OS_UNIX)
 #include <csignal>
 #include <sys/resource.h>
+#include <unistd.h>
 #endif
 
 #include "ControlRegistry.h"
@@ -136,6 +137,16 @@ TaskState taskState(int id)
 		if (info.id == id) { return info.state; }
 	}
 	return TaskState::Failed;
+}
+
+//! Task @a id's status line in the task area (empty when it is not listed).
+QString taskStatus(int id)
+{
+	for (const TaskInfo& info : TaskCenter::instance().tasks())
+	{
+		if (info.id == id) { return info.status; }
+	}
+	return QString();
 }
 
 bool reddish(const QImage& image)
@@ -327,6 +338,12 @@ private:
 	}
 #endif
 
+	//! cluster new-p8-66: attach @a copy as the project's video and try to extract it over the path @a out spells. The
+	//! run must be refused for naming its own source - on the worker too, with 'background' - and the copy must keep
+	//! every byte and stay a readable video, with no track landed. @a copy is always a copy of the test clip, so a run
+	//! without the fix damages only that copy.
+	void refuseExtractionOverItsOwnSource(const QString& copy, const QString& out, bool background);
+
 private slots:
 	void initTestCase();
 
@@ -378,6 +395,13 @@ private slots:
 
 	//! A completed background decode releases its application shutdown callback.
 	void completedBackgroundExtractionDisconnectsItsShutdownHook();
+
+	//! cluster new-p8-66: 'out' naming the video being read is refused, whichever way the path is spelled - the same
+	//! path, a "./" segment, a symlink and a hard link - and on the background worker too.
+	void extractAudioRefusesItsOwnSource();
+	void extractAudioRefusesADotSegmentSpellingOfItsOwnSource();
+	void extractAudioRefusesASymlinkToItsOwnSource();
+	void extractAudioRefusesAHardLinkToItsOwnSource();
 
 	//! A background extraction cancelled from the task area adds nothing and leaves no WAV behind.
 	void aCancelledBackgroundExtractionAddsNothing();
