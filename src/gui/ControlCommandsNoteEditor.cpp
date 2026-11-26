@@ -98,8 +98,9 @@ void applyChoices(gui::NoteEditor* editor, const QJsonObject& args)
 	if (const int color = choice(args, "color_mode", kColors); color >= 0) { editor->setColorMode(static_cast<gui::NoteColor>(color)); }
 }
 
-//! The view's flags and numbers: grid, ghosts, keep-in-scale, the controller lane, the new note, the audio behind.
-void applyView(gui::NoteEditor* editor, const QJsonObject& args)
+//! The view's own flags and numbers: grid, ghosts, keep-in-scale, the controller lane, the new note, the
+//! audio behind.
+void applyDisplay(gui::NoteEditor* editor, const QJsonObject& args)
 {
 	if (args.contains(QStringLiteral("grid"))) { editor->setGridTicks(args.value(QStringLiteral("grid")).toInt()); }
 	if (args.contains(QStringLiteral("ghosts"))) { editor->setGhosts(args.value(QStringLiteral("ghosts")).toBool()); }
@@ -111,6 +112,11 @@ void applyView(gui::NoteEditor* editor, const QJsonObject& args)
 			args.value(QStringLiteral("new_velocity")).toInt(editor->state().lastVelocity));
 	}
 	if (args.contains(QStringLiteral("audio_behind"))) { editor->setAudioBehind(args.value(QStringLiteral("audio_behind")).toString()); }
+}
+
+//! The entry modes: Step input and its cursor, and Record.
+void applyEntryModes(gui::NoteEditor* editor, const QJsonObject& args)
+{
 	// Q050-211: arming puts the cursor at the playhead, so it comes first and an explicit
 	// `step_cursor` in the same call still wins.
 	if (args.contains(QStringLiteral("step_input"))) { editor->setStepInput(args.value(QStringLiteral("step_input")).toBool()); }
@@ -118,6 +124,13 @@ void applyView(gui::NoteEditor* editor, const QJsonObject& args)
 	// Q050-211: Record - what a MIDI keyboard plays is written as it is played (note.record_on / _off),
 	// one undo step per take. Exclusive with Step input, which the editor turns off when this goes on.
 	if (args.contains(QStringLiteral("record"))) { editor->setRecord(args.value(QStringLiteral("record")).toBool()); }
+}
+
+//! The view's flags and numbers, then the entry modes the header's buttons show.
+void applyView(gui::NoteEditor* editor, const QJsonObject& args)
+{
+	applyDisplay(editor, args);
+	applyEntryModes(editor, args);
 }
 
 //! The zoom: pixels per tick, then a fit to the clip or (FL's Z) to the selected notes.

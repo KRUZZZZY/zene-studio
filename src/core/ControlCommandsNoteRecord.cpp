@@ -161,6 +161,48 @@ QJsonArray heldJson(const QString& clipText)
 	return QJsonArray::fromStringList(held);
 }
 
+//! The note's `key`: one MIDI pitch, or a failure that names the range.
+bool readKey(const QJsonObject& args, int* pitch, ControlResult* error)
+{
+	const QJsonValue key = args.value(QStringLiteral("key"));
+	if (!key.isDouble() || key.toInt(-1) < 0 || key.toInt(-1) >= NumKeys)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("'key' is a MIDI pitch 0..%1").arg(NumKeys - 1));
+		return false;
+	}
+	*pitch = key.toInt();
+	return true;
+}
+
+//! The note's `velocity` (default: the velocity the editor draws with), inside the model's own range.
+bool readVelocity(const QJsonObject& args, int* velocity, ControlResult* error)
+{
+	*velocity = args.value(QStringLiteral("velocity")).toInt(DefaultVolume);
+	if (*velocity < MinVolume || *velocity > MaxVolume)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("velocity is %1..%2").arg(int{MinVolume}).arg(int{MaxVolume}));
+		return false;
+	}
+	return true;
+}
+
+//! Where the note starts: the `position` argument, or the playhead inside the clip snapped down to the
+//! step. False (with @a error) when the note would run past the song's limit.
+bool readStart(const QJsonObject& args, MidiClip* clip, int step, int* position, ControlResult* error)
+{
+	*position = args.contains(QStringLiteral("position"))
+		? args.value(QStringLiteral("position")).toInt(0) : recordHead(clip, step);
+	if (*position < 0 || *position + step > MaxTicks)
+	{
+		*error = ControlResult::failure(ControlErrorKind::InvalidArgs,
+			QStringLiteral("the note would end at %1, past the song limit of %2").arg(*position + step).arg(MaxTicks));
+		return false;
+	}
+	return true;
+}
+
 //! The note-on: one note where the playhead is, held until `note.record_off` closes it.
 ControlResult recordOn(const QJsonObject& args)
 {
@@ -170,32 +212,20 @@ ControlResult recordOn(const QJsonObject& args)
 	if (clip == nullptr) { return error; }
 	const QString clipText = clipId(ref.id);
 	int step = DefaultStepTicks;
-	if (!readStep(args, &step, &error)) { return error; }
-	const QJsonValue key = args.value(QStringLiteral("key"));
-	if (!key.isDouble() || key.toInt(-1) < 0 || key.toInt(-1) >= NumKeys)
+	int pitch = -1;
+	int velocity = DefaultVolume;
+	int position = 0;
+	if (!readStep(args, &step, &error) || !readKey(args, &pitch, &error)
+		|| !readVelocity(args, &velocity, &error))
 	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("'key' is a MIDI pitch 0..%1").arg(NumKeys - 1));
-	}
-	const int pitch = key.toInt();
-	const int velocity = args.value(QStringLiteral("velocity")).toInt(DefaultVolume);
-	if (velocity < MinVolume || velocity > MaxVolume)
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("velocity is %1..%2").arg(int{MinVolume}).arg(int{MaxVolume}));
+		return error;
 	}
 	if (!heldRecordNote(clipText, pitch).isEmpty())
 	{
 		return ControlResult::failure(ControlErrorKind::InvalidArgs,
 			QStringLiteral("key %1 is already held in this clip: close it with note.record_off first").arg(pitch));
 	}
-	const int position = args.contains(QStringLiteral("position"))
-		? args.value(QStringLiteral("position")).toInt(0) : recordHead(clip, step);
-	if (position < 0 || position + step > MaxTicks)
-	{
-		return ControlResult::failure(ControlErrorKind::InvalidArgs,
-			QStringLiteral("the note would end at %1, past the song limit of %2").arg(position + step).arg(MaxTicks));
-	}
+	if (!readStart(args, clip, step, &position, &error)) { return error; }
 
 	const bool first = !recordTakeOpen(clipText);
 	if (first)
