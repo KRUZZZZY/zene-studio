@@ -32,6 +32,15 @@
  *     finds. See docs/s7-logs/negative-control.md for the measured RED run
  *     with state planted under <track>.
  *
+ *  5  The refused section. The claim is ALL-OR-NOTHING (cluster 5390, BUG 16):
+ *     a section the walk answers false for applies NOTHING, so the element it
+ *     preserves verbatim as unclaimed (SPEC-ARCH-4 1.6.1) is the only lane
+ *     state in the re-save. A group naming a track the file does not contain
+ *     refuses the section even when the groups before it are valid, and a
+ *     loader that applied those on the way through would leave their lanes in
+ *     memory beside the preserved original - a half-load the next save writes
+ *     as two <z:lanes> sections.
+ *
  * The comping model's own invariants stay where they were, in
  * TakeLaneTest/TakeLaneCompTest; this file is the file-format layer only, so
  * those two needed no change beyond the element vocabulary ride-alongs their
@@ -237,6 +246,132 @@ private slots:
 		const QString round2Path = m_dir.filePath(QStringLiteral("lanes-round2.mmp"));
 		QVERIFY(song->saveProjectFile(round2Path, false));
 		QCOMPARE(readFileBytes(round2Path), round1);
+	}
+
+	//! Claim 5 (cluster 5390, BUG 16): a <z:lanes> section the walk REFUSES
+	//! applies nothing at all. Two valid groups, then a group naming a track the
+	//! file does not contain: the whole section answers false, so neither track
+	//! keeps a lane and the walk preserves the element verbatim as unclaimed -
+	//! which is why the re-save carries the ORIGINAL section, exactly one of it,
+	//! with the unknown track's group still inside. A loader that mutated while
+	//! it validated left the valid groups' lanes in the models, and the writer
+	//! then emitted them as a second <z:lanes> beside the preserved one.
+	void aRejectedLanesSectionAppliesNothing()
+	{
+		// A clean document first: the song is process-wide, and this fixture must
+		// not depend on what an earlier test left in it (the round-trip test's
+		// track carries lanes of its own, and every one of them writes a group).
+		const QString basePath = m_dir.filePath(QStringLiteral("lanes-reject-base.mmp"));
+		{
+			QFile file(basePath);
+			QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+			file.write(minimalLegacyProject().toUtf8());
+		}
+		loadProject(basePath);
+
+		QVector<SampleClip*> clipsA;
+		QVector<SampleClip*> clipsB;
+		SampleTrack* trackA = makeTakeTrack(m_dir.path(), 2, &clipsA);
+		QVERIFY2(trackA != nullptr, "the first fixture track was not created");
+		SampleTrack* trackB = makeTakeTrack(m_dir.path(), 2, &clipsB);
+		QVERIFY2(trackB != nullptr, "the second fixture track was not created");
+		const int idA = trackA->id();
+		const int idB = trackB->id();
+		QVERIFY2(idA != idB, "the two fixture tracks share an id");
+
+		TakeLaneModel& modelA = trackA->takeLanes();
+		QCOMPARE(modelA.addLane(QStringLiteral("a base")), 0);
+		QCOMPARE(modelA.addLane(QStringLiteral("a take 2")), 1);
+		QVERIFY(modelA.selectSegment(0, 64, 1));
+		clipsA[1]->setLaneIndex(1);
+		TakeLaneModel& modelB = trackB->takeLanes();
+		QCOMPARE(modelB.addLane(QStringLiteral("b base")), 0);
+
+		Song* song = Engine::getSong();
+		const QString goodPath = m_dir.filePath(QStringLiteral("lanes-two-tracks.mmp"));
+		QVERIFY(song->saveProjectFile(goodPath, false));
+		const QByteArray good = readFileBytes(goodPath);
+		QVERIFY(!good.isEmpty());
+		// The writer's own shape: one group per track that has lanes, two here.
+		QCOMPARE(good.count(QByteArrayLiteral("<z:tracklanes ")), 2);
+
+		// --- the refused document: the valid groups, then a group naming a
+		// track nothing in the file answers to (track ids are dense and small;
+		// 1000000 is no track's).
+		QByteArray planted = good;
+		const int closeAt = static_cast<int>(planted.lastIndexOf(QByteArrayLiteral("</z:lanes>")));
+		QVERIFY2(closeAt > 0, "the saved project carries no <z:lanes> section to plant into");
+		planted.insert(closeAt, QByteArrayLiteral("<z:tracklanes track=\"1000000\">"
+			"<z:lane id=\"1\" index=\"0\"/></z:tracklanes>"));
+		const QString plantedPath = m_dir.filePath(QStringLiteral("lanes-planted.mmp"));
+		{
+			QFile file(plantedPath);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QCOMPARE(file.write(planted), static_cast<qint64>(planted.size()));
+		}
+		loadProject(plantedPath);
+
+		// --- nothing was applied: not the groups before the bad one, not the
+		// bad one. Reset-on-absence (Track::loadTrack) left every model empty
+		// and the refused section must leave it that way.
+		SampleTrack* rejectedA = dynamic_cast<SampleTrack*>(song->findTrackById(idA));
+		QVERIFY2(rejectedA != nullptr, "track A did not survive the load");
+		SampleTrack* rejectedB = dynamic_cast<SampleTrack*>(song->findTrackById(idB));
+		QVERIFY2(rejectedB != nullptr, "track B did not survive the load");
+		QVERIFY2(rejectedA->takeLanes().laneCount() == 0,
+			qPrintable(QStringLiteral(
+				"the refused section applied track A's group before meeting the unknown "
+				"track: the model holds %1 lane(s), not 0")
+				.arg(rejectedA->takeLanes().laneCount())));
+		QCOMPARE(static_cast<int>(rejectedA->takeLanes().segments().size()), 0);
+		QVERIFY2(rejectedB->takeLanes().laneCount() == 0,
+			qPrintable(QStringLiteral(
+				"the refused section applied track B's group before meeting the unknown "
+				"track: the model holds %1 lane(s), not 0")
+				.arg(rejectedB->takeLanes().laneCount())));
+
+		// --- the section was preserved verbatim as unclaimed, and it is the
+		// ONLY lane state in the re-save: one <z:lanes>, still carrying the
+		// group that named the unknown track.
+		const QString resavedPath = m_dir.filePath(QStringLiteral("lanes-planted-resaved.mmp"));
+		QVERIFY(song->saveProjectFile(resavedPath, false));
+		const QByteArray resaved = readFileBytes(resavedPath);
+		QVERIFY(!resaved.isEmpty());
+		QDomDocument parsed;
+		QVERIFY(parsed.setContent(resaved));
+		const QDomNodeList sections = parsed.elementsByTagName(QStringLiteral("z:lanes"));
+		QVERIFY2(sections.length() == 1,
+			qPrintable(QStringLiteral(
+				"the re-save carries %1 <z:lanes> sections: the loader applied part of the "
+				"section it refused, so the writer emitted its own beside the preserved "
+				"original").arg(sections.length())));
+		int groups = 0;
+		QString lastTrackAttribute;
+		for (QDomNode node = sections.item(0).toElement().firstChild(); !node.isNull();
+			 node = node.nextSibling())
+		{
+			if (!node.isElement()
+				|| node.nodeName() != QStringLiteral("z:tracklanes")) { continue; }
+			++groups;
+			lastTrackAttribute = node.toElement().attribute(QStringLiteral("track"));
+		}
+		QVERIFY2(groups == 3,
+			qPrintable(QStringLiteral("the preserved section carries %1 group(s), not the 3 "
+				"the file had - it was re-written, not preserved").arg(groups)));
+		QCOMPARE(lastTrackAttribute, QStringLiteral("1000000"));
+
+		// --- control: the same document WITHOUT the planted group still loads
+		// both groups. Validate-then-apply must keep each group paired with the
+		// track that named it, so this is the normal path's half of the fix.
+		loadProject(goodPath);
+		SampleTrack* backA = dynamic_cast<SampleTrack*>(song->findTrackById(idA));
+		QVERIFY2(backA != nullptr, "track A did not survive the control load");
+		SampleTrack* backB = dynamic_cast<SampleTrack*>(song->findTrackById(idB));
+		QVERIFY2(backB != nullptr, "track B did not survive the control load");
+		QCOMPARE(backA->takeLanes().laneCount(), 2);
+		QCOMPARE(static_cast<int>(backA->takeLanes().segments().size()), 1);
+		QCOMPARE(backB->takeLanes().laneCount(), 1);
+		QCOMPARE(static_cast<int>(backB->takeLanes().segments().size()), 0);
 	}
 
 	//! Claim 3: none of this feature anywhere in the bytes of a project that
