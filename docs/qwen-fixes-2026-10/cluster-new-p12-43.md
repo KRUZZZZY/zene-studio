@@ -184,6 +184,7 @@ RESULT: PASS
 ```
 
 - `submit_check.py` first run (`logs/submit-check-1.log`) - EXIT=1 with one FAIL: `working tree clean - ?? Testing/`. `Testing/` was a ctest scratch directory (`Testing/Temporary/CTestCostData.txt`, `LastTest.log`) left at the worktree root by a test invocation, not a source file; `rm -rf Testing` removed it and `git status --porcelain` is empty.
+- after that, `python3 .../submit_check.py <worktree> new-p12-43 > logs/submit-check-3.log 2>&1` - **SUBMIT_CHECK_EXIT=0**, every check PASS (`commits on the branch`, `working tree clean`, `report`, `tests added or changed`, `new test files registered`, `gates`) and `RESULT: PASS - submit`.
 
 Code evidence re-read in this session at the current line numbers:
 
