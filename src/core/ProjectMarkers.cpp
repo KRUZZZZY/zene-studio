@@ -32,6 +32,7 @@
 #include <QSet>
 
 #include "Engine.h"
+#include "ProjectJournal.h"
 #include "Song.h"
 
 namespace lmms
@@ -39,6 +40,22 @@ namespace lmms
 
 namespace
 {
+
+//! The attribute an UNDO SNAPSHOT's <markers> carries for a session that dropped markers on load. Written only
+//! while a snapshot is built (ProjectJournal::snapshotIds) and read only while one is restored, so a project
+//! file never carries it - such a session's save is refused anyway - and one that claims it is not believed.
+const QString DroppedOnLoadAttribute = QStringLiteral("droppedOnLoad");
+
+//! The dropped count the snapshot being restored carries for its own session, clamped to [0, maxMarkers];
+//! 0 outside a snapshot restore, so a project file cannot make its session read-only.
+int carriedDroppedCount(const QDomElement& element, int maxMarkers)
+{
+	const Song* song = Engine::getSong();
+	if (song == nullptr || !song->isRestoringUndoSnapshot()) { return 0; }
+	bool ok = false;
+	const int carried = element.attribute(DroppedOnLoadAttribute).toInt(&ok);
+	return ok ? std::clamp(carried, 0, maxMarkers) : 0;
+}
 
 //! A <marker>'s id, or -1 when it has none a marker can carry (absent, unreadable or negative).
 int savedId(const QDomElement& element)
@@ -163,6 +180,11 @@ void ProjectMarkers::restore(const QVector<Marker>& markers)
 	sortAndNotify();
 }
 
+bool ProjectMarkers::shouldPersist() const
+{
+	return !m_markers.isEmpty() || (ProjectJournal::snapshotIds() && m_droppedOnLoad > 0);
+}
+
 QString ProjectMarkers::elementName() const
 {
 	return QStringLiteral("markers");
@@ -182,6 +204,8 @@ void ProjectMarkers::save(QDomDocument& doc, QDomElement& parent) const
 		if (!marker.args.isEmpty()) { element.setAttribute(QStringLiteral("args"), marker.args); }
 		list.appendChild(element);
 	}
+	// Inside an undo snapshot only: the restore of this document gives the session its own count back.
+	if (ProjectJournal::snapshotIds() && m_droppedOnLoad > 0) { list.setAttribute(DroppedOnLoadAttribute, m_droppedOnLoad); }
 	parent.appendChild(list);
 }
 
@@ -235,7 +259,9 @@ void ProjectMarkers::load(const QDomElement& element)
 	makeIdsUnique(loaded, MaxMarkers);
 	m_nextId = 1;
 	restore(loaded);
-	m_droppedOnLoad = dropped;
+	// A restored snapshot's session may have dropped markers when IT was loaded from its file; that loss was
+	// reported then, so the carried count only keeps the refusal and is not reported again.
+	m_droppedOnLoad = std::max(dropped, carriedDroppedCount(element, MaxMarkers));
 }
 
 void ProjectMarkers::clear()

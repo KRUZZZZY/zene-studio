@@ -464,13 +464,13 @@ private slots:
 
 	//! The refusal is a fact about THIS session - it came from a file holding
 	//! more markers than the cap - so an in-place restore of the session's own
-	//! document must not forget it. Every undo step that carries a snapshot
-	//! (UndoHistory, control.undo, a session checkpoint, project.new's rollback)
-	//! reloads exactly that document, and that snapshot holds the REDUCED list:
-	//! a plain load lifts the refusal, and the next save then writes the
-	//! 512-marker list over the file that still has the rest, in silence - the
-	//! loss this whole test file is about. Measured without the fix: the save
-	//! below succeeds after the restore.
+	//! document must not forget it. The snapshot holds the REDUCED list: a plain
+	//! load lifts the refusal, and the next save then writes the 512-marker list
+	//! over the file that still has the rest, in silence - the loss this whole
+	//! test file is about. The count must travel with the snapshot document,
+	//! because a restore may put back another session's document (a session
+	//! checkpoint restores the DISPLACED session), not the one being replaced.
+	//! Measured without the fix: the save below succeeds after the restore.
 	void anUndoRestoreDoesNotLiftTheOverCapSaveRefusal()
 	{
 		DataFile version(DataFile::Type::SongProject);

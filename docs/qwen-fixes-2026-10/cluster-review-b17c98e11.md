@@ -15,7 +15,7 @@ Commit b17c98e11 only added a `qWarning` in `ProjectMarkers::load` (src/core/Pro
 - `src/core/SongSections.cpp`: `ProjectSection::firstSaveRefusal()`.
 - `src/core/Song.cpp`: `saveProjectFile` returns false with that refusal as `saveRefusal()` (3 lines, after the partial-load check, before anything is written).
 - `include/ProjectMarkers.h` / `src/core/ProjectMarkers.cpp`: `load()` records how many markers it left out (`droppedOnLoad()`, reset by `clear()` and each `load()`), reports them through `Song::collectError` (so project.open's `errors` carries it), and `saveRefusal()` names the count and the cap. The original file is never written by the refused save.
-- A session loaded from a file that fits the cap, or cleared, saves exactly as before. No audio-thread code, no control commands, no undo changes. Undo/redo of markers (`restore`) does not touch the flag; `captureUndoSnapshot` uses `buildProjectDocument` and is not affected.
+- A session loaded from a file that fits the cap, or cleared, saves exactly as before. No audio-thread code, no control commands, no undo changes. Undo/redo of markers (`restore`) does not touch the flag. (Corrected in round 5: an undo SNAPSHOT is affected - `captureUndoSnapshot` builds the document the restore reloads, so since round 5 the snapshot carries the count itself; see "Round 5".)
 
 Behaviour note: a session that dropped markers cannot be saved (including autosave) until it is cleared or reopened from a file that fits; the refusal text says so.
 
@@ -42,7 +42,7 @@ None.
 ## Self-check
 - Red/green: with the five product files reverted (`git apply -R fix.patch`) the test fails, EXIT=8, at ProjectMarkersTest.cpp:381 (test-red.log); with the fix re-applied it passes, EXIT=0 (test-green2.log).
 - Deterministic: the test uses a fixed generated file (515 markers, ids/ticks computed from the loop index), a QTemporaryDir and direct `Song::loadProject` / `saveProjectFile` calls; no clock, sleep, thread or race.
-- Cause and completeness: the loss was in the load-then-save pair. Load now records and reports it (`collectError`, `droppedOnLoad`), and the one save entry point, `Song::saveProjectFile`, refuses. Every other writer (project.save, handoff, collab sync, render temp files) goes through `saveProjectFile` and already surfaces `saveRefusal()` (ControlCommandsProjectFiles.cpp:242, ControlCommandsProjectLifecycle.cpp:338, ControlCommandsHandoff.cpp:221, CollabSessionSync.cpp:176). `captureUndoSnapshot` uses `buildProjectDocument` directly (SongUndoSnapshot.cpp), so undo snapshots are unaffected. The other ProjectSection subclasses (SubprojectSection, AlternativesSection) inherit the empty default `saveRefusal()`.
+- Cause and completeness: the loss was in the load-then-save pair. Load now records and reports it (`collectError`, `droppedOnLoad`), and the one save entry point, `Song::saveProjectFile`, refuses. Every other writer (project.save, handoff, collab sync, render temp files) goes through `saveProjectFile` and already surfaces `saveRefusal()` (ControlCommandsProjectFiles.cpp:242, ControlCommandsProjectLifecycle.cpp:338, ControlCommandsHandoff.cpp:221, CollabSessionSync.cpp:176). (Round-1 claim, wrong: undo snapshots ARE affected, because `Song::restoreUndoSnapshot` reloads the snapshot through `ProjectMarkers::load`. Rounds 3-4 held the count across the restore; round 5 replaced that with a count carried inside the snapshot document - see "Round 5".) The other ProjectSection subclasses (SubprojectSection, AlternativesSection) inherit the empty default `saveRefusal()`.
 - Collateral: the cap is unchanged and files at or under 512 markers load and save byte-for-byte as before (refusal only when `m_droppedOnLoad > 0`; `clear()` and each `load()` reset it, so Song::clearProject / opening another project lifts it - covered by the test's final clear-and-save step; PartialLoadTest and ProjectSectionTest still pass). No other caller legitimately exceeds the cap: `add()` already returns -1 at MaxMarkers.
 - Not ALREADY-FIXED / FALSE-POSITIVE: verdict is FIXED (b17c98e11 only warned; shown by test-red.log).
 - Sibling commands (updated in round 3): 33495a1610 changed one command file, src/core/ControlCommandsProjectFiles.cpp, and added no control command. Its siblings: `project.save` (:195) now answers the section refusal before rotation; `project.restore_revision` (:340) writes a retained file's bytes over the live file, not the session in memory, so it cannot write the reduced marker list and needs no gate; `project.get_state` (:477) is read-only; `project.open` (:561) loads, and `ProjectMarkers::load` resets the dropped count, so it lifts the refusal. No app.* command or arrangement.* command (the other names the check lists) shares this code or writes the session, so they are not affected.
@@ -185,8 +185,85 @@ the restores. I wrote the two test asserts, made the patches, read the FAIL/Loc/
 test-3-redC, test-6-redB and test-7-green myself, and ran feature_check myself (one command). No Sonnet or DeepSeek:
 the only code this round was two test lines.
 
-## Other findings (round 4)
+## Other findings (round 4) - superseded
+The note below was wrong to call this safe: the round-4 review showed both directions fail (see "Round 5").
 - `Song::restoreUndoSnapshot`'s own comment names a caller that puts back "a checkpoint's displaced session", i.e.
   a document that may not be this session's. If such a caller restores a session that fits the cap over one that
   dropped markers, `holdDroppedOnLoad` would keep the refusal. That errs toward refusing a save, not toward losing
   data, and I did not trace the checkpoint callers to see whether it can happen (unverified).
+
+## Round 5 (the dropped-marker count travels with the undo snapshot)
+
+The round-4 review showed that the round-3 hold in `Song::restoreUndoSnapshot` (src/core/SongUndoSnapshot.cpp, read
+`droppedOnLoad()` before the load, `holdDroppedOnLoad()` after it) applied the count of the session being REPLACED to
+whatever document the restore put back. A session checkpoint (src/core/SessionCheckpoint.cpp:61) restores the
+DISPLACED session, so both directions were wrong:
+- an undo of an open of a 515-marker project left the fitting session read-only (refused save and autosave);
+- restoring the over-cap session's snapshot over a fitting session lifted the refusal, so the 512-marker list could be
+  written over the file that holds 515. That is the silent loss this unit exists to remove.
+The comment there claiming "every caller restores this same session's own document" was false.
+
+Fix (the checkpoint's design): the count belongs to the document, so the snapshot carries it.
+- `ProjectMarkers::save` (src/core/ProjectMarkers.cpp:207-208): only while an undo snapshot is built
+  (`ProjectJournal::snapshotIds()`) and `m_droppedOnLoad > 0`, it writes `droppedOnLoad="N"` on `<markers>`.
+- `ProjectMarkers::shouldPersist` (:183-186, moved out of the header): `!m_markers.isEmpty() || (snapshotIds() && m_droppedOnLoad > 0)`,
+  so a snapshot of an over-cap session whose markers were all deleted still carries the count.
+- `ProjectMarkers::load` (:264) sets `m_droppedOnLoad = max(computed dropped, carriedDroppedCount(element))`. `carriedDroppedCount`
+  (:51-58) reads the attribute only while `Song::isRestoringUndoSnapshot()`, clamped to [0, MaxMarkers]. Outside a restore it is 0,
+  so a project file that claims the attribute is not believed. A carried count is not reported through `collectError`
+  again. A snapshot with no `<markers>` keeps the 0 that `clear()` set.
+- `ProjectMarkers::holdDroppedOnLoad` is deleted (include/ProjectMarkers.h) and the SongUndoSnapshot.cpp hunk of 46c76ba160
+  is reverted entirely, including the false comment.
+- SessionCheckpoint, ControlCommandsDocuments and UndoHistory are untouched: every restore caller gets the count of the
+  document it restores. The cap, the load warning, the `errors()` report, the `saveRefusal()` text and the project.save
+  pre-rotation gate are unchanged. A real saved file can never carry the attribute: it is only written while a snapshot
+  is built, and a session with a count > 0 cannot save. No audio-thread code, no new control command, no undo-step change.
+
+Regression tests: new file `tests/src/core/ProjectMarkersSnapshotTest.cpp`, registered in tests/CMakeLists.txt,
+tests/all-sources.txt and tests/fork-sources.txt. It is a separate file because four more slots took
+ProjectMarkersTest.cpp over the file-length gate (gates-7.log: `FAIL file-length NEW: new file over 500 lines:
+tests/src/core/ProjectMarkersTest.cpp (553)`).
+- `anUndoOfAnOverCapOpenLeavesTheFittingSessionSavable`: fitting session snapshot -> load 515-marker file -> 3-arg
+  `restoreUndoSnapshot(displaced, "b.mmp", {})` -> 1 marker, `droppedOnLoad()==0`, `saveProjectFile` succeeds, empty refusal.
+- `restoringAnOverCapSnapshotOverAFittingSessionKeepsTheRefusal`: over-cap snapshot -> clear + fitting session (saves) ->
+  restore over-cap snapshot -> 512 markers, `droppedOnLoad()==3`, save to a new path and over the original both refused,
+  original bytes identical.
+- `anOverCapSessionEmptiedOfMarkersKeepsTheRefusalThroughASnapshot`: over-cap session with every marker deleted ->
+  snapshot -> fitting session -> restore -> 0 markers, `droppedOnLoad()==3`, save over the original refused, bytes identical.
+- `aSavedFileCannotClaimMarkersItDidNotDrop` (collateral guard): a project file with `<markers droppedOnLoad="3">` and one
+  marker loads with `droppedOnLoad()==0` and saves.
+ProjectMarkersTest.cpp changes only in the doc comment of `anUndoRestoreDoesNotLiftTheOverCapSaveRefusal`, which repeated the
+same false claim. That slot's code is unchanged, and it now passes through the carried count.
+
+Commands (`$L` = /home/kruzzzzy/.config/kads/zene/state/runs/review-b17c98e11.r5/logs; B = `cmake --build build -j4 --target zene ProjectMarkersTest ProjectMarkersSnapshotTest PartialLoadTest ProjectSectionTest`; T = `cd build/tests && ctest -R '^(ProjectMarkersTest|ProjectMarkersSnapshotTest|PartialLoadTest|ProjectSectionTest)$' --output-on-failure`):
+- RED before any product change (slots then still in ProjectMarkersTest.cpp): `cmake --build build -j4 --target zene ProjectMarkersTest > $L/build-1-red.log` EXIT=0; `ctest -R '^ProjectMarkersTest$' > $L/test-1-red.log` **EXIT=8**, slots A/B/C fail (`droppedOnLoad() == 0` / `== 3` returned FALSE), `Totals: 16 passed, 3 failed`; D passed.
+- Patches: `git apply -R --index $L/hold-46c76.patch` (46c76ba160's product hunks) EXIT=0 -> `git diff --cached -- include/ProjectMarkers.h src/core/SongUndoSnapshot.cpp > $L/patchA-hold-removal.patch`; the carrier `git diff -- include/ProjectMarkers.h src/core/ProjectMarkers.cpp > $L/patchB-carrier.patch`; the whole round `git diff HEAD -- include/ProjectMarkers.h src/core/ProjectMarkers.cpp src/core/SongUndoSnapshot.cpp > $L/fix.patch`; `git apply -R --check` EXIT=0 for all three.
+- First green and per-hunk REDs (slots in ProjectMarkersTest.cpp): test-2-green EXIT=0 3/3; test-3-redA EXIT=8 (A at :571); test-4-redB EXIT=8 (:531, :610, :653); test-5-redFull EXIT=8 (:571, :610, :653); wider family `ctest -R '^(ProjectMarkersTest|PartialLoadTest|ProjectSectionTest|SessionCheckpointTest|SessionCheckpointBudgetTest|UndoHistoryPersistenceTest|UndoHistoryOptionsTest|ProjectContainerSaveTest)$'` > test-6-green.log **EXIT=0, "100% tests passed out of 8"**.
+- Gates on that layout: gates-7.log EXIT=1, file-length FAIL (above). The four slots moved to the new file; `cmake build` (configure) is refused in this lane (`configure-9.log` EXIT=97, `bunny-guard: configuring is the parent's job`), so `cmake --build build -j4 --target zene ProjectMarkersTest PartialLoadTest ProjectSectionTest > $L/build-10.log` EXIT=0 regenerated the build files itself ("-- Generating done"); `--target ProjectMarkersSnapshotTest > $L/build-11.log` EXIT=0; T > test-11.log EXIT=0, "100% tests passed out of 4".
+- Final per-hunk proof on the committed layout:
+  - RED-A, only the hold removal reverted (`git apply -R $L/patchA-hold-removal.patch` EXIT=0): B > build-12-redA.log EXIT=0; T > test-12-redA.log **EXIT=8**, `ProjectMarkersSnapshotTest::anUndoOfAnOverCapOpenLeavesTheFittingSessionSavable() 'ProjectMarkers::instance().droppedOnLoad() == 0' returned FALSE. (the restored fitting document inherited a dropped count of 3 from the replaced session)` Loc `ProjectMarkersSnapshotTest.cpp(116)`, `Totals: 5 passed, 1 failed`; restored with `git apply` EXIT=0.
+  - RED-B, only the carrier reverted (`git apply -R $L/patchB-carrier.patch` EXIT=0): B > build-13-redB.log EXIT=0; T > test-13-redB.log **EXIT=8**, `restoringAnOverCapSnapshotOverAFittingSessionKeepsTheRefusal` at `ProjectMarkersSnapshotTest.cpp(155)`, `anOverCapSessionEmptiedOfMarkersKeepsTheRefusalThroughASnapshot` at `(198)`, and `ProjectMarkersTest::anUndoRestoreDoesNotLiftTheOverCapSaveRefusal` at `ProjectMarkersTest.cpp(509)`; restored EXIT=0.
+  - RED-full, the round-4 product code (`git apply -R $L/fix.patch` EXIT=0): B > build-14-redFull.log EXIT=0; T > test-14-redFull.log **EXIT=8**, A/B/C at `ProjectMarkersSnapshotTest.cpp(116)`, `(155)`, `(198)`, `Totals: 3 passed, 3 failed` (the two review probes reproduced); restored EXIT=0.
+  - GREEN: B > build-15-green.log EXIT=0; T > test-15-green.log **EXIT=0**, "100% tests passed out of 4".
+- Gates: gates-16.log EXIT=1, only fork-sources and all-sources-reproduce failed, because the new file was untracked and the recipe derives the lists from tracked files. After `git add` of the explicit paths: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > $L/gates-17.log 2>&1` **EXIT=0, RESULT: PASS** (all 8 rows PASS).
+
+Not run: the full ctest suite. The header change recompiles many targets, and I built only those named above. Local TSan is
+unavailable. The new code runs where snapshot capture and restore already run (they share the static
+`ProjectJournal::s_snapshotIds` flag), which is not the audio thread.
+
+Delegation (round 5): Sonnet wrote the four regression slots and ran the first RED (test-1-red), then moved them to
+ProjectMarkersSnapshotTest.cpp with its registrations (I fixed one CMake comment). Haiku ran every later build, ctest and
+per-hunk RED/restore (test-2..6, test-11, test-12..15) and the gates-16 run. I designed and wrote the product change
+(ProjectMarkers.h/.cpp, the SongUndoSnapshot.cpp revert), split the patches, read the FAIL/Loc/Totals lines myself, and ran
+gates-7 and gates-17. No DeepSeek use: the remaining jobs were each smaller than writing a request.
+
+## Self-check (round 5)
+- Red/green: see "Round 5". Each product hunk reverted alone is RED (EXIT=8 at ProjectMarkersSnapshotTest.cpp:116; at :155, :198 and ProjectMarkersTest.cpp:509), the whole round reverted is RED (EXIT=8, :116/:155/:198), and the restored tree is GREEN (EXIT=0, 4/4; 8/8 in the wider family).
+- Deterministic: fixed generated files (515 or 1 markers, ticks from the loop index) in a QTemporaryDir. Direct `captureUndoSnapshot` / `restoreUndoSnapshot` / `loadProject` / `saveProjectFile` calls; no clock, sleep or thread.
+- Cause and completeness: the count now lives in the document the restore reloads, so every caller of `Song::restoreUndoSnapshot` is consistent without its own code: UndoHistory, control.undo, the session checkpoint (`SessionCheckpoint.cpp:61`, pushed from `MainWindow.cpp:999` and `ControlCommandsProjectFiles.cpp:659`) and project.new's rollback. Siblings: `clear()` still zeroes the count (clearProject, opening another project). `restore()` (marker undo/redo) does not touch it. `shouldPersist`, `save` and `load` change together. The project.save pre-rotation gate and `Song::saveProjectFile` refusal are unchanged.
+- Collateral: the attribute is written only while `ProjectJournal::snapshotIds()` is set (only inside `captureUndoSnapshot`, SongUndoSnapshot.cpp:76-78) and believed only while `isRestoringUndoSnapshot()`. Ordinary files load exactly as before, and a file that claims the attribute is ignored (`aSavedFileCannotClaimMarkersItDidNotDrop`). Sessions without a dropped count write the same `<markers>` as before (no attribute, and `shouldPersist` unchanged when the count is 0). The cap is unchanged.
+- Not ALREADY-FIXED / FALSE-POSITIVE: the verdict is FIXED.
+
+## Other findings (round 5)
+- `dropped = total - offered` (src/core/ProjectMarkers.cpp, unchanged) can overstate the count named in the warning and refusal when markers past the cap have an unparseable tick. The refusal itself is never missed.
+- A `<marker>` nested deeper than `<markers>` is counted by `elementsByTagName` but never offered, so such a hand-malformed file makes the session read-only. I did not show that this matters.
