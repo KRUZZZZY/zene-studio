@@ -154,10 +154,22 @@ private slots:
 			QCOMPARE(overflow.mode(), AudioResampler::Mode::SincBest);
 		}
 
-		// Released slots come back in the mode the pool now holds: no stale
-		// metadata is handed to the next voice.
+		// Give one held slot back and take it again at once: with the other two
+		// still held, that released slot is the only free one, so the voice that
+		// claims it is claiming one of the released holders, in the pool's mode.
+		const std::size_t freeWithHeld = AudioResampler::freeRealtimeVoiceConvertersForTest();
+		held.pop_back();
+		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), freeWithHeld + 1);
+		{
+			const AudioResampler reacquired(AudioResampler::RealtimeVoiceTag{});
+			QCOMPARE(reacquired.mode(), AudioResampler::Mode::SincBest);
+		}
+		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), freeWithHeld + 1);
+
 		held.clear();
 		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), grown);
+
+		// The pool still follows the setting after those releases.
 		QVERIFY(ExportRenderSettings::setSrcQuality(SrcQuality::Linear));
 		const AudioResampler released(AudioResampler::RealtimeVoiceTag{});
 		QCOMPARE(released.mode(), AudioResampler::Mode::Linear);

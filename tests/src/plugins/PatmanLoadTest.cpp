@@ -36,93 +36,16 @@
 #include "Note.h"
 #include "NotePlayHandle.h"
 #include "Patman.h"
+#include "PatmanTestSupport.h"
 #include "PathUtil.h"
 #include "RealtimeScope.h"
 #include "SampleFrame.h"
 #include "Song.h"
 
-namespace
-{
-
-constexpr std::size_t MaxArrayAllocationForTest = 64U * 1024U * 1024U;
-std::atomic<bool> rejectLargeArrayAllocations{false};
-
-class LargeArrayAllocationGuard
-{
-public:
-	LargeArrayAllocationGuard() { rejectLargeArrayAllocations.store(true); }
-	~LargeArrayAllocationGuard() { rejectLargeArrayAllocations.store(false); }
-};
-
-constexpr qsizetype PatchHeaderSize = 239;
-constexpr qsizetype PatchSampleHeaderSize = 96;
-
-void writeLittleEndian16(QByteArray& data, qsizetype offset, std::uint16_t value)
-{
-	const int at = static_cast<int>(offset);
-	for (int i = 0; i < 2; ++i)
-	{
-		data[at + i] = static_cast<char>((value >> (8 * i)) & 0xff);
-	}
-}
-
-void writeLittleEndian32(QByteArray& data, qsizetype offset, std::uint32_t value)
-{
-	const int at = static_cast<int>(offset);
-	for (int i = 0; i < 4; ++i)
-	{
-		data[at + i] = static_cast<char>((value >> (8 * i)) & 0xff);
-	}
-}
-
-//! A valid GF1 patch. The default four-frame sample keeps the load tests
-//! small; the render tests ask for a longer square wave so two consecutive
-//! render blocks are both audible.
-auto makePatch(qsizetype sampleFrames = 4) -> QByteArray
-{
-	auto patch = QByteArray(PatchHeaderSize + PatchSampleHeaderSize + sampleFrames, '\0');
-	std::memcpy(patch.data(), "GF1PATCH110\0ID#000002", 22);
-	patch[198] = 1;
-
-	const qsizetype sample = PatchHeaderSize;
-	writeLittleEndian32(patch, sample + 8, static_cast<std::uint32_t>(sampleFrames));
-	writeLittleEndian32(patch, sample + 16, static_cast<std::uint32_t>(sampleFrames));
-	writeLittleEndian16(patch, sample + 20, 22050);
-	writeLittleEndian32(patch, sample + 30, 440000);
-	const int sampleAt = static_cast<int>(PatchHeaderSize + PatchSampleHeaderSize);
-	for (qsizetype i = 0; i < sampleFrames; ++i)
-	{
-		patch[sampleAt + static_cast<int>(i)] = static_cast<char>((i % 8) < 4 ? 64 : -64);
-	}
-	return patch;
-}
-
-bool writePatch(const QString& filename, qsizetype sampleFrames = 4)
-{
-	QFile file(filename);
-	if (!file.open(QIODevice::WriteOnly)) { return false; }
-	const auto patch = makePatch(sampleFrames);
-	if (file.write(patch) != static_cast<qint64>(patch.size())) { return false; }
-	file.close();
-	return true;
-}
-
-//! The patch path the instrument publishes: the part of the patch state the
-//! audio thread reads (playNoteImpl checks it before it renders).
-auto patmanSource(lmms::PatmanInstrument& instrument) -> QString
-{
-	QDomDocument doc;
-	QDomElement element = doc.createElement("instrument");
-	doc.appendChild(element);
-	instrument.saveSettings(doc, element);
-	return element.attribute("src");
-}
-
-} // namespace
-
 void* operator new[](std::size_t size)
 {
-	if (rejectLargeArrayAllocations.load() && size > MaxArrayAllocationForTest)
+	if (lmms::patman_test::rejectLargeArrayAllocations().load()
+		&& size > lmms::patman_test::MaxArrayAllocationForTest)
 	{
 		throw std::bad_alloc{};
 	}
@@ -143,64 +66,7 @@ void operator delete[](void* memory, std::size_t) noexcept
 namespace lmms
 {
 
-namespace
-{
-
-//! The engine entry point the SRC setting uses: it prepares every retained
-//! converter (pool, sample voices, instrument notes, play handles) and only
-//! then publishes and adopts the new quality.
-auto switchQuality(SrcQuality quality) -> bool
-{
-	AudioEngine* const engine = Engine::audioEngine();
-	return engine != nullptr
-		&& engine->applyConverterModeToRetainedStates(AudioResampler::modeForSrcQuality(quality), quality);
-}
-
-auto acquireNote(InstrumentTrack& track, f_cnt_t frames) -> NotePlayHandle*
-{
-	return NotePlayHandleManager::acquire(&track, 0, frames, Note(TimePos(), TimePos(), 60, 100));
-}
-
-//! Render exactly one block. Clear first so a short or failed render is
-//! reported as silence instead of stale samples from the previous block.
-void renderBlock(PatmanInstrument& instrument, NotePlayHandle* note, std::vector<SampleFrame>& block)
-{
-	std::fill(block.begin(), block.end(), SampleFrame{});
-	instrument.playNote(note, std::span<SampleFrame>(block.data(), block.size()));
-}
-
-auto hasAudio(const std::vector<SampleFrame>& block) -> bool
-{
-	for (const SampleFrame& frame : block)
-	{
-		if (frame.left() != 0.0f || frame.right() != 0.0f) { return true; }
-	}
-	return false;
-}
-
-auto blocksMatch(const std::vector<SampleFrame>& left, const std::vector<SampleFrame>& right) -> bool
-{
-	return left.size() == right.size()
-		&& std::memcmp(left.data(), right.data(), left.size() * sizeof(SampleFrame)) == 0;
-}
-
-//! One real Patman note, primed on block 0, with block 1 rendered outside the
-//! realtime scope. Every note of the same pitch and patch renders block 1 bit
-//! for bit, so this is the deterministic oracle for one quality.
-auto referenceBlock(InstrumentTrack& track, PatmanInstrument& instrument, f_cnt_t frames)
-	-> std::vector<SampleFrame>
-{
-	std::vector<SampleFrame> block(static_cast<std::size_t>(frames));
-	NotePlayHandle* const note = acquireNote(track, frames * 4);
-	renderBlock(instrument, note, block); // block 0 primes the converter
-	renderBlock(instrument, note, block); // block 1 is the oracle
-	instrument.deleteNotePluginData(note);
-	note->m_pluginData = nullptr;
-	NotePlayHandleManager::release(note);
-	return block;
-}
-
-} // namespace
+using namespace patman_test;
 
 class PatmanLoadTest : public QObject
 {
@@ -567,6 +433,7 @@ void PatmanLoadTest::overPolyphonyKeepsEverySincBestBlockAudible()
 	std::size_t silent = 0;
 	std::size_t mismatched = 0;
 	AudioResampler::resetRealtimeConverterAllocationsForTest();
+	AudioResampler::resetRealtimeConverterDeletionsForTest();
 	{
 		const RealtimeScope realtime;
 		for (NotePlayHandle* const note : notes)
@@ -580,6 +447,7 @@ void PatmanLoadTest::overPolyphonyKeepsEverySincBestBlockAudible()
 	QCOMPARE(silent, std::size_t{0});
 	QCOMPARE(mismatched, std::size_t{0});
 	QCOMPARE(realtimeAllocations, std::uint64_t{0});
+	QCOMPARE(AudioResampler::realtimeConverterDeletionsForTest(), std::uint64_t{0});
 	QCOMPARE(AudioResampler::realtimeVoiceConverterCapacityForTest(), capacity);
 	QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), freeBefore - NoteCount);
 
