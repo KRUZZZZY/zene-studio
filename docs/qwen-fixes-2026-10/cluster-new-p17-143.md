@@ -113,23 +113,38 @@ The allocation-plus-new-connection state the test drives is the state a reinitia
 
 ## Self-check
 
-- Verdict is FIXED, so the ALREADY-FIXED/FALSE-POSITIVE item does not apply.
-- Red proves the test catches the bug: with the product change reversed (`git apply -R fix.patch` EXIT=0) the function
-  fails, EXIT=1 (`test-5-reverse-red.log`); with it re-applied (`git apply fix.patch` EXIT=0) it passes, EXIT=0
-  (`test-6-reapply-green.log`). The ctest family run before the fix failed on exactly this function and nothing else
-  (`test-2-red.log`: 33 passed, 1 failed).
-- Determinism: no sleeps and no clocks in the test. The only wait is `plugin.process()`'s bounded wait for the peer's
-  `IdProcessingDone`, which the peer sends after reading (and line-flushing) every earlier message; a completed period
-  is a happens-before edge, not a timeout. The peer logs each message with `buffering=1` before it answers.
-- Cause and completeness: the send lives where a connection is made (`init()`), not in the resize path that skips it;
-  every caller reaches it through `RemotePlugin::init()`, and both activation paths (`waitForInitDone()` and the
-  deferred IdInitDone in `process()`) now run after the client already has the key. A rebuilt block still sends its new
-  key from the create path, so the two sends cannot disagree.
-- Collateral: nothing is saved or loaded by this change, so old projects are unaffected; the only behavioural delta is
-  one extra small message on a connection that reuses an existing block (previously that connection was silent about
-  the block). No command, no undo step, no ControlCommandsSnapshot change, no audio-thread code.
-- Realtime: `init()` runs on the thread that loads the plugin; `process()`/`processPeriod()` and `updateAudioBuffer()`'s
-  shortcut are untouched.
-- Unverified: no real two-process reinitialisation was driven (see the watcher-loop note above), and the change was not
-  built for Windows/macOS here; the send is not behind any transport `#ifdef`, and the test compiles out on the
-  `SYNC_WITH_SHM_FIFO` build (`RemotePluginAudioPortsShmCompileCheck` target, built with the suite).
+The five ASK items of `submit_check.py` (log: `submit-1.log`), in its order:
+
+1. "The regression test FAILS with your product change reverted and PASSES with it (exit codes)." - Reverted
+   (`git diff -- src/core/RemotePlugin.cpp > fix.patch` EXIT=0, `git apply -R fix.patch` EXIT=0, build EXIT=0):
+   `./RemotePluginAudioPortsTest clientConnectingToAnExistingBlockIsToldItsKey` EXIT=1
+   (`test-5-reverse-red.log`: `Totals: 2 passed, 1 failed`). Re-applied (`git apply fix.patch` EXIT=0, build EXIT=0):
+   same command EXIT=0 (`test-6-reapply-green.log`: `Totals: 3 passed, 0 failed, 0 skipped`). The whole-file red run
+   `ctest -R RemotePluginAudioPortsTest` was EXIT=8 with exactly this function failing (`test-2-red.log`).
+2. "The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected values it uses)." -
+   No sleeps and no clock reads. Seams: (a) the plugin's socket is set to one end of a `::socketpair` (the fd seam
+   `TestRemotePluginBase` already uses in this file, reachable because the test class is a friend of
+   `RemotePluginBase`) so the pre-existing block's own key send has a connection; (b) the python peer logs each
+   message with `buffering=1` and only then answers, and the test waits for that answer through `plugin.process()`'s
+   existing bounded period exchange - a happens-before edge, not a timeout: a completed period proves every earlier
+   message arrived. Values are fixed (2 in / 2 out, the engine's frames per period).
+3. "The fix is at the cause and complete: every caller and sibling of what you changed was checked and stays
+   consistent." - Cause: the key was only ever sent from the resize path (`updateAudioBuffer()`, now `:1013`) that
+   returns early at `:969-972`; the connection point (`init()`, `:256`) sent only `IdSyncKey`. Callers of `init()`:
+   `plugins/VstBase/VstPlugin.cpp:195` and `plugins/ZynAddSubFx/ZynAddSubFx.cpp:83`; both get the key from the same
+   place. Activation paths: `waitForInitDone()` (`:431`) and the deferred IdInitDone in `process()` (`:949`) both run
+   after `init()` has sent it. The sibling send (create path) is untouched and still sends the new block's key when a
+   rebuild happens, and a first connection (no block) still sends nothing extra - so no connection sees two keys.
+4. "No collateral damage: old projects and saved data still load as before, and any limit or check you added does not
+   hit other callers that legitimately exceed it." - The change touches no save/load path, adds no limit and no
+   validation: one extra message on a connection that reuses a block, nothing else. Only that connection's message
+   stream changes, and the client's handler for the id exists for exactly this (`include/RemotePluginClient.h:299-301`).
+5. "If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that shows it." -
+   Not applicable: the verdict is FIXED, with the code evidence in "Verdict evidence" above and the red/green runs in
+   item 1.
+
+- Realtime: `init()` runs on the thread that loads the plugin; `process()`/`processPeriod()` and
+  `updateAudioBuffer()`'s shortcut are untouched, so nothing new allocates, locks, waits or logs on the audio thread.
+- Unverified: no real two-process reinitialisation was driven (see the watcher-loop note under Other findings), and the
+  change was not built for Windows/macOS here; the send is not behind any transport `#ifdef`, and the test compiles out
+  on the `SYNC_WITH_SHM_FIFO` build (`RemotePluginAudioPortsShmCompileCheck` target, built with the suite).
