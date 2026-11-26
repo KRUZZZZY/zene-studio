@@ -68,7 +68,7 @@ and no command kept a position or a held key: `note.add`/`note.add_many` take ex
 
 | # | Criterion | Test | Command | Exit |
 | --- | --- | --- | --- | --- |
-| 1 | A MIDI-input test enters a note, advances by the selected grid step, and records a short phrase | `NoteEditorStepInputTest::aMidiKeyboardEntersAStepAndAdvancesByTheSelectedGrid`, `::aPlayedPhraseIsRecordedAsOneTake`; `tests/control-note-editor.py` `check_step_input` + `check_recording` | `ctest -R '^NoteEditorStepInputTest$'`; `python3 tests/control-note-editor.py build/zene $LOGDIR/shots-green5` | 0 (reverted: 8); 0 (reverted: 1) |
+| 1 | A MIDI-input test enters a note, advances by the selected grid step, and records a short phrase | `NoteEditorStepInputTest::aMidiKeyboardEntersAStepAndAdvancesByTheSelectedGrid`, `::aPlayedPhraseIsRecordedAsOneTake`; `tests/control-note-editor.py` with `tests/control_note_editor_entry.py` (`check_step_input`, `check_recording`) | `ctest -R '^NoteEditorStepInputTest$'`; `python3 tests/control-note-editor.py build/zene $LOGDIR/shots-green7` | 0 (reverted: 8); 0 (reverted: 1) |
 | 2 | Computer-key step entry and MIDI keyboard entry use the same grid and note-length settings | `NoteEditorStepInputTest::computerKeysAndTheMidiKeyboardShareTheGridAndLength` | same ctest | 0 (reverted: 8) |
 | 3 | A UI and socket test verify note placement, selection, undo, and transport-safe stop | `NoteEditorStepInputTest::clickingTheStepButtonArmsTheModeThroughItsCommand`, `::clickingTheRecordButtonArmsTheModeThroughItsCommand`, `::stoppingTheTransportLeavesNothingPending`, `::stoppingTheTransportFinishesTheTake`, `::disarmingAndAnotherClipEndTheTake`; `check_step_input`, `check_recording`; `window.screenshot` | same two commands + `python3 $LOGDIR/shot-record.py build/zene $LOGDIR/shots/record.png` | 0 / 0 (reverted: 8 / 1); screenshot 0 |
 
@@ -118,18 +118,18 @@ this box, so this is a design argument plus the existing signals' own contract, 
 
 1. **Each new test FAILS with the product change reverted, PASSES with it.** Reversed
    `git diff 3436a808b6..HEAD -- src include` (1796 lines; `git apply -R`, 20 files, 6 insertions, 1507 deletions),
-   rebuilt `zene NoteEditorStepInputTest tripleoscillator` (`build-red3.log` exit 0):
-   `ctest -R '^NoteEditorStepInputTest$'` -> **exit 8** (`test-red3-qt.log`: "Totals: 2 passed, 8 failed"), and
-   `python3 tests/control-note-editor.py build/zene ...` -> **exit 1** (`control-note-editor-red3.log`: `no command
+   rebuilt `zene NoteEditorStepInputTest tripleoscillator` (`build-red4.log` exit 0):
+   `ctest -R '^NoteEditorStepInputTest$'` -> **exit 8** (`test-red4-qt.log`: "Totals: 2 passed, 8 failed"), and
+   `python3 tests/control-note-editor.py build/zene ...` -> **exit 1** (`control-note-editor-red4.log`: `no command
    'note.step_input'`, and the `window.note_editor_set` argument check that refuses `record`). Restored with
-   `git apply product.patch` (exit 0, `git status` empty), rebuilt (`build-green5.log` exit 0): the same two commands
-   -> **exit 0** and **exit 0** (`test-green5-qt.log`, `control-note-editor-green5.log`).
+   `git apply product2.patch` (exit 0, `git status` empty), rebuilt (`build-green6.log` exit 0): the same two commands
+   -> **exit 0** and **exit 0** (`test-green6-qt.log`, `control-note-editor-green7.log`).
 2. **Every acceptance criterion is proven by a test I ran.** Criterion 1: `aMidiKeyboardEntersAStepAndAdvancesByTheSelectedGrid`
    and `aPlayedPhraseIsRecordedAsOneTake` exit 0 in the ctest run above; `check_step_input` and `check_recording` exit 0
    in the driver run. Criterion 2: `computerKeysAndTheMidiKeyboardShareTheGridAndLength` exit 0 (same ctest).
    Criterion 3: the five GUI cases above exit 0 in the same ctest (10 test functions, `Totals: 10 passed` in
-   `test-qt-direct.log`), `check_step_input`/`check_recording` exit 0, and the screenshot ran (exit 0,
-   `shot-record.log`).
+   `test-qt-direct.log`), `check_step_input`/`check_recording` exit 0 (`control-note-editor-green7.log`), and the
+   screenshot ran (exit 0, `shot-record.log`).
 3. **One undo step per edit, honest class.** `note.step_input`, `note.record_on` and `note.record_off` are
    `true_inverse`; `note.record_end` is `not_mutating` (`ReversibilityContractTest` passes, `test-8.log`); the A16
    histogram line is `rows=948 true_inverse=468 snapshot=42 irreversible=25 not_mutating=413` (published
@@ -141,7 +141,7 @@ this box, so this is a design argument plus the existing signals' own contract, 
    code changed: the cursor and the held notes are edit state (not saved, not journalled), and both entry paths write
    ordinary `Note`s that `MidiClip` already serialises. `ctest -R
    '^(ClipSerialisationTest|ControlCommandsSnapshot|ReversibilityContractTest|ControlRegistryTest)$'` -> 4/4 passed,
-   exit 0 (`test-8.log`), plus the twelve neighbour tests of round 1 (which still pass in the driver and GUI runs here).
+   exit 0 (`test-9.log`), plus the twelve neighbour tests of round 1 (which still pass in the driver and GUI runs here).
 6. **Completeness walk.** User path: click Record -> the header button lights through `window.note_editor_set {record}`
    (undo depth unchanged) -> play: each key opens at the playhead snapped to the grid and closes where it came up ->
    the editor follows the playhead -> stop: the take ends, the notes stay, one Undo takes the phrase back ->
@@ -162,28 +162,34 @@ this box, so this is a design argument plus the existing signals' own contract, 
     `snapshot-1.log`, `SNAP_EXIT=0`); `python3 tests/doc-figures-gate.py` -> exit 0 (`docfig-5.log`); the README canary
     is 939/78. `data/manual/index.html` has a Recording paragraph in the note editor section, and
     `docs/NOTE-EDITOR.md` has §3b Recording with §7/§8 corrected.
-11. **Sources registered.** `include/ControlNoteRecord.h`, `src/core/ControlNoteRecord.cpp` and
-    `src/core/ControlCommandsNoteRecord.cpp` are in `tests/fork-sources.txt` (dated comment) and `tests/all-sources.txt`
-    was re-derived with the manifest's own recipe; `bash tests/fork-sources-gate.sh` -> exit 0 (`forkgate-5.log`).
+11. **Sources registered.** `include/ControlNoteRecord.h`, `src/core/ControlNoteRecord.cpp`,
+    `src/core/ControlCommandsNoteRecord.cpp` and `tests/control_note_editor_entry.py` are in `tests/fork-sources.txt`
+    (dated comment and the manifest's own recipe lines) and `tests/all-sources.txt` was re-derived with its recipe;
+    `bash tests/fork-sources-gate.sh` -> exit 0 (`forkgate-6.log`), `bash tests/all-sources-reproduce.sh` -> exit 0
+    (`allsources-6.log`).
+12. **No weakened gate, and the file-length gate is clean.** The completion check's one FAIL was
+    `file-length: new file over 500 lines: tests/control-note-editor.py (537)`. Nothing was deleted: the step-input and
+    recording checks moved verbatim into `tests/control_note_editor_entry.py` (198 lines) and the driver imports the two
+    orchestrators and passes its own `new_clip` (driver now 476 lines). The driver still runs both phases in one run
+    (`control-note-editor-green7.log`, exit 0), and `complexity-gate.sh --check` -> exit 0 (`complexity-6.log`),
+    `doc-figures-gate.py` -> exit 0 (`docfig-6.log`).
 
 ## Evidence table (every command as run)
 
 | Step | Command | Exit | Log |
 | --- | --- | --- | --- |
-| Build (green) | `cmake --build build --target zene NoteEditorStepInputTest tripleoscillator -- -j4` | 0 | `build-green4.log` |
-| GUI test (green) | `ctest -R '^NoteEditorStepInputTest$' --output-on-failure` | 0 | `test-green4-qt.log` |
-| Socket driver (green) | `python3 tests/control-note-editor.py build/zene $LOGDIR/shots-green4` | 0 | `control-note-editor-green4.log` |
-| Red build | the same build after `git apply -R product.patch` | 0 | `build-red3.log` |
-| Red GUI test | `ctest -R '^NoteEditorStepInputTest$'` | 8 (8 failed, 2 passed) | `test-red3-qt.log` |
-| Red socket | `python3 tests/control-note-editor.py build/zene $LOGDIR/shots-red3` | 1 | `control-note-editor-red3.log` |
-| Green build | the same build after `git apply product.patch` | 0 | `build-green5.log` |
-| Green GUI test | `ctest -R '^NoteEditorStepInputTest$'` | 0 | `test-green5-qt.log` |
-| Green socket | `python3 tests/control-note-editor.py build/zene $LOGDIR/shots-green5` | 0 | `control-note-editor-green5.log` |
+| Red build | `cmake --build build --target zene NoteEditorStepInputTest tripleoscillator -- -j4` after `git apply -R product2.patch` | 0 | `build-red4.log` |
+| Red GUI test | `ctest -R '^NoteEditorStepInputTest$'` | 8 (8 failed, 2 passed) | `test-red4-qt.log` |
+| Red socket | `python3 tests/control-note-editor.py build/zene $LOGDIR/shots-red4` | 1 | `control-note-editor-red4.log` |
+| Green build | the same build after `git apply product2.patch` | 0 | `build-green6.log` |
+| Green GUI test | `ctest -R '^NoteEditorStepInputTest$' --output-on-failure` | 0 | `test-green6-qt.log` |
+| Green socket | `python3 tests/control-note-editor.py build/zene $LOGDIR/shots-green7` | 0 | `control-note-editor-green7.log` |
+| Socket driver after the module split | `python3 tests/control-note-editor.py build/zene $LOGDIR/shots-green6` | 0 | `control-note-editor-green6.log` |
 | GUI test, direct | `./NoteEditorStepInputTest` (from `build/tests`) | 0 (`Totals: 10 passed`) | `test-qt-direct.log` |
-| Contract + snapshot + registry + project | `ctest -R '^(ClipSerialisationTest\|ControlCommandsSnapshot\|ReversibilityContractTest\|ControlRegistryTest)$'` | 0 (4/4) | `test-8.log` |
-| Complexity ratchet | `PATH=$LOGDIR/venv/bin:$PATH bash tests/complexity-gate.sh --check` | 0 (`PASS (check mode: no regressions)`) | `complexity-5.log` |
-| Doc figures | `python3 tests/doc-figures-gate.py` | 0 (`RESULT: PASS`) | `docfig-5.log` |
-| Source manifests | `bash tests/fork-sources-gate.sh` | 0 (`PASS`) | `forkgate-5.log` |
+| Contract + snapshot + registry + project | `ctest -R '^(ClipSerialisationTest\|ControlCommandsSnapshot\|ReversibilityContractTest\|ControlRegistryTest)$'` | 0 (4/4) | `test-9.log` |
+| Complexity ratchet | `PATH=$LOGDIR/venv/bin:$PATH bash tests/complexity-gate.sh --check` | 0 (`PASS (check mode: no regressions)`) | `complexity-6.log` |
+| Doc figures | `python3 tests/doc-figures-gate.py` | 0 (`RESULT: PASS`) | `docfig-6.log` |
+| Source manifests | `bash tests/fork-sources-gate.sh`; `bash tests/all-sources-reproduce.sh` | 0 (`PASS`); 0 | `forkgate-6.log`; `allsources-6.log` |
 | Snapshot | live regenerate against this branch's binary (939 ids / 78 groups) | 0 | `snapshot-1.log` |
 | Screenshot | `python3 $LOGDIR/shot-record.py build/zene $LOGDIR/shots/record.png` | 0 | `shot-record.log` |
 
