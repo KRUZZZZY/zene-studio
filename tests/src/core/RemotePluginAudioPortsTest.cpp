@@ -1436,11 +1436,11 @@ private slots:
 	 */
 	void clientConnectingToAnExistingBlockIsToldItsKey()
 	{
+		// The peer is mandatory here: this regression must fail, not silently pass,
+		// on a host that cannot run the socket-protocol stand-in.
 		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
-		if (python.isEmpty())
-		{
-			QSKIP("the client stand-in needs python3 for the unix-socket protocol");
-		}
+		QVERIFY2(!python.isEmpty(),
+			"python3 is required for the unix-socket client stand-in this regression drives");
 
 		QTemporaryDir dir;
 		QVERIFY(dir.isValid());
@@ -1470,10 +1470,7 @@ private slots:
 			"the host started a client that connects");
 		::close(previousClient[0]);
 		::close(previousClient[1]);
-		if (!plugin.isRunning())
-		{
-			QSKIP("the client stand-in did not start");
-		}
+		QVERIFY2(plugin.isRunning(), "the client stand-in did not start: this regression cannot pass without it");
 		QVERIFY(!plugin.failed());
 
 		// One period. The peer answers it only after reading (and logging) every
