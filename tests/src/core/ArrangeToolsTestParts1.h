@@ -456,6 +456,28 @@ void ArrangeToolsTest::aChordOfMixedLengthsBecomesVoices() {
 	QVERIFY(melody.match(xml).hasMatch());
 	QVERIFY(xml.contains(QStringLiteral("<duration>96</duration>")));
 }
+void ArrangeToolsTest::aScoreRefusesTicksTooLargeToSnap() {
+	// 3471: snapping did `ticks + Grid / 2` in int, so a note at the top of the tick range wrapped negative and
+	// the score silently dropped it. A tick no score can hold is refused: an empty score, and no file.
+	constexpr tick_t top = std::numeric_limits<tick_t>::max();
+	for (const auto& [pos, length] : {std::pair{top - 1, tick_t{1}}, std::pair{top - 10, tick_t{20}}, std::pair{top, tick_t{0}}})
+	{
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
+		auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));
+		clip->addNote(Note(TimePos(48), TimePos(0), 60), false);
+		clip->addNote(Note(TimePos(length), TimePos(pos), 62), false);
+		const QString what = QStringLiteral("note at %1 for %2").arg(pos).arg(length);
+		QVERIFY2(musicXmlOf(*clip, 4, 4, QStringLiteral("Big")).isEmpty(), qPrintable(what));
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("big.musicxml"));
+		const ControlResult refused = run(QStringLiteral("clip.export_musicxml"),
+			{{QStringLiteral("clip"), control::clipIdOf(clip)}, {QStringLiteral("path"), path}});
+		QVERIFY2(!refused.ok, qPrintable(what));
+		QCOMPARE(refused.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(!QFileInfo::exists(path), qPrintable(what));
+	}
+}
 void ArrangeToolsTest::notesRotateInsideTheClip() {
 	auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, Engine::getSong()));
 	auto* clip = dynamic_cast<MidiClip*>(track->createClip(TimePos(0)));

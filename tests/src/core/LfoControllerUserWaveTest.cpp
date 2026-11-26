@@ -14,6 +14,7 @@
 #include <QtTest>
 
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -85,14 +86,16 @@ private slots:
 		QCOMPARE(static_cast<float>(lfo.m_duration), rate * 4.f * 100.f);
 	}
 
-	//! new-p9-249: the waveform model value is published before its dataChanged slot
-	//! updates m_sampleFunction, so a render period can run in between. Model the
-	//! interleaving from the user wave (null function) to white noise.
+	//! new-p9-249/new-p14-133: the wave shape is published by the model and the
+	//! render boundary derives m_sampleFunction from it. Model the interleaving
+	//! from the user wave (null function) to white noise.
 	void renderBetweenWaveChangeAndSlotDoesNotCallNullFunction()
 	{
 		LfoController lfo(nullptr);
 		lfo.m_waveModel.setValue(static_cast<int>(Oscillator::WaveShape::UserDefined));
-		QVERIFY(static_cast<sample_t (*)(const float)>(lfo.m_sampleFunction) == nullptr);
+		Controller::triggerFrameCounter();
+		QVERIFY(lfo.valueBuffer() != nullptr);
+		QVERIFY(static_cast<sample_t (*)(const float)>(lfo.m_sampleFunction.load()) == nullptr);
 		{
 			QSignalBlocker blockSlot(&lfo.m_waveModel);
 			lfo.m_waveModel.setValue(static_cast<int>(Oscillator::WaveShape::WhiteNoise));
@@ -106,6 +109,57 @@ private slots:
 		{
 			QVERIFY(std::isfinite(values->value(i)));
 			QVERIFY(values->value(i) >= 0.0f && values->value(i) <= 1.0f);
+		}
+	}
+
+	//! new-p14-133: the white-noise state belongs to the render thread. A GUI
+	//! wave-shape change publishes the shape only; it must not write the
+	//! render-owned sample function or held sample. The render boundary applies
+	//! the shape at the start of the next period.
+	void guiWaveShapeChangeLeavesRenderStateUntilTheBoundary()
+	{
+		LfoController lfo(nullptr);
+
+		// A completed render owns the square wave.
+		lfo.m_waveModel.setValue(static_cast<int>(Oscillator::WaveShape::Square));
+		Controller::triggerFrameCounter();
+		QVERIFY(lfo.valueBuffer() != nullptr);
+		QVERIFY(lfo.m_sampleFunction.load() == &Oscillator::squareSample);
+
+		// A NaN sentinel is never produced by the noise generator, so an
+		// unchanged value is unambiguous.
+		lfo.m_heldSample.store(std::numeric_limits<float>::quiet_NaN());
+
+		// The GUI selects white noise. In the unfixed code this connection ran
+		// updateSampleFunction() on the GUI thread and wrote both fields while
+		// the render could be reading them.
+		lfo.m_waveModel.setValue(static_cast<int>(Oscillator::WaveShape::WhiteNoise));
+		QVERIFY2(lfo.m_sampleFunction.load() == &Oscillator::squareSample,
+			"the GUI wrote the render-owned sample function");
+		QVERIFY2(std::isnan(lfo.m_heldSample.load()),
+			"the GUI seeded the render-owned white-noise sample");
+
+		// The render boundary applies the published shape and seeds the held
+		// sample on the render thread.
+		Controller::triggerFrameCounter();
+		QVERIFY(lfo.valueBuffer() != nullptr);
+		QVERIFY(lfo.m_sampleFunction.load() == &Oscillator::noiseSample);
+		QVERIFY(std::isfinite(lfo.m_heldSample.load()));
+	}
+
+	//! new-p14-133 normal path: once the boundary has applied white noise, one
+	//! held sample drives the whole period (no phase wrap inside this buffer).
+	void whiteNoiseHoldsOneSampleForThePeriod()
+	{
+		LfoController lfo(nullptr);
+		lfo.m_waveModel.setValue(static_cast<int>(Oscillator::WaveShape::WhiteNoise));
+		Controller::triggerFrameCounter();
+		const ValueBuffer* values = lfo.valueBuffer();
+		QVERIFY(values != nullptr);
+		QVERIFY(values->length() > 1);
+		for (int i = 1; i < values->length(); ++i)
+		{
+			QCOMPARE(values->value(i), values->value(0));
 		}
 	}
 

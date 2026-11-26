@@ -64,8 +64,10 @@ ControlResult setMixerChannel(const QJsonObject& args)
 	// the track really plays into, which is also why this is one honest step (a refusal changes
 	// nothing and records nothing). Naming the folder's own channel stays allowed - it is a no-op
 	// for a child already routed and the way a child left off it gets back.
-	const int folderChannel = track->parentFolder() != nullptr && track->parentFolder()->isRouting()
-		? track->parentFolder()->mixerChannel() : -1;
+	// BUG 4535: the owner is the nearest routing folder ABOVE the track, not only its direct parent -
+	// a track inside a group folder nested in a routing one is summed through the outer folder.
+	TrackFolder* const owner = track->parentFolder() != nullptr ? track->parentFolder()->routingOwner() : nullptr;
+	const int folderChannel = owner != nullptr ? owner->mixerChannel() : -1;
 	if (folderChannel > 0 && folderChannel < static_cast<int>(Engine::mixer()->numChannels())
 		&& channel->index() != folderChannel)
 	{
@@ -74,7 +76,7 @@ ControlResult setMixerChannel(const QJsonObject& args)
 				"channel of every child it sums, so pointing the track elsewhere would leave the folder "
 				"reporting routing while none of this track's audio passed through it. Turn the folder's "
 				"routing off first (track.set_routing with routing false), then set the channel")
-				.arg(trackId).arg(trackIdOf(track->parentFolder()))
+				.arg(trackId).arg(trackIdOf(owner))
 				.arg(channelIdOf(Engine::mixer()->mixerChannel(folderChannel))));
 	}
 	const int previous = model->value();

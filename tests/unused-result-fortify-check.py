@@ -28,6 +28,11 @@ Two fixtures keep it honest under the same flags:
     the defect at all and FAILS rather than reporting a green run that proves nothing;
   * a used `write` result must COMPILE - otherwise the flags are too strict and the
     header verdict would be meaningless.
+A fourth step runs the header's `writeNamespaceHandshakeByte` for real: compiling is not
+enough, because a "fix" that consumes the write result and then ignores it (`if (write(...)
+< 0) { } sent = 1;`) compiles under the flags above yet reports a byte as sent when it was
+not. The probe writes into a pipe (must succeed and deliver exactly that byte), closes the
+read end and writes again (must report failure: EPIPE).
 The header's namespace helpers exist only under `#ifdef __linux__`, so a non-Linux host
 prints SKIP and exits 0: there is no write call there to check.
 
@@ -66,6 +71,44 @@ int main()
 	const bool mapped = lmms::testsupport::mapOwnUidIntoNamespace(0, -1, -1);
 	const bool device = lmms::testsupport::filesystemDevice(QStringLiteral("/")) != 0;
 	return (entered && bound && mapped && device) ? 0 : 1;
+}
+"""
+
+#! Executed: the handshake helper must report what the kernel did. Exit code 0 = both
+#! expectations held; 11 = a write to a live pipe was reported as failed; 12 = the pipe did
+#! not deliver exactly the byte written; 13 = a write to a pipe with no reader was reported
+#! as sent (the ignored-result defect); 10 = the pipe could not be made.
+#! The header includes QString, and Qt's version tag (a `used` reference to a symbol of
+#! libQt6Core) would force linking Qt; the probe calls no Qt function, so it opts out.
+HANDSHAKE_PROBE = """#define QT_NO_VERSION_TAGGING
+#include "MountNamespaceTestSupport.h"
+
+#include <csignal>
+#include <cstdio>
+
+int main()
+{
+	std::signal(SIGPIPE, SIG_IGN);
+	int p[2];
+	if (::pipe(p) != 0) { std::fputs("probe: pipe failed\\n", stderr); return 10; }
+	if (!lmms::testsupport::writeNamespaceHandshakeByte(p[1], 7))
+	{
+		std::fputs("probe: a write to a live pipe was reported as failed\\n", stderr);
+		return 11;
+	}
+	char got = 0;
+	if (::read(p[0], &got, 1) != 1 || got != 7)
+	{
+		std::fputs("probe: the pipe did not deliver exactly the byte 7\\n", stderr);
+		return 12;
+	}
+	::close(p[0]);
+	if (lmms::testsupport::writeNamespaceHandshakeByte(p[1], 1))
+	{
+		std::fputs("probe: a write with no reader was reported as sent\\n", stderr);
+		return 13;
+	}
+	return 0;
 }
 """
 
@@ -151,6 +194,27 @@ def diagnose(label, output):
 	print(output.strip() or "the compiler produced no diagnostic")
 
 
+def run_handshake_probe(flags, compiler, work):
+	"""Build the handshake fixture against the real header and run it. 0 = it behaved."""
+	(work / "handshake.cpp").write_text(HANDSHAKE_PROBE, encoding="utf-8")
+	code, output = compile_probe(flags, work / "handshake.cpp", work / "handshake.o", work)
+	if code != 0:
+		diagnose(f"the handshake probe does not compile against {HEADER}", output)
+		return 1
+	link = subprocess.run([compiler, "handshake.o", "-o", "handshake"], cwd=work, text=True,
+	                      stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+	if link.returncode != 0:
+		diagnose("the handshake probe does not link", link.stdout)
+		return 1
+	run = subprocess.run([str(work / "handshake")], cwd=work, text=True,
+	                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+	if run.returncode != 0:
+		diagnose(f"writeNamespaceHandshakeByte misreports a write (probe exit {run.returncode})",
+		         run.stdout)
+		return 1
+	return 0
+
+
 def main():
 	parser = argparse.ArgumentParser(description=__doc__,
 	                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -205,6 +269,11 @@ def main():
 			         "(-D_FORTIFY_SOURCE=3 -Werror=unused-result)", output)
 			return 1
 		print(f"PASS {HEADER} compiles under hosted hardening")
+
+		# 4. Compiling is not behaving: the helper must report a failed write as failure.
+		if run_handshake_probe(flags, args.compiler, work) != 0:
+			return 1
+		print("PASS the handshake helper reports a failed write as failure")
 
 	print("RESULT: every write result in the header is used, not cast away")
 	return 0

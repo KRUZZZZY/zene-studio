@@ -24,7 +24,10 @@
 #include "ScoreExport.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <map>
+#include <optional>
 #include <vector>
 
 #include <QXmlStreamWriter>
@@ -41,7 +44,19 @@ namespace
 
 constexpr int Grid = 3;  // a 64th note in ticks: everything is quantised to it
 
-int snapped(int ticks) { return (ticks + Grid / 2) / Grid * Grid; }
+//! Snapped in 64 bits: `ticks + Grid / 2` overflows an int at the top of the tick range.
+std::int64_t snapped(std::int64_t ticks) { return (ticks + Grid / 2) / Grid * Grid; }
+
+//! The latest tick (after snapping) a score can hold with a bar's worth of room, so that the bar arithmetic
+//! (`end + barTicks - 1`, `bars * barTicks`) stays inside an int. Past it the score is refused (3471).
+std::int64_t lastScoreTick(std::int64_t barTicks) { return std::numeric_limits<int>::max() - 2 * barTicks; }
+
+//! The bar length in ticks, or 0 when the time signature is too large to hold.
+std::int64_t barTicksOf(int numerator, int denominator)
+{
+	const std::int64_t ticks = snapped(std::int64_t{DefaultTicksPerBar} * std::max(1, numerator) / std::max(1, denominator));
+	return ticks > std::numeric_limits<int>::max() / 4 ? 0 : std::max<std::int64_t>(Grid, ticks);
+}
 
 //! One chord (or a gap, with no keys) over [start, start + length) in clip ticks. A gap is a rest in the first
 //! voice and a forward - nothing drawn - in the others.
@@ -57,17 +72,22 @@ using Voice = std::vector<Event>;
 //! The notes by snapped start, then by snapped length: the keys that start and end together.
 using Starts = std::map<int, std::map<int, std::vector<int>>>;
 
-Starts startsOf(const MidiClip& clip)
+//! The notes of @a clip by start and length, or nothing when one lies beyond what a score of @a barTicks bars can
+//! hold (see lastScoreTick). The end is added in 64 bits too: Note::endPos() wraps an int near its top.
+std::optional<Starts> startsOf(const MidiClip& clip, std::int64_t barTicks)
 {
 	Starts starts;
+	const std::int64_t last = lastScoreTick(barTicks);
 	for (const Note* note : clip.notes())
 	{
 		if (note->muted()) { continue; }
 		// The start and the END are snapped, the length taken between them: two separately rounded
 		// values could move the note's end a 64th off its own nearest grid line.
-		const int start = snapped(static_cast<int>(note->pos().getTicks()));
-		const int end = snapped(static_cast<int>(note->endPos().getTicks()));
-		starts[start][std::max(Grid, end - start)].push_back(note->key());
+		const std::int64_t rawStart = note->pos().getTicks();
+		const std::int64_t start = snapped(rawStart);
+		const std::int64_t end = snapped(rawStart + note->length().getTicks());
+		if (start > last || end > last) { return std::nullopt; }
+		starts[static_cast<int>(start)][static_cast<int>(std::max<std::int64_t>(Grid, end - start))].push_back(note->key());
 	}
 	return starts;
 }
@@ -107,9 +127,11 @@ Voice laidOut(const Voice& chords)
 	return voice;
 }
 
-std::vector<Voice> voicesOf(const MidiClip& clip)
+std::optional<std::vector<Voice>> voicesOf(const MidiClip& clip, std::int64_t barTicks)
 {
-	std::vector<Voice> voices = chordsByVoice(startsOf(clip));
+	const std::optional<Starts> starts = startsOf(clip, barTicks);
+	if (!starts) { return std::nullopt; }
+	std::vector<Voice> voices = chordsByVoice(*starts);
 	for (Voice& voice : voices) { voice = laidOut(voice); }
 	return voices;
 }
@@ -292,6 +314,9 @@ void writeMeasures(QXmlStreamWriter& xml, std::vector<Voice> voices, int barTick
 
 QString musicXmlOf(const MidiClip& clip, int numerator, int denominator, const QString& title)
 {
+	const std::int64_t barTicks64 = barTicksOf(numerator, denominator);
+	const std::optional<std::vector<Voice>> voices = barTicks64 > 0 ? voicesOf(clip, barTicks64) : std::nullopt;
+	if (!voices) { return {}; }
 	QString out;
 	QXmlStreamWriter xml(&out);
 	xml.setAutoFormatting(true);
@@ -311,8 +336,7 @@ QString musicXmlOf(const MidiClip& clip, int numerator, int denominator, const Q
 	xml.writeEndElement();
 	xml.writeStartElement(QStringLiteral("part"));
 	xml.writeAttribute(QStringLiteral("id"), QStringLiteral("P1"));
-	const int barTicks = std::max(Grid, snapped(DefaultTicksPerBar * std::max(1, numerator) / std::max(1, denominator)));
-	writeMeasures(xml, voicesOf(clip), barTicks, std::max(1, numerator), std::max(1, denominator));
+	writeMeasures(xml, *voices, static_cast<int>(barTicks64), std::max(1, numerator), std::max(1, denominator));
 	xml.writeEndElement();
 	xml.writeEndElement();
 	xml.writeEndDocument();

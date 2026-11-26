@@ -48,6 +48,8 @@
 #include "ControlCommandsVcaShared.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "Engine.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -87,6 +89,8 @@ ControlResult setPhaseLock(const QJsonObject& args)
 			if (VcaGroup* g = mixerRef->vcaGroup(id)) { g->setPhaseLocked(locked); }
 		});
 	group->setPhaseLocked(locked);
+	// Plain group state, not a model: nothing else marks the document dirty.
+	Engine::getSong()->setModified();
 
 	QJsonObject result = groupState(group);
 	result.insert(QStringLiteral("previous_phase_locked"), previous);
@@ -143,6 +147,8 @@ ControlResult addEditTrack(const QJsonObject& args)
 			if (VcaGroup* g = mixerRef->vcaGroup(id)) { g->addEditTrack(trackId); }
 		});
 	group->addEditTrack(trackId);
+	// Plain group state, not a model: nothing else marks the document dirty.
+	Engine::getSong()->setModified();
 
 	QJsonObject result = groupState(group);
 	result.insert(QStringLiteral("added"), control::trackIdOf(track));
@@ -203,6 +209,8 @@ ControlResult removeEditTrack(const QJsonObject& args)
 			if (VcaGroup* g = mixerRef->vcaGroup(id)) { g->removeEditTrack(trackId); }
 		});
 	group->removeEditTrack(trackId);
+	// Plain group state, not a model: nothing else marks the document dirty.
+	Engine::getSong()->setModified();
 
 	QJsonObject result = groupState(group);
 	const QString trackIdString = control::trackId(trackId);

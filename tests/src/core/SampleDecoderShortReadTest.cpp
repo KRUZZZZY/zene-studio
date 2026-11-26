@@ -36,6 +36,7 @@
 #include <QFile>
 #include <QTemporaryDir>
 
+#include "ImportDetection.h"
 #include "SampleDecoder.h"
 
 using namespace lmms;
@@ -173,6 +174,29 @@ private slots:
 		QVERIFY2(!full.has_value(),
 			qPrintable(QStringLiteral("a 160-frame FLAC with no audio decoded to %1 padded frames")
 				.arg(full ? full->data.size() : 0)));
+	}
+
+	void analysisRefusesAFlacWithAudioButMissingDeclaredFrames()
+	{
+		QFile fixture(QStringLiteral(LMMS_TEST_DATA_DIR "/../../data/samples/waveforms/lfo_trancegate_whole.flac"));
+		QVERIFY(fixture.open(QIODevice::ReadOnly));
+		QByteArray bytes = fixture.readAll();
+		QVERIFY(bytes.size() > 26 && bytes.startsWith("fLaC"));
+
+		// Increase the STREAMINFO frame count to 196608 without changing the audio.
+		const QString file = path(QStringLiteral("missing-tail.flac"));
+		bytes.replace(22, 4, QByteArray("\0\3\0\0", 4));
+		QFile damaged(file);
+		QVERIFY(damaged.open(QIODevice::WriteOnly));
+		QCOMPARE(damaged.write(bytes), static_cast<qint64>(bytes.size()));
+		damaged.close();
+
+		const auto prefix = SampleDecoder::decodeLimited(file, 1.0);
+		QVERIFY(prefix && !prefix->window.data.empty());
+		QVERIFY(prefix->totalFrames > static_cast<qint64>(prefix->window.data.size()));
+		const auto analysis = analyseAudioFile(file, 1.0);
+		QVERIFY2(!analysis.ok, "analysis accepted a FLAC with a missing tail");
+		QVERIFY(!analysis.error.isEmpty());
 	}
 };
 
