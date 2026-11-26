@@ -95,7 +95,7 @@ private slots:
 		SampleClip* const clip = clips.front();
 
 		// A composite that names this clip's own lane over the clip's whole span, slipped by two ticks:
-		// the handle's snapshotComp() then creates its CompSlipReaders (SamplePlayHandle.cpp:374).
+		// the handle's snapshotComp() then creates its CompSlipReaders (SamplePlayHandle.cpp:382).
 		TakeLaneModel& comp = track->takeLanes();
 		const int lane = comp.addLane(QStringLiteral("Slipped"));
 		QVERIFY(lane >= 0);
