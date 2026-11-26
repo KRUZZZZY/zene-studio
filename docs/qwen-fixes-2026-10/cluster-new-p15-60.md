@@ -116,6 +116,24 @@ equals the previous spectrum, never a mixture.
   so the `ControlCommandsSnapshot` canary is untouched and no sibling command is affected.
   The audio-thread constraint is satisfied by the atomic publish path described above.
 
+## Round 2 — proof manifest corrected (no product or test change)
+
+The round-1 send-back was the proof manifest only: `logs/proof.json` used string ranges
+for `line` (`"86-96"`, `"154-199"`, `"291-297"`) and the schema wants an integer. The
+manifest now names one integer line per code reference — `plugins/Eq/EqSpectrumView.h:94`
+(the atomic published bands), `plugins/Eq/EqSpectrumView.cpp:173` (`copySpectrum()`) and
+`plugins/Eq/EqSpectrumView.cpp:296` (the GUI copy in `paintEvent`) — and keeps the
+regression-test artifact with the red/green exit codes recorded in round 1. No product,
+test or behaviour change was made in this round; the verdict and the evidence above stand.
+
+Re-verification in round 2 (logs under
+`/home/kruzzzzy/.config/kads/zene/state/runs/new-p15-60.r2/logs`):
+
+| Exact command | EXIT | Observed |
+| --- | ---: | --- |
+| from `build/tests`: `ctest -R '^AudioAnalysisTest$' --output-on-failure > .../logs/test-01.log 2>&1; echo EXIT=$?` | 0 | `100% tests passed out of 1`, `test-01.log` — the analyser snapshot case included. |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/gates-01.log 2>&1; echo EXIT=$?` | 0 | `RESULT: PASS`, all eight gate rows PASS (`gates-01.log`). |
+
 ## Other findings
 
 - `EqAnalyser::copySpectrum()` is `const` but records the last whole spectrum in the
