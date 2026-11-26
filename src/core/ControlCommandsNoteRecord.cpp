@@ -203,6 +203,20 @@ bool readStart(const QJsonObject& args, MidiClip* clip, int step, int* position,
 	return true;
 }
 
+//! The take's opening: ONE MidiClip journal checkpoint for the whole take, and the stop listener that ends it.
+void openTake(MidiClip* clip)
+{
+	followTransportStops();
+	clip->addJournalCheckPoint();  // ONE step for the whole take
+}
+
+//! `select`: the new note alone - the flags of the notes it does not name go off (`note.select`'s rule).
+void selectOnly(MidiClip* clip, Note* note)
+{
+	for (Note* other : clip->notes()) { other->setSelected(false); }
+	note->setSelected(true);
+}
+
 //! The note-on: one note where the playhead is, held until `note.record_off` closes it.
 ControlResult recordOn(const QJsonObject& args)
 {
@@ -228,19 +242,11 @@ ControlResult recordOn(const QJsonObject& args)
 	if (!readStart(args, clip, step, &position, &error)) { return error; }
 
 	const bool first = !recordTakeOpen(clipText);
-	if (first)
-	{
-		followTransportStops();
-		clip->addJournalCheckPoint();  // ONE step for the whole take
-	}
+	if (first) { openTake(clip); }
 	Note* note = clip->addNote(Note(TimePos(step), TimePos(position), pitch,
 		static_cast<volume_t>(velocity)), false);
 	holdRecordNote(clipText, pitch, noteIdOf(note));
-	if (args.value(QStringLiteral("select")).toBool(false))
-	{
-		for (Note* other : clip->notes()) { other->setSelected(false); }
-		note->setSelected(true);
-	}
+	if (args.value(QStringLiteral("select")).toBool(false)) { selectOnly(clip, note); }
 	QJsonObject placed{
 		{QStringLiteral("note"), noteIdOf(note)},
 		{QStringLiteral("key"), pitch},
