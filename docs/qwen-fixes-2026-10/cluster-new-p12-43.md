@@ -150,8 +150,51 @@ RESULT: PASS
 - `tests/upstream-modifications.txt` (the reason for the `tests/CMakeLists.txt` line)
 - `docs/qwen-fixes-2026-10/cluster-new-p12-43.md` (this report)
 
+## Re-verified in this session (the committed tree, fresh logs)
+
+The whole chain was run again in this session, on the committed tree, with the product change reverted and
+restored a second time. Every log named below is a NEW numbered file in `.../runs/new-p12-43.r1/logs/`.
+
+- `git diff 3436a808b6 -- src/core/ControlCommandsSessionRecordLand.cpp > logs/fix.patch` - **DIFF_EXIT=0**, 102 lines (the product change only, no test, no manifest).
+- `cmake --build build --target zene ControlSessionRecordLandPlaybackTest -- -j4 > logs/build-13-verify.log 2>&1` - **BUILD_EXIT=0**
+- `cd build/tests && ctest -R "^ControlSessionRecordLandPlaybackTest$" --output-on-failure > logs/test-11-verify-green.log 2>&1` - **CTEST_EXIT=0** (`1/1 Test #759: ControlSessionRecordLandPlaybackTest ... Passed`)
+- `git apply -R logs/fix.patch` - **REVERT_EXIT=0**
+- `cmake --build build --target zene ControlSessionRecordLandPlaybackTest -- -j4 > logs/build-14-verify-red.log 2>&1` - **RED_BUILD_EXIT=0**
+- `cd build/tests && ctest -R "^ControlSessionRecordLandPlaybackTest$" --output-on-failure > logs/test-12-verify-red.log 2>&1` - **RED_CTEST_EXIT=8**, `Totals: 5 passed, 3 failed`:
+  - `anAudioCellsGainAndLoopReachTheLandedClip` - `Compared floats are not the same (fuzzy compare)`
+  - `aLoopLongerThanTheAudioKeepsTheLaunchersClampedRegion` - `'copied->clipEdits().hasAudioLoop()' returned FALSE. (the landed clip lost the cell's loop)`
+  - `theSettingsAreTheCellsWhenThePassRuns` - `Compared floats are not the same (fuzzy compare)`
+- `git apply logs/fix.patch` - **REAPPLY_EXIT=0**, and `git status --porcelain` printed nothing: the tree is the committed one again.
+- `cmake --build build --target zene ControlSessionRecordLandPlaybackTest -- -j4 > logs/build-15-verify-green2.log 2>&1` - **GREEN_BUILD_EXIT=0**
+- `cd build/tests && ctest -R "^ControlSessionRecordLandPlaybackTest$" --output-on-failure > logs/test-13-verify-green2.log 2>&1` - **GREEN_CTEST_EXIT=0** (`100% tests passed out of 1`)
+- family rebuilt and re-run: `cmake --build build --target ControlSessionRecordLandPlaybackTest ControlSessionRecordLandTest ControlSessionRecordLandUndoTest SessionArrangementRecordTest SessionPlaybackTest SessionAudioCellPlaybackTest ClipEditsTest AudioClipLoopTest ReversibilityContractTest UndoHonestyTest UndoBoundsTest SessionTransitionsTest -- -j4 > logs/build-16-family-verify.log 2>&1` - **FAMILY_BUILD_EXIT=0**; the 13-test `ctest -R` of the section above > `logs/test-14-family-verify.log 2>&1` - **FAMILY_CTEST_EXIT=0**, `100% tests passed out of 13`.
+- gates, re-run on this tree: `python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > logs/feature-check-3.log 2>&1` - **FEATURE_CHECK_EXIT=0**:
+
+```
+feature-check kads-new-p12-43 (base 3436a808b, 7 changed files)
+  PASS  fork-sources            exit 0
+  PASS  all-sources-reproduce   exit 0
+  PASS  no-upstream-regression  exit 0
+  PASS  check-namespace         exit 0
+  PASS  no-tautology            exit 0
+  PASS  doc-figures             exit 0
+  PASS  complexity              no new item in your files
+  PASS  file-length             no new item in your files
+RESULT: PASS
+```
+
+- `submit_check.py` first run (`logs/submit-check-1.log`) - EXIT=1 with one FAIL: `working tree clean - ?? Testing/`. `Testing/` was a ctest scratch directory (`Testing/Temporary/CTestCostData.txt`, `LastTest.log`) left at the worktree root by a test invocation, not a source file; `rm -rf Testing` removed it and `git status --porcelain` is empty.
+
+Code evidence re-read in this session at the current line numbers:
+
+- `src/core/ControlCommandsSessionRecordLand.cpp:366` `applySlotPlaybackSettings()`, `:333` `withLandingLoop()`, called at `:449` inside `landPairState()` (declared `:424`), whose ONLY caller is `:530` - one landed-clip creation path.
+- `src/core/SessionAudioCells.cpp:261` `prepared.shape.gain = std::pow(10.0f, slot.gainDb() / 20.0f);`, `:263-264` the loop start/length in frames, folded and clamped by `loopRegion()` at `:89-97` - the two values the landing used to drop.
+- `src/core/SessionAudioBake.h` / `SessionFollow.cpp:518` `m_recorder.recordStart(track, scene, tick, content->patternId, content->clip)` - the pass copies the buffer the launch published, so transpose/detune/warp travel with it.
+- `src/core/SessionPlayback.cpp:225` - a MIDI cell publishes a pattern, a start offset and legato, and `loopLength` 0: no gain, no transpose, no loop length to preserve.
+
 ## Self-check
 
+- **This session's re-run is the evidence for the first ASK item.** Reverted: `RED_CTEST_EXIT=8`, 3 of 6 cases failed (`logs/test-12-verify-red.log`). Restored and rebuilt: `GREEN_CTEST_EXIT=0`, 1/1 passed (`logs/test-13-verify-green2.log`). The earlier run recorded in the section above gives the same two exit codes, so the result is reproducible, not incidental.
 - **The regression test FAILS with the product change reverted and PASSES with it.** Reverted: `RED_CTEST_EXIT=8`, `Totals: 5 passed, 3 failed` with the three messages quoted above (`logs/test-7-red-final.log`). Restored: `GREEN_CTEST_EXIT=0`, 1/1 passed (`logs/test-8-green-final.log`). Both runs are on the final test file, and the 4b transcript with every exit code is `logs/step4b-final.log`.
 - **The test is deterministic.** No wall-clock timing, no sleeps, no timers, no threads: `initTestCase()` stops the dummy render thread (`Engine::audioEngine()->audioDev()->stopProcessing()`, the idiom `ControlSessionRecordLandTest` uses), the scheduler's periods are driven serially with an injected `SessionClockContext` (`framesPerTick = 1.0f`, `positionTicks` set by the test), the tempo and the engine rate are the engine's own values, and the expected gain/loop numbers are read back from `sessionaudio::prepare()` - the launcher's own computation, not a hard-coded frame count.
 - **The fix is at the cause and complete.** Callers and siblings checked: `landPairState()` has exactly ONE caller (the handler's per-pair loop, `src/core/ControlCommandsSessionRecordLand.cpp:528-530`), so there is no second path that creates a landed clip; `session.arrangement_record_land` is the only command in this file and no other command turns a session cell into an arrangement clip (`ControlCommandsBounceLand.cpp:54`, `ControlCommandsRangeBounce.cpp:70`, `ControlCommandsRecorder.cpp:118` and `ControlCommandsRecordingPlace.cpp:68` create clips from a bounced FILE or a recorder take, with no session slot to read); the wider type the value flows into is the clip's own `ClipEdits`, whose gain range and loop-frame convention the fix obeys (`MinGainPointDb`/`MaxGainPointDb` as `Clip::loadClipEdits` clamps them; source frames as `ClipAudioLoop.h`/`audioloop::engaged()` define them; the end clamped as `SessionAudioCells.cpp` `loopRegion()` clamps it). The finding's transpose/detune/warp half is covered by the copy of the published buffer, and the MIDI half is documented as not-a-defect with the publish call it rests on.
