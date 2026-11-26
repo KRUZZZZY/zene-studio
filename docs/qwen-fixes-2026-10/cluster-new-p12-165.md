@@ -180,6 +180,30 @@ feature-check kads-new-p12-165 (base 3436a808b, 0 changed files)
 RESULT: PASS
 ```
 
+Re-run after this report was committed (the gate now sees one changed file):
+
+```
+$ FEATURE_CHECK_LOG_DIR=$LOGS/gate-logs python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py \
+    /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-165 \
+    > $LOGS/gates-2-feature_check.log 2>&1; echo EXIT=$?
+EXIT=0
+feature-check kads-new-p12-165 (base 3436a808b, 1 changed files)
+  PASS  fork-sources / all-sources-reproduce / no-upstream-regression / check-namespace /
+        no-tautology / doc-figures / complexity / file-length
+RESULT: PASS
+
+$ python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py \
+    /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p12-165 new-p12-165 \
+    > $LOGS/submit-1-check.log 2>&1; echo EXIT=$?
+EXIT=0
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-new-p12-165.md
+  PASS  tests added or changed - claim-only closure: independent QA must verify its cited code/contract
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
 Source queries were made with the fff tools (shell search is refused in this
 session), not with shell commands; their results are quoted in sections 1-4 and the
 lines they point at are in `evidence-1-source-lines.log`.
