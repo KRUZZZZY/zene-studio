@@ -246,17 +246,20 @@ ControlResult preview(const QJsonObject& args)
 	QString key;
 	ControlResult error;
 	if (!readBrowserFileArgument(args, &key, &error)) { return error; }
-	std::optional<SampleDecoder::Result> decoded = SampleDecoder::decode(key);
-	if (!decoded || decoded->data.empty() || decoded->sampleRate <= 0)
+	// The window is a DECODE limit, not a trim: a multi-hour file costs the preview its first 30
+	// seconds, not the whole decoded file (cluster 102). The bounded decoder reports the file's own
+	// length, which the preview does not need - it plays at most the window.
+	std::optional<SampleDecoder::BoundedResult> decoded = SampleDecoder::decodeLimited(key, PreviewSeconds);
+	if (!decoded || decoded->window.data.empty() || decoded->window.sampleRate <= 0)
 	{
 		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("%1 could not be read as audio").arg(key));
 	}
-	const int rate = decoded->sampleRate;
-	decoded->data.resize(std::min(decoded->data.size(), static_cast<std::size_t>(PreviewSeconds * rate)));
+	const std::vector<SampleFrame>& frames = decoded->window.data;
+	const int rate = decoded->window.sampleRate;
 	const QString match = args.value(QStringLiteral("match")).toString(QStringLiteral("none"));
 	const int key12 = songKey(args);
-	const PreviewPlan plan = planFor(monoMix(decoded->data.data(), decoded->data.size()), rate, match, key12);
-	const std::vector<SampleFrame> audio = stretched(decoded->data, plan);
+	const PreviewPlan plan = planFor(monoMix(frames.data(), frames.size()), rate, match, key12);
+	const std::vector<SampleFrame> audio = stretched(frames, plan);
 	const int declaredRate = static_cast<int>(std::lround(rate * std::pow(2.0, plan.semitones / 12.0)));
 	const int generation = s_previewGeneration.fetch_add(1) + 1;
 	const bool playing = Engine::audioEngine()->addPlayHandle(new PreviewPlayHandle(new Sample(audio.data(), audio.size(), declaredRate), generation));
