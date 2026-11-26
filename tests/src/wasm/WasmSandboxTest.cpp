@@ -356,6 +356,9 @@ private slots:
 	// ---- cluster new-p8-249: a late worker result may not be displaced ----
 	void p9_lateWorkerResultIsDroppedNotDisplaced();
 
+	// ---- cluster 5439: a zero-latency module still adds one host period ----
+	void p10_zeroLatencyModuleReportsTheHostPipelinePeriod();
+
 private:
 };
 
@@ -1321,8 +1324,8 @@ void WasmSandboxTest::p7_reloadKeepsLatencyCompensationWhileLoading()
 	QCOMPARE(effect->latencyFrames(), kTrueLatency);
 	QCOMPARE(chain.latencyFrames(), kTrueLatency);
 
-	// The replacement declares no latency, so once it is loaded the effect
-	// reports none.
+	// The replacement declares no latency of its own, so once it is loaded the
+	// effect reports just the host pipeline period.
 	const QString replacement = modulePath("gain");
 
 	ModuleLoadGate gate;
@@ -1367,11 +1370,12 @@ void WasmSandboxTest::p7_reloadKeepsLatencyCompensationWhileLoading()
 	QVERIFY(processed);
 	QCOMPARE(firstOutput, 0.0f);
 
-	// The replacement resolved: its own latency (none) is in force now, and
-	// the chain's cache follows it.
+	// The replacement resolved: it declares no latency of its own, but a ready
+	// module still goes through the host pipeline, so the figure is the period -
+	// and the chain's cache follows it.
 	QCOMPARE(effect->worker().declaredLatency(), 0);
-	QCOMPARE(effect->latencyFrames(), 0);
-	QCOMPARE(chain.latencyFrames(), 0);
+	QCOMPARE(effect->latencyFrames(), periodFrames);
+	QCOMPARE(chain.latencyFrames(), periodFrames);
 
 	qInfo("P7 reload: while the replacement loaded the effect reported %d "
 		"frames and the chain %d (expected %d = %d module + %d host period); "
@@ -1598,6 +1602,84 @@ void WasmSandboxTest::p9_lateWorkerResultIsDroppedNotDisplaced()
 		static_cast<unsigned long long>(effect.worker().submittedBlocks()),
 		static_cast<unsigned long long>(effect.worker().collectedBlocks()),
 		static_cast<unsigned long long>(effect.worker().droppedBlocks()));
+}
+
+// ---------------------------------------------------------------------------
+// Cluster 5439: a ready module that declares no latency still goes through the
+// collect-after-submit pipeline, so the effect delays the signal by one host
+// period. latencyFrames() returned early when the module declared 0 latency,
+// before the host period was added, so PDC aligned the rest of the project
+// against a path that was one block late.
+// ---------------------------------------------------------------------------
+
+void WasmSandboxTest::p10_zeroLatencyModuleReportsTheHostPipelinePeriod()
+{
+	const int periodFrames = static_cast<int>(Engine::audioEngine()->framesPerPeriod());
+	const auto frames = static_cast<f_cnt_t>(periodFrames);
+	QVERIFY(frames > 0);
+
+	EffectChain chain{nullptr};
+	auto* effect = new WasmEffect(&chain, nullptr);
+	chain.appendEffect(effect);
+	// Nothing loaded passes the dry signal through undelayed: nothing is
+	// reported, and the host period may not appear here.
+	QCOMPARE(effect->latencyFrames(), 0);
+	QCOMPARE(chain.latencyFrames(), 0);
+
+	QString error;
+	QVERIFY2(effect->loadModule(modulePath("gain"), &error), qPrintable(error));
+	QVERIFY(effect->worker().isReady());
+	QCOMPARE(effect->worker().declaredLatency(), 0);
+	// The gain module computes out = param(0) * in, so a module result is
+	// unmistakable next to a dry marker.
+	effect->setModuleParam(0, 0.5f);
+
+	const int reported = effect->latencyFrames();
+	const int cached = chain.latencyFrames();
+	qInfo("P10 zero latency: module declares 0, host period %d -> effect reports %d, chain %d",
+		periodFrames, reported, cached);
+	QCOMPARE(reported, periodFrames);
+	QCOMPARE(cached, periodFrames);
+
+	// The figure must describe the signal that actually comes out: one period
+	// per call, one distinct marker per block, in lockstep with the worker.
+	const auto marker = [](int block) { return (2 * block + 1) * 0.25f; };
+	AudioBuffer buffer{frames, DEFAULT_CHANNELS};
+	buffer.allocateInterleavedBuffer();
+	std::vector<float> out;
+	out.reserve(static_cast<std::size_t>(3) * static_cast<std::size_t>(periodFrames));
+	for (int b = 0; b < 3; ++b)
+	{
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			buffer.interleavedBuffer()[f][0] = marker(b);
+			buffer.interleavedBuffer()[f][1] = marker(b);
+		}
+		buffer.assumeNonSilent(0);
+		buffer.assumeNonSilent(1);
+		QVERIFY(effect->processAudioBuffer(buffer));
+		QVERIFY(effect->worker().waitForIdle(5000));
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			out.push_back(buffer.interleavedBuffer()[f][0]);
+		}
+	}
+	// Call 0 has nothing to collect yet, so it carries its own dry block; every
+	// later call carries the previous block through the module - the one-call
+	// delay the report now names.
+	QCOMPARE(out[0], marker(0));
+	for (int b = 1; b < 3; ++b)
+	{
+		const auto first = static_cast<std::size_t>(b) * static_cast<std::size_t>(periodFrames);
+		const auto last = first + static_cast<std::size_t>(periodFrames) - 1;
+		QCOMPARE(out[first], 0.5f * marker(b - 1));
+		QCOMPARE(out[last], 0.5f * marker(b - 1));
+	}
+
+	// The report is the engine's period, not a count of processed blocks, so
+	// steady state may not move it.
+	QCOMPARE(effect->latencyFrames(), periodFrames);
+	QCOMPARE(chain.latencyFrames(), periodFrames);
 }
 
 } // namespace lmms::wasm
