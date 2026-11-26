@@ -9,7 +9,8 @@ BUG 15. `src/core/ControlServerWin32.cpp` (historical lines 268 and 361).
 The chain is present in this tree, in four steps.
 
 1. The acceptor can return on its own. `win32AcceptLoop()` breaks out of its loop
-   when `CreateNamedPipeW` fails (`src/core/ControlServerWin32.cpp:417-424`) and
+   when `CreateNamedPipeW` fails (`src/core/ControlServerWin32.cpp:417-433`, the
+   `break` at `:433`) and
    ends with `m_win32Listening.store(false);` (`src/core/ControlServerWin32.cpp:491`).
    The thread object itself is untouched, so it stays joinable.
 2. That flag is exactly what `listenWin32()` consults first: `if (isListening())
