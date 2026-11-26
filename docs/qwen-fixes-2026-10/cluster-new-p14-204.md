@@ -216,3 +216,29 @@ git -C .../qwen/gate-baselines/tree checkout -q --detach 9913d36d53... → fatal
 - `Note::saveSettings()` writes `vol`/`pan` unconditionally, so no file can express "volume absent";
   the `DefaultVolume` fallback therefore only ever fires for hand-edited or third-party documents
   (and for the `vol` a very old file's upgrade path fills in).
+
+## Round 2 re-verification (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-204.r2/logs)
+
+Round 1 was returned with "QA-ERROR: two unusable reviews" - a review-infrastructure failure, not a
+code finding. The fix and test above are unchanged; this section re-proves them on the current branch
+tip (merged with 050/m0-train-53) with fresh logs.
+
+```
+git show f67476ba6b -- src/core/Note.cpp > .../logs/fix.patch                                EXIT=0
+git apply -R .../logs/fix.patch                                                              EXIT=0
+cmake --build build --target MidiProbabilityPersistenceTest -j4 > .../logs/build-1-reverted.log   EXIT=0
+cd build/tests && ctest -R MidiProbabilityPersistenceTest --output-on-failure > .../logs/test-1-red.log   EXIT=8
+   FAIL!  : MidiProbabilityPersistenceTest::projectLoadedNoteVolumeAndPanningStayInBounds()
+            'static_cast<int>( loaded.getVolume() ) == row.second' returned FALSE. (300)
+git apply .../logs/fix.patch                                                                 EXIT=0
+cmake --build build --target MidiProbabilityPersistenceTest -j4 > .../logs/build-2-green.log      EXIT=0
+cd build/tests && ctest -R MidiProbabilityPersistenceTest --output-on-failure > .../logs/test-2-green.log   EXIT=0
+   (re-run once more, test-3-green-verify.log: EXIT=0; git status clean after the cycle)
+python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > .../logs/feature_check-1.log   EXIT=0
+   RESULT: PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace,
+   no-tautology, doc-figures, complexity, file-length all PASS). The aggregator now runs on this
+   branch; the round-1 "cannot start" note above no longer applies.
+```
+
+Delegation: Haiku ran the revert / rebuild / red / reapply / rebuild / green cycle and reported the
+exit codes; I confirmed the red and green results from the logs and re-ran the green test myself.
