@@ -158,6 +158,9 @@ Registration: no new product or test file was added (`src/core/ControlCommandsCo
   descriptions are unchanged (`ControlCommandsSnapshot` passes), and nothing in the change runs on
   the audio thread: it is all control-thread command code with no allocation, lock, wait, log or
   emit added to any render path.
+- **Verdict words: the ALREADY-FIXED / FALSE-POSITIVE ask does not apply.** The verdict is FIXED,
+  and the section "The defect, in code" names the pre-fix lines that were wrong, so nothing is
+  being closed as already fixed or as not real.
 - **Qt 5.15 / MSVC / macOS portability.** The new code uses `QString`, `QByteArray`, `QDir`,
   `QFileInfo`, `std::shared_ptr` and `std::function` only; no Qt-6-only API, no POSIX-only call, no
   `std::filesystem`, no absolute-path spelling test (`PathUtil::toAbsolute` is used instead).
