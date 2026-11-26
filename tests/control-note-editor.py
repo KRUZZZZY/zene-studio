@@ -438,11 +438,17 @@ def step_input_state(session):
     return session.result("window.get_state").get("note_editor") or {}
 
 
-def check_step_input(session, recorder):
-    """Q050-211: step entry over the socket - a step lands at the clip's cursor, the cursor advances by
-    the grid step, the step's notes are the selection, ONE control.undo takes the step back, and a
-    transport stop under a recorded step writes nothing and leaves the cursor where it was."""
-    _, clip = new_clip(session, "Step input")
+REFUSED_STEPS = (
+    {"key": 60, "keys": [64]},
+    {},
+    {"key": 128},
+    {"key": 60, "keys": [60, 60]},
+    {"key": 60, "position": 1919800, "length": 24},
+)
+
+
+def check_step_input_armed(session, recorder, clip):
+    """The switch and the clip's cursor, through the command the toolbar button runs."""
     armed = session.result("window.note_editor_set",
                            {"clip": clip, "grid": 24, "new_length": 30, "step_input": True, "step_cursor": 0})
     state = step_input_state(session)
@@ -451,7 +457,9 @@ def check_step_input(session, recorder):
                    and state.get("step_input") is True and state.get("step_cursor") == 0,
                    "reply=%r state=%r" % (armed, state))
 
-    # A bare step takes its defaults - a sixteenth at the cursor - and the cursor moves on by it.
+
+def check_first_step(session, recorder, clip):
+    """A bare step takes its defaults - a sixteenth at the cursor - and the cursor moves on by it."""
     first = session.result("note.step_input", {"clip": clip, "key": 60})
     notes = step_notes(session, clip)
     placed = notes.get(first.get("notes", [None])[0]) or {}
@@ -462,8 +470,11 @@ def check_step_input(session, recorder):
     recorder.check("the editor's cursor is the one the command advanced",
                    step_input_state(session).get("step_cursor") == 12,
                    "state=%r" % step_input_state(session))
+    return first
 
-    # A chord on the grid the header shows, at the cursor the last step left.
+
+def check_chord_placement(session, recorder, clip):
+    """A chord on the grid the header shows, at the cursor the last step left."""
     chord = session.result("note.step_input", {"clip": clip, "keys": [64, 67], "step": 24, "length": 30})
     notes = step_notes(session, clip)
     chord_notes = [notes[i] for i in chord.get("notes") or []]
@@ -471,21 +482,30 @@ def check_step_input(session, recorder):
                    chord.get("position") == 12 and chord.get("cursor") == 36 and len(chord_notes) == 2
                    and all(n.get("position") == 12 and n.get("length") == 30 for n in chord_notes),
                    "reply=%r notes=%r" % (chord, chord_notes))
+    recorder.check("the clip holds both steps", len(notes) == 3, "notes=%r" % notes)
+    return chord, notes
+
+
+def check_chord_selection(session, recorder, first, notes, chord_notes):
+    """The step's notes are the selection, and the earlier step's is not."""
     recorder.check("the step's notes are the selection, and the earlier step's is not",
                    all(n.get("selected") is True for n in chord_notes)
                    and (notes.get(first.get("notes", [None])[0]) or {}).get("selected") is False,
                    "notes=%r" % notes)
-    recorder.check("the clip holds both steps", len(notes) == 3, "notes=%r" % notes)
 
-    # ONE undo per step; the cursor is edit state and undo does not move it.
+
+def check_step_undo(session, recorder, clip):
+    """ONE undo per step; the cursor is edit state and undo does not move it."""
     session.result("control.undo")
     notes = step_notes(session, clip)
     recorder.check("ONE control.undo takes the chord back and leaves the cursor where it was",
                    len(notes) == 1 and step_input_state(session).get("step_cursor") == 36,
                    "notes=%r state=%r" % (notes, step_input_state(session)))
 
-    # The transport runs under the step and stops after it: nothing more is written, the cursor holds,
-    # the mode survives, and the next step continues from the cursor.
+
+def check_step_under_transport(session, recorder, clip):
+    """The transport runs under the step and stops after it: nothing more is written, the cursor holds,
+    the mode survives, and the next step continues from the cursor."""
     session.result("transport.play")
     during = session.result("note.step_input", {"clip": clip, "key": 62, "length": 24, "step": 24})
     session.result("transport.stop")
@@ -502,21 +522,34 @@ def check_step_input(session, recorder):
                    next_step.get("position") == 60 and len(step_notes(session, clip)) == 3,
                    "reply=%r notes=%r" % (next_step, step_notes(session, clip)))
 
-    # A step refuses what it cannot enter, typed, and changes nothing.
+
+def check_step_refusals(session, recorder, clip):
+    """A step refuses what it cannot enter, typed, and changes nothing; then the switch turns it off."""
     before = step_notes(session, clip)
-    for args in ({"clip": clip, "key": 60, "keys": [64]}, {"clip": clip}, {"clip": clip, "key": 128},
-                 {"clip": clip, "key": 60, "keys": [60, 60]},
-                 {"clip": clip, "key": 60, "position": 1919800, "length": 24}):
+    for args in REFUSED_STEPS:
+        args = dict(args, clip=clip)
         error = session.typed_error("note.step_input", args)
         recorder.check("a step that cannot be entered is refused, typed: %r" % (args,),
                        error.get("kind") == "invalid_args", "error=%r" % error)
     recorder.check("and none of the refused steps changed the clip", step_notes(session, clip) == before,
                    "notes=%r" % step_notes(session, clip))
-
     disarmed = session.result("window.note_editor_set", {"step_input": False})
     recorder.check("window.note_editor_set disarms Step input", disarmed.get("step_input") is False,
                    "reply=%r" % disarmed)
 
+
+def check_step_input(session, recorder):
+    """Q050-211: step entry over the socket - a step lands at the clip's cursor, the cursor advances by
+    the grid step, the step's notes are the selection, ONE control.undo takes the step back, and a
+    transport stop under a recorded step writes nothing and leaves the cursor where it was."""
+    _, clip = new_clip(session, "Step input")
+    check_step_input_armed(session, recorder, clip)
+    first = check_first_step(session, recorder, clip)
+    chord, notes = check_chord_placement(session, recorder, clip)
+    check_chord_selection(session, recorder, first, notes, [notes[i] for i in chord.get("notes") or []])
+    check_step_undo(session, recorder, clip)
+    check_step_under_transport(session, recorder, clip)
+    check_step_refusals(session, recorder, clip)
 
 def main(argv):
     if len(argv) < 2:
