@@ -4122,3 +4122,4 @@ tests/ScriptClockQt5JsonIntegerPortCheck.py
 # cluster new-p12-348 (2026-11): a full CLAP note queue must not lose a note-off or choke (fork-NEW regression).
 tests/src/plugins/ClapNoteQueueTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-348.md
+plugins/VstEffect/VstWetDryMix.h

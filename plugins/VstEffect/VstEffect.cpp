@@ -33,6 +33,7 @@
 #include "TextFloat.h"
 #include "VstPlugin.h"
 #include "VstSubPluginFeatures.h"
+#include "VstWetDryMix.h"
 
 #include "embed.h"
 #include "plugin_export.h"
@@ -102,20 +103,7 @@ auto VstEffect::processImpl(PlanarBufferView<const float> in, PlanarBufferView<f
 		return ProcessStatus::ContinueIfNotQuiet;
 	}
 
-	// Wet/dry mixing applies to the first 2 channels; additional channels
-	// remain as-is.
-	const float w = wetLevel();
-	const float d = dryLevel();
-	const auto mixableOutputs = std::min<ch_cnt_t>(out.channels(), 2);
-	for (ch_cnt_t channel = 0; channel < mixableOutputs; ++channel)
-	{
-		auto wetBuffer = out.buffer(channel);
-		auto dryBuffer = in.buffer(std::min(channel, static_cast<ch_cnt_t>(in.channels() - 1)));
-		for (f_cnt_t f = 0; f < out.frames(); ++f)
-		{
-			wetBuffer[f] = w * wetBuffer[f] + d * dryBuffer[f];
-		}
-	}
+	mixVstWetDry(in, out, wetLevel(), dryLevel());
 
 	return ProcessStatus::ContinueIfNotQuiet;
 }
