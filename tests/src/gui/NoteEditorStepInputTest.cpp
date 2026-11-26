@@ -24,12 +24,18 @@
 
 /*! Q050-211: step input in the note editor (docs/NOTE-EDITOR.md §3a).
  *
- *  The REAL application: the shell's own note editor, the toolbar's Step input button clicked with the
- *  mouse, the grid chosen in the header's grid box, the note length set through the command the New Note
- *  Length menu uses, a MIDI key arriving as the instrument track's midiNoteOn (the signal a MIDI keyboard
- *  makes - the same one PianoRollRecordTest injects) and a computer key typed at the note area. Every step
- *  is one registered `note.step_input`, so one undo takes one step back, and the stop paths (transport
- *  stop, disarm, clip change) write nothing and leave nothing pending.
+ *  The REAL application: the shell's own note editor, the toolbar's Step input and Record buttons
+ *  clicked with the mouse, the grid chosen in the header's grid box, the note length set through the
+ *  command the New Note Length menu uses, MIDI keys arriving as the instrument track's midiNoteOn and
+ *  midiNoteOff (the signals a MIDI keyboard makes - the same ones PianoRollRecordTest injects) and a
+ *  computer key typed at the note area.
+ *
+ *  Step input (docs/NOTE-EDITOR.md §3a): every key is one registered `note.step_input`, so one undo
+ *  takes one step back, and the stop paths (transport stop, disarm, clip change) write nothing and
+ *  leave nothing pending. Record (§3b): a key opens a note at the playhead and its release closes it,
+ *  ONE undo step covers the whole take, the transport's stop ends it, and a disarm or a clip change
+ *  drops both MIDI edges. The two modes share this executable because they share the editor's one MIDI
+ *  path, and this lane's build tree cannot register a second test target.
  *
  *  The test reads the mode and the cursor through NoteEditor::describe() - the object window.get_state
  *  reports as `note_editor` - so it compiles against a tree without the change and fails on behaviour, not
@@ -129,6 +135,38 @@ void midiNoteOff(InstrumentTrack* track, int key)
 	QCoreApplication::processEvents();
 }
 
+//! Record mode's own state, read the way window.get_state reads it - the editor's describe() object.
+bool recording(NoteEditor* editor) { return editor->describe().value(QStringLiteral("record")).toBool(); }
+
+//! The toolbar's Record button: the ShellButton whose action text is the mode's name.
+ShellButton* recordButton(NoteEditor* editor)
+{
+	for (ShellButton* button : editor->findChildren<ShellButton*>())
+	{
+		if (button->text() == QStringLiteral("Record")) { return button; }
+	}
+	return nullptr;
+}
+
+//! Arm or disarm Record the way the user does: a mouse click on the toolbar button.
+void clickRecordButton(NoteEditor* editor)
+{
+	ShellButton* button = recordButton(editor);
+	QVERIFY(button != nullptr);
+	QVERIFY2(button->isVisible(), "the Record button is on the toolbar, where the user clicks it");
+	QTest::mouseClick(button, Qt::LeftButton, Qt::NoModifier, button->rect().center());
+}
+
+//! The transport's playhead, moved without playing: where a take recorded while stopped starts.
+void seekTo(int ticks) { Engine::getSong()->setPlayPos(TimePos(ticks), Song::PlayMode::Song); }
+
+//! A note's length at @a position and @a key, or -1 when there is none.
+int lengthOf(MidiClip* clip, int position, int key)
+{
+	const Note* note = noteAt(clip, position, key);
+	return note == nullptr ? -1 : static_cast<int>(note->length().getTicks());
+}
+
 } // namespace
 
 class NoteEditorStepInputTest : public QObject
@@ -167,8 +205,10 @@ private slots:
 		m_editor->setClip(m_clip);
 		// Every case starts from a known view: Step input off, a sixteenth grid, the last note's length.
 		QVERIFY(invoke(QStringLiteral("window.note_editor_set"), {{QStringLiteral("step_input"), false},
-			{QStringLiteral("grid"), 12}, {QStringLiteral("new_length"), 0}}).ok);
+			{QStringLiteral("record"), false}, {QStringLiteral("grid"), 12},
+			{QStringLiteral("new_length"), 0}}).ok);
 		QVERIFY(!stepArmed(m_editor));
+		QVERIFY(!recording(m_editor));
 	}
 
 	void cleanup()
@@ -315,6 +355,133 @@ private slots:
 		midiNoteOn(m_track, 72);
 		QCOMPARE(m_clip->notes().size(), std::size_t{2});
 		QCOMPARE(stepCursor(m_editor), 0);  // no clip, no cursor
+	}
+
+	//! Record: the toolbar button arms the mode through the registered command, journals nothing, and the
+	//! two entry modes exclude each other.
+	void clickingTheRecordButtonArmsTheModeThroughItsCommand()
+	{
+		ShellButton* button = recordButton(m_editor);
+		QVERIFY(button != nullptr);
+		QVERIFY2(!button->isChecked(), "Record starts off");
+		QVERIFY(!recording(m_editor));
+		const int depth = Engine::projectJournal()->undoDepth();
+
+		clickRecordButton(m_editor);
+		QVERIFY2(recording(m_editor), "a click on the button arms Record");
+		QVERIFY2(button->isChecked(), "and the button shows it");
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depth);  // window.note_editor_set journals nothing
+		const QJsonObject state = invoke(QStringLiteral("window.get_state")).result.value(QStringLiteral("note_editor")).toObject();
+		QVERIFY2(state.value(QStringLiteral("record")).toBool(), "window.get_state does not report Record");
+
+		// Recording and step input are the editor's two entry modes: arming one turns the other off.
+		QVERIFY(invoke(QStringLiteral("window.note_editor_set"), {{QStringLiteral("step_input"), true}}).ok);
+		QVERIFY(stepArmed(m_editor));
+		QVERIFY2(!recording(m_editor), "arming Step input disarms Record");
+		QVERIFY2(!button->isChecked(), "and the Record button follows");
+		QVERIFY(invoke(QStringLiteral("window.note_editor_set"), {{QStringLiteral("record"), true}}).ok);
+		QVERIFY(recording(m_editor));
+		QVERIFY2(button->isChecked(), "the button follows a command that armed Record");
+		QVERIFY2(!stepArmed(m_editor), "and Step input went off with it");
+		QVERIFY(invoke(QStringLiteral("window.note_editor_set"), {{QStringLiteral("record"), false}}).ok);
+		QVERIFY2(!button->isChecked(), "and one that disarmed it");
+	}
+
+	//! Criterion 1 for the recording half: what a MIDI keyboard plays is written where the playhead
+	//! is, on the grid, and ONE undo takes the whole take back.
+	void aPlayedPhraseIsRecordedAsOneTake()
+	{
+		clickRecordButton(m_editor);
+		QVERIFY(recording(m_editor));
+		QVERIFY(invoke(QStringLiteral("window.note_editor_set"), {{QStringLiteral("grid"), 24}}).ok);  // 1/8
+		const int depth = Engine::projectJournal()->undoDepth();
+
+		seekTo(48);
+		midiNoteOn(m_track, 60);
+		QVERIFY2(noteAt(m_clip, 48, 60) != nullptr, "the key opened a note where the playhead was");
+		QCOMPARE(lengthOf(m_clip, 48, 60), 24);  // the note-on opens it one grid step long
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depth + 1);  // the take's one checkpoint
+		seekTo(96);
+		midiNoteOff(m_track, 60);
+		QCOMPARE(lengthOf(m_clip, 48, 60), 48);  // the key-up closed it where the playhead was
+
+		midiNoteOn(m_track, 64);  // at 96, where the seek above left the playhead
+		QVERIFY(noteAt(m_clip, 96, 64) != nullptr);
+		seekTo(144);
+		midiNoteOff(m_track, 64);
+		QCOMPARE(lengthOf(m_clip, 96, 64), 48);
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+		QCOMPARE(Engine::projectJournal()->undoDepth(), depth + 1);  // still ONE step for the take
+
+		// A note of the phrase goes down while the transport runs, and it exists at once.
+		Engine::getSong()->playSong();
+		QVERIFY(Engine::getSong()->isPlaying());
+		midiNoteOn(m_track, 67);
+		QCOMPARE(m_clip->notes().size(), std::size_t{3});
+		Engine::getSong()->stop();
+
+		// ONE undo takes the take back - all of it, the note the stop closed included.
+		QVERIFY(invoke(QStringLiteral("control.undo")).ok);
+		QVERIFY2(m_clip->notes().empty(), "one undo takes the whole take back");
+	}
+
+	//! The transport's stop finalises the take: a key still held is kept (one grid step), the take is
+	//! closed, and the next key starts a take of its own.
+	void stoppingTheTransportFinishesTheTake()
+	{
+		clickRecordButton(m_editor);
+		QVERIFY(recording(m_editor));
+		seekTo(0);
+		midiNoteOn(m_track, 60);
+		QVERIFY(noteAt(m_clip, 0, 60) != nullptr);
+		QCOMPARE(lengthOf(m_clip, 0, 60), 12);
+
+		Engine::getSong()->playSong();
+		Engine::getSong()->stop();
+		QVERIFY2(!Engine::getSong()->isPlaying(), "the transport stopped");
+		QCOMPARE(m_clip->notes().size(), std::size_t{1});
+		QCOMPARE(lengthOf(m_clip, 0, 60), 12);  // kept as the step it was given, not lost
+		QVERIFY2(recording(m_editor), "the mode survives a stop");
+
+		// The take is closed: a late key-up has nothing to close, and the next key opens a new step.
+		const QJsonObject late = invoke(QStringLiteral("note.record_off"),
+			{{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("key"), 60}}).result;
+		QVERIFY2(late.value(QStringLiteral("closed")).toBool() == false, "the stop closed the take");
+		seekTo(0);
+		midiNoteOn(m_track, 64);
+		QCOMPARE(m_clip->notes().size(), std::size_t{2});
+		QVERIFY(invoke(QStringLiteral("control.undo")).ok);
+		QVERIFY2(noteAt(m_clip, 0, 60) != nullptr, "the first take is its own undo step");
+		QVERIFY2(noteAt(m_clip, 0, 64) == nullptr, "and the second take is the one undone");
+	}
+
+	//! Disarming and opening another clip end the take and drop the MIDI edges: a key pressed
+	//! afterwards writes nothing.
+	void disarmingAndAnotherClipEndTheTake()
+	{
+		clickRecordButton(m_editor);
+		QVERIFY(recording(m_editor));
+		seekTo(24);
+		midiNoteOn(m_track, 72);
+		QVERIFY(noteAt(m_clip, 24, 72) != nullptr);
+		const std::size_t written = m_clip->notes().size();
+
+		clickRecordButton(m_editor);  // disarm, the way the user does
+		QVERIFY(!recording(m_editor));
+		const QJsonObject late = invoke(QStringLiteral("note.record_off"),
+			{{QStringLiteral("clip"), m_editor->clipId()}, {QStringLiteral("key"), 72}}).result;
+		QVERIFY2(late.value(QStringLiteral("closed")).toBool() == false, "disarming closed the take");
+		QCOMPARE(m_clip->notes().size(), written);
+		midiNoteOn(m_track, 74);
+		QCOMPARE(m_clip->notes().size(), written);  // the connection is gone
+
+		// Armed again, but the clip goes: no key may write through the old connection.
+		clickRecordButton(m_editor);
+		QVERIFY(recording(m_editor));
+		m_editor->setClip(nullptr);
+		QCOMPARE(m_clip->notes().size(), written);
+		midiNoteOn(m_track, 76);
+		QCOMPARE(m_clip->notes().size(), written);
 	}
 
 private:
