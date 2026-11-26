@@ -30,6 +30,8 @@
 #include "AudioPlugin.h"
 #include "DynamicsProcessorControls.h"
 
+#include <atomic>
+
 namespace lmms
 {
 
@@ -62,7 +64,10 @@ private:
 	double m_attCoeff;
 	double m_relCoeff;
 	
-	bool m_needsUpdate = false;
+	// The sample-rate request the controls' slot publishes on the control thread and
+	// processImpl() consumes on the audio thread. It is an atomic handoff, not a plain
+	// bool: the two accesses are ordered by this member alone (BUG new-p9-130).
+	std::atomic<bool> m_needsUpdate{false};
 	
 	RmsHelper * m_rms [2];
 

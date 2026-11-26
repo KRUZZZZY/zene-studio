@@ -114,13 +114,15 @@ ProcessStatus DynProcEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 // debug code
 //	qDebug( "peaks %f %f", m_currentPeak[0], m_currentPeak[1] );
 
-	if( m_needsUpdate )
+	// The request is published by the controls' sample-rate slot on the control thread.
+	// One exchange takes it: a period that is already running cannot lose a request that
+	// arrives between the read and the clear (BUG new-p9-130).
+	if( m_needsUpdate.exchange( false, std::memory_order_acq_rel ) )
 	{
 		m_rms[0]->setSize( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
 		m_rms[1]->setSize( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
 		calcAttack();
 		calcRelease();
-		m_needsUpdate = false;
 	}
 	else
 	{

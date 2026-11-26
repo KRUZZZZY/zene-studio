@@ -5126,6 +5126,46 @@ if(TARGET lomm)
 	add_dependencies(LommSampleRateTest lomm)
 endif()
 
+# Cluster new-p9-130: the dynamics processor's sample-rate request is a flag the control
+# thread writes and the audio path reads and clears. The plugin sources are compiled into
+# this test binary (the LommSampleRateTest pattern), so the regression can read the
+# declared handoff and drive the real slot through AudioEngine::sampleRateChanged()
+# without loading a module.
+add_executable(DynamicsProcessorSampleRateHandoffTest
+	src/plugins/DynamicsProcessorSampleRateHandoffTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/DynamicsProcessor/DynamicsProcessor.cpp
+	${CMAKE_SOURCE_DIR}/plugins/DynamicsProcessor/DynamicsProcessor.h
+	${CMAKE_SOURCE_DIR}/plugins/DynamicsProcessor/DynamicsProcessorControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/DynamicsProcessor/DynamicsProcessorControls.h
+	${CMAKE_SOURCE_DIR}/plugins/DynamicsProcessor/DynamicsProcessorControlDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/DynamicsProcessor/DynamicsProcessorControlDialog.h
+)
+add_test(NAME DynamicsProcessorSampleRateHandoffTest COMMAND DynamicsProcessorSampleRateHandoffTest)
+set_tests_properties(DynamicsProcessorSampleRateHandoffTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(DynamicsProcessorSampleRateHandoffTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/DynamicsProcessor
+	# the generated plugin_export.h (PLUGIN_EXPORT) of the dynamicsprocessor plugin
+	${CMAKE_BINARY_DIR}/plugins/DynamicsProcessor
+)
+target_static_libraries(DynamicsProcessorSampleRateHandoffTest PRIVATE lmmsobjs)
+target_link_libraries(DynamicsProcessorSampleRateHandoffTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(DynamicsProcessorSampleRateHandoffTest PRIVATE cxx_std_20)
+target_compile_definitions(DynamicsProcessorSampleRateHandoffTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=dynamicsprocessor
+	# the test compiles the plugin sources itself, so PLUGIN_EXPORT must not
+	# be the import attribute of the plugin's own export header
+	PLUGIN_STATIC_DEFINE
+)
+if(TARGET dynamicsprocessor)
+	add_dependencies(DynamicsProcessorSampleRateHandoffTest dynamicsprocessor)
+endif()
+
 # Cluster new-p12-275: TripleOscillator's user-wave buffer and anti-alias table
 # were published straight onto the model from the control thread while
 # playNoteImpl() read them on the audio thread. The plugin sources are compiled
