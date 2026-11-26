@@ -39,6 +39,11 @@ namespace lmms
 namespace control
 {
 
+struct SessionJournal
+{
+	ProjectJournal::DetachedHistory history;
+};
+
 namespace
 {
 
@@ -100,6 +105,44 @@ QString contentDigest(const QByteArray& compressed)
 	return digest;
 }
 
+//! A copy of the journal's history. The stacks are implicitly shared, so the copy is cheap, and the live
+//! journal detaches from it on its next push: what the action does to the journal leaves the copy as it was.
+std::shared_ptr<const SessionJournal> holdJournal(ProjectJournal* journal)
+{
+	auto held = std::make_shared<SessionJournal>();
+	held->history = journal->detachHistory();
+	ProjectJournal::DetachedHistory live = held->history;
+	journal->reattachHistory(std::move(live));
+	return held;
+}
+
+//! Puts the journal back as it was when \a checkpoint was taken: every step the action pushed is dropped,
+//! and the redo steps it cleared and the older steps it evicted return. False when nothing was held.
+bool restoreJournal(const SessionCheckpoint& checkpoint)
+{
+	ProjectJournal* journal = Engine::projectJournal();
+	if (journal == nullptr || !checkpoint.journalBefore) { return false; }
+	ProjectJournal::DetachedHistory history = checkpoint.journalBefore->history;
+	journal->reattachHistory(std::move(history));
+	return true;
+}
+
+//! Drops what the script pushed: the held history comes back, or, without one, the script's own steps go.
+void dropScriptSteps(const SessionCheckpoint& checkpoint, ProjectJournal* journal, quint64 serialBefore)
+{
+	if (restoreJournal(checkpoint)) { return; }
+	journal->discardTopSteps(journal->retainedStepsFrom(serialBefore + 1));
+}
+
+//! Puts the session and the journal back as they were when \a checkpoint was taken (a refused open: the
+//! load cleared the journal, so the displaced session's history has to come back with the session).
+void rollBack(const SessionCheckpoint& checkpoint, Song* song)
+{
+	restoreCheckpointSession(song, *checkpoint.before, checkpoint.fileBefore, checkpoint.skippedBefore,
+		checkpoint.containerV2Before);
+	restoreJournal(checkpoint);
+}
+
 SessionCheckpoint skipped(const QString& why)
 {
 	SessionCheckpoint checkpoint;
@@ -128,8 +171,7 @@ bool pushLoadedSessionForRedo(SessionCheckpoint* checkpoint, Song* song, QString
 	const auto after = song->captureUndoSnapshot(&skippedAfter);
 	if (!after)
 	{
-		restoreCheckpointSession(song, *checkpoint->before, checkpoint->fileBefore, checkpoint->skippedBefore,
-			checkpoint->containerV2Before);
+		rollBack(*checkpoint, song);
 		checkpoint->note = QStringLiteral("project.open refused: the loaded project could not be captured for redo, "
 			"so the previous session was restored");
 		if (refusal != nullptr) { *refusal = checkpoint->note; }
@@ -138,8 +180,7 @@ bool pushLoadedSessionForRedo(SessionCheckpoint* checkpoint, Song* song, QString
 	checkpoint->containerV2After = song->isContainerV2Project();
 	if (!retainedPairFits(checkpoint, QStringLiteral("project.open"), after, refusal))
 	{
-		restoreCheckpointSession(song, *checkpoint->before, checkpoint->fileBefore, checkpoint->skippedBefore,
-			checkpoint->containerV2Before);
+		rollBack(*checkpoint, song);
 		return false;
 	}
 	pushRestoreStep(*checkpoint, true, after, song->projectFileName(), skippedAfter, checkpoint->containerV2After);
@@ -201,6 +242,7 @@ SessionCheckpoint takeSessionCheckpoint(const QString& action, bool onlyWhenModi
 			.arg(action, megabytes(checkpoint.bytes), megabytes(checkpoint.limit));
 		return checkpoint;
 	}
+	checkpoint.journalBefore = holdJournal(journal);
 	checkpoint.state = SessionCheckpoint::State::Taken;
 	return checkpoint;
 }
@@ -236,9 +278,9 @@ void finishScriptCheckpoint(SessionCheckpoint* checkpoint, quint64 serialBefore,
 	const auto now = song->captureUndoSnapshot(&skippedAfter);
 	if (!now)
 	{
-		journal->discardTopSteps(journal->retainedStepsFrom(serialBefore + 1));
 		restoreCheckpointSession(song, *checkpoint->before, checkpoint->fileBefore, checkpoint->skippedBefore,
 			checkpoint->containerV2Before);
+		dropScriptSteps(*checkpoint, journal, serialBefore);
 		const QString why = QStringLiteral("script.run refused: the script's project result could not be captured "
 			"for redo, so the previous session was restored");
 		if (refusal != nullptr) { *refusal = why; }
@@ -251,15 +293,16 @@ void finishScriptCheckpoint(SessionCheckpoint* checkpoint, quint64 serialBefore,
 	checkpoint->containerV2After = song->isContainerV2Project();
 	if (!retainedPairFits(checkpoint, QStringLiteral("script.run"), now, refusal))
 	{
-		journal->discardTopSteps(journal->retainedStepsFrom(serialBefore + 1));
 		restoreCheckpointSession(song, *checkpoint->before, checkpoint->fileBefore, checkpoint->skippedBefore,
 			checkpoint->containerV2Before);
+		dropScriptSteps(*checkpoint, journal, serialBefore);
 		*changed = false;
 		return;
 	}
 
-	// The finer steps the script pushed are subsumed: this one restores the whole project.
-	journal->discardTopSteps(journal->retainedStepsFrom(serialBefore + 1));
+	// The finer steps the script pushed are subsumed: this one restores the whole project. It goes onto the
+	// history as it was before the script, so older steps the script's steps evicted are kept.
+	dropScriptSteps(*checkpoint, journal, serialBefore);
 	pushRestoreStep(*checkpoint, false, now, song->projectFileName(), skippedAfter, checkpoint->containerV2After);
 	checkpoint->pushed = true;
 }

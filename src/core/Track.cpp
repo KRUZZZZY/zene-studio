@@ -860,10 +860,19 @@ void Track::loadTrack(const QDomElement& element, bool presetMode)
 	// Reset-on-absence for the frozen take (freeze / bounce-in-place): the rule
 	// and its reason are stated once in TRACK_RESTORE_SCHEMA above
 	// (SPEC-ARCH-4 1.7 R6) - an ELEMENT-valued rule, so the reset is the clear
-	// below (whatever this object held before the call, a preset included) and
-	// loadFrozenTake() fills in only what the file's `frozenAudio` carries.
-	clearFrozenTake();
-	loadFrozenTake(element);
+	// below (whatever this object held before the call) and loadFrozenTake()
+	// fills in only what the file's `frozenAudio` carries.
+	//
+	// Cluster 5412: not for a preset. saveTrack() returns before it writes any
+	// frozen attribute when presetMode is set, so a preset has no frozen state to
+	// restore, and a preset load returns before deleteClips() so the clips the
+	// take muted are still muted. Clearing the take here would leave those clips
+	// muted with nothing covering for them - a silent track.
+	if (!presetMode)
+	{
+		clearFrozenTake();
+		loadFrozenTake(element);
+	}
 
 	if (element.hasAttribute("color"))
 	{
