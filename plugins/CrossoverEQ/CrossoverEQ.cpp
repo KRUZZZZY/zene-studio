@@ -89,6 +89,29 @@ void CrossoverEQEffect::sampleRateChanged()
 }
 
 
+namespace
+{
+
+// Runs one band's filter over `in` and, when the band is on, adds the result
+// scaled by `gain` into `work`. The filter is advanced either way.
+void addBand(StereoLinkwitzRiley& filter, const SampleFrame* in, float gain,
+	bool enabled, SampleFrame* work, std::size_t frames)
+{
+	for (auto f = std::size_t{0}; f < frames; ++f)
+	{
+		const float l = filter.update(in[f][0], 0);
+		const float r = filter.update(in[f][1], 1);
+		if (enabled)
+		{
+			work[f][0] += l * gain;
+			work[f][1] += r * gain;
+		}
+	}
+}
+
+} // namespace
+
+
 ProcessStatus CrossoverEQEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 {
 	// filters update
@@ -145,45 +168,13 @@ ProcessStatus CrossoverEQEffect::processImpl(InterleavedBufferView<float, 2> inO
 		m_tmp2[f][1] = m_hp3.update(inOut[f][1], 1);
 	}
 
-	// run band 1
-	if( mute1 )
-	{
-		for (auto f = std::size_t{0}; f < inOut.frames(); ++f)
-		{
-			m_work[f][0] += m_lp1.update( m_tmp1[f][0], 0 ) * m_gain1;
-			m_work[f][1] += m_lp1.update( m_tmp1[f][1], 1 ) * m_gain1;
-		}
-	}
-	
-	// run band 2
-	if( mute2 )
-	{
-		for (auto f = std::size_t{0}; f < inOut.frames(); ++f)
-		{
-			m_work[f][0] += m_hp2.update( m_tmp1[f][0], 0 ) * m_gain2;
-			m_work[f][1] += m_hp2.update( m_tmp1[f][1], 1 ) * m_gain2;
-		}
-	}
-	
-	// run band 3
-	if( mute3 )
-	{
-		for (auto f = std::size_t{0}; f < inOut.frames(); ++f)
-		{
-			m_work[f][0] += m_lp3.update( m_tmp2[f][0], 0 ) * m_gain3;
-			m_work[f][1] += m_lp3.update( m_tmp2[f][1], 1 ) * m_gain3;
-		}
-	}
-	
-	// run band 4
-	if( mute4 )
-	{
-		for (auto f = std::size_t{0}; f < inOut.frames(); ++f)
-		{
-			m_work[f][0] += m_hp4.update( m_tmp2[f][0], 0 ) * m_gain4;
-			m_work[f][1] += m_hp4.update( m_tmp2[f][1], 1 ) * m_gain4;
-		}
-	}
+	// Every band's filter runs on every period, even while the band is off, so
+	// its history keeps tracking the input and switching the band back on does
+	// not replay a stale state. An off band only omits its contribution.
+	addBand(m_lp1, m_tmp1, m_gain1, mute1, m_work, inOut.frames());
+	addBand(m_hp2, m_tmp1, m_gain2, mute2, m_work, inOut.frames());
+	addBand(m_lp3, m_tmp2, m_gain3, mute3, m_work, inOut.frames());
+	addBand(m_hp4, m_tmp2, m_gain4, mute4, m_work, inOut.frames());
 	
 	const float d = dryLevel();
 	const float w = wetLevel();
