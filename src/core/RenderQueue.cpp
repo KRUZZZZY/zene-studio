@@ -57,6 +57,9 @@ namespace
 
 constexpr qsizetype RenderDiagnosticLimit = 512;
 
+//! Where setReportProbeForTesting() puts its probe; read by reportOf() on the thread that scans the file.
+std::atomic<RenderQueue::ReportProbe> sReportProbe{nullptr};
+
 qint64 now() { return QDateTime::currentMSecsSinceEpoch(); }
 
 void appendDiagnosticTail(QByteArray& output, const QByteArray& chunk)
@@ -211,6 +214,7 @@ QString staged(const RenderJob& job, const std::shared_ptr<std::atomic_bool>& ca
 
 QJsonObject reportOf(const RenderJob& job)
 {
+	if (const RenderQueue::ReportProbe probe = sReportProbe.load(std::memory_order_acquire)) { probe(); }
 	QJsonObject report{{QStringLiteral("bytes"), static_cast<double>(QFileInfo(job.out).size())},
 		{QStringLiteral("sha256"), BounceInPlace::sha256OfFile(job.out)},
 		{QStringLiteral("seconds_taken"), static_cast<double>(job.finishedMs - job.startedMs) / 1000.0}};
@@ -296,6 +300,11 @@ QString RenderQueue::stateName(RenderJob::State state)
 	static const QStringList names{QStringLiteral("queued"), QStringLiteral("running"), QStringLiteral("done"), QStringLiteral("failed"),
 		QStringLiteral("cancelled")};
 	return names.value(static_cast<int>(state));
+}
+
+void RenderQueue::setReportProbeForTesting(ReportProbe probe)
+{
+	sReportProbe.store(probe, std::memory_order_release);
 }
 
 int RenderQueue::add(RenderJob job)

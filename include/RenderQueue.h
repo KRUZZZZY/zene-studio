@@ -128,6 +128,12 @@ public:
 	//! Decode @a job's source and write it as @a job asks; empty on success, else the reason.
 	static QString convert(const RenderJob& job);
 
+	//! Test-only: observe the thread that reads a finished job's output (RenderQueue.cpp: reportOf), right
+	//! before it scans the file. Nothing is waited for - the probe records where it ran, so a test can tell
+	//! the control thread from a worker without a sleep or a schedule race.
+	using ReportProbe = void (*)();
+	static void setReportProbeForTesting(ReportProbe probe);
+
 private:
 	RenderQueue() = default;
 	RenderJob* find(int id);
