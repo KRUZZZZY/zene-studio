@@ -106,13 +106,21 @@ DualFilterControls::DualFilterControls( DualFilterEffect* effect ) :
 
 void DualFilterControls::updateFilters()
 {
-	// swap filters to new ones
-	
-	delete m_effect->m_filter1;
-	delete m_effect->m_filter2;
-	m_effect->m_filter1 = new BasicFilters<2>( Engine::audioEngine()->outputSampleRate() );
-	m_effect->m_filter2 = new BasicFilters<2>( Engine::audioEngine()->outputSampleRate() );
-	
+	// Retune the filters in place: processImpl() reads them on the render
+	// thread every period, so replacing the objects would free memory that
+	// path may still be using. setSampleRate() also reaches a double filter's
+	// subfilter, which a fresh object would only allocate later, on the audio
+	// thread.
+	const sample_rate_t sampleRate = Engine::audioEngine()->outputSampleRate();
+
+	m_effect->m_filter1->setSampleRate( sampleRate );
+	m_effect->m_filter2->setSampleRate( sampleRate );
+
+	// a new rate starts from a clean state, like a freshly built filter
+
+	m_effect->m_filter1->clearHistory();
+	m_effect->m_filter2->clearHistory();
+
 	// flag filters as needing recalculation
 	
 	m_effect->m_filter1changed = true;

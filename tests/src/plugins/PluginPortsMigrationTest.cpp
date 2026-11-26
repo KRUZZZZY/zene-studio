@@ -1051,6 +1051,7 @@ private slots:
 	void delayLfoControlDescribesItsPeriod();
 	void doubleFilterClearHistoryClearsSubfilter();
 	void dualFilterCutoffCachesStartInitialized();
+	void dualFilterSampleRateChangeKeepsFiltersInPlace();
 	void xpressiveLoadedWaveSamplesAreFinite();
 	void xpressiveTruncatedWaveSamplesAreRejected();
 	void positiveFractionHandlesVeryLargePositiveValues();
@@ -1749,6 +1750,83 @@ void PluginPortsMigrationTest::dualFilterCutoffCachesStartInitialized()
 		reinterpret_cast<const unsigned char*>(&effect->m_currentCut2), zeroBytes, sizeof(zero)));
 	QVERIFY(sameObjectRepresentation(
 		reinterpret_cast<const unsigned char*>(&effect->m_currentRes2), zeroBytes, sizeof(zero)));
+}
+
+void PluginPortsMigrationTest::dualFilterSampleRateChangeKeepsFiltersInPlace()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	QLibrary library{QString::fromUtf8(PART_C_MIGRATED_dualfilter)};
+	library.setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(library.load(), qPrintable(library.errorString()));
+	const auto entry = reinterpret_cast<MainFn>(library.resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	std::unique_ptr<lmms::DualFilterEffect> effect{
+		static_cast<lmms::DualFilterEffect*>(entry(nullptr, nullptr))};
+	QVERIFY(effect != nullptr);
+
+	lmms::AudioEngine* const engine = lmms::Engine::audioEngine();
+	QVERIFY(engine != nullptr);
+	QVERIFY(engine->audioDev() != nullptr);
+	struct RestoreSampleRate
+	{
+		lmms::AudioEngine* engine;
+		lmms::sample_rate_t sampleRate;
+		~RestoreSampleRate()
+		{
+			engine->audioDev()->setSampleRateForTesting(sampleRate);
+			emit engine->sampleRateChanged();
+		}
+	} restore{engine, engine->outputSampleRate()};
+
+	// The render thread reads both filters every period (DualFilter.cpp
+	// processImpl()), so a sample-rate change must retune the objects it holds
+	// instead of freeing them: the identity across the signal is the guard
+	// against a use-after-free in the audio path.
+	lmms::BasicFilters<2>* const filter1Before = effect->m_filter1;
+	lmms::BasicFilters<2>* const filter2Before = effect->m_filter2;
+	QVERIFY(filter1Before != nullptr);
+	QVERIFY(filter2Before != nullptr);
+
+	const lmms::sample_rate_t changedRate =
+		engine->outputSampleRate() == 44100 ? 32000 : 44100;
+	engine->audioDev()->setSampleRateForTesting(changedRate);
+	emit engine->sampleRateChanged();
+	QCOMPARE(engine->outputSampleRate(), changedRate);
+
+	QVERIFY2(effect->m_filter1 == filter1Before,
+		"the sample-rate change replaced filter 1 while the audio path uses it");
+	QVERIFY2(effect->m_filter2 == filter2Before,
+		"the sample-rate change replaced filter 2 while the audio path uses it");
+	QVERIFY2(effect->m_filter1changed,
+		"filter 1 must recalculate its coefficients for the new rate");
+	QVERIFY2(effect->m_filter2changed,
+		"filter 2 must recalculate its coefficients for the new rate");
+
+	// The audio path still renders after the change.
+	const auto rendered = partc::renderBuffers(*effect, engine->framesPerPeriod());
+	QVERIFY(std::all_of(rendered.cbegin(), rendered.cend(),
+		[](float sample) { return std::isfinite(sample); }));
+	QVERIFY2(std::any_of(rendered.cbegin(), rendered.cend(),
+		[](float sample) { return sample != 0.0f; }),
+		"the effect rendered only silence after the sample-rate change");
+
+	// The retune really reached the filter: its impulse response is the one of
+	// a filter built at the new rate, not of one left on the old rate.
+	lmms::BasicFilters<2> reference{changedRate};
+	reference.setFilterType(lmms::BasicFilters<2>::FilterType::LowPass);
+	reference.calcFilterCoeffs(1000.0f, 1.0f);
+	effect->m_filter1->setFilterType(lmms::BasicFilters<2>::FilterType::LowPass);
+	effect->m_filter1->clearHistory();
+	effect->m_filter1->calcFilterCoeffs(1000.0f, 1.0f);
+	for (int i = 0; i < 16; ++i)
+	{
+		const float impulse = i == 0 ? 1.0f : 0.0f;
+		QCOMPARE(effect->m_filter1->update(impulse, 0), reference.update(impulse, 0));
+	}
 }
 
 void PluginPortsMigrationTest::xpressiveLoadedWaveSamplesAreFinite()
