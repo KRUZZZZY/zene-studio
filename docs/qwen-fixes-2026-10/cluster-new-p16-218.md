@@ -102,6 +102,8 @@ logs under `/home/kruzzzzy/.config/kads/zene/state/runs/new-p16-218.r1/logs`.
 | 5 | `cd build/tests && ctest -R SessionAudioCellPlaybackTest --output-on-failure > …/logs/test-1-SessionAudioCellPlaybackTest.log 2>&1` | 0 (`TEST_EXIT=0`, 1/1 passed) |
 | 6 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > …/logs/gates-1.log 2>&1` | 0 (`GATES_EXIT=0`, `RESULT: PASS`) |
 | 7 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p16-218` (before the report) | 1, 4 FAIL — all of them "missing report/commit"; the gates item PASSed |
+| 8 | same `feature_check.py`, after the report was committed (`logs/gates-2.log`) | 0, `RESULT: PASS` (1 changed file) |
+| 9 | same `submit_check.py`, after the report was committed (`logs/submit-2.log`) | 0, `RESULT: PASS - submit` |
 
 Gates table (`logs/gates-1.log`): fork-sources PASS, all-sources-reproduce PASS, no-upstream-regression
 PASS, check-namespace PASS, no-tautology PASS, doc-figures PASS, complexity PASS (no new item),
