@@ -1107,6 +1107,9 @@ set(LMMS_TESTS
 	src/gui/SamplerTakeGuiTest.cpp
 	# Q050-263: per-slice SlicerT controls: the view's panel, plugin.slice_get / plugin.slice_set, a rendered slice sequence.
 	src/gui/SlicerTSliceControlsTest.cpp
+	# cluster new-p9-431: replacing the SlicerT sample through its own editor (both drop payloads, the
+	# file-open dialog) while a note sounds, and the per-slice controls of a held slice note.
+	src/gui/SlicerTSampleSwapGuiTest.cpp
 	src/gui/WorkspaceAccessTest.cpp
 	# Qt reads the startup scale before QApplication; the selected config must win over its fallback file.
 	src/core/AppearanceStartupTest.cpp
@@ -2871,6 +2874,8 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		OR LMMS_TEST_NAME STREQUAL "AudioEditingTest"
 		# 4468: a sounding slice note, through the SlicerT module built beside the test binary.
 		OR LMMS_TEST_NAME STREQUAL "SlicerTPlayheadTest"
+		# cluster new-p9-431: the editor's own sample-replacement routes need the build's SlicerT module.
+		OR LMMS_TEST_NAME STREQUAL "SlicerTSampleSwapGuiTest"
 		# 0.5.0 L10: copying and comparing devices loads the build's effect modules.
 		OR LMMS_TEST_NAME STREQUAL "DeviceCopyTest"
 		OR LMMS_TEST_NAME STREQUAL "DeviceOrganiserTest"
