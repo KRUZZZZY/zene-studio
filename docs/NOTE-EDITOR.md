@@ -140,7 +140,35 @@ Two limits are deliberate. While Step input is on the piano keys win over the to
 and 1..7 all play a note): the tools stay one click away, and turning the mode off gives the letters back. And the
 on-screen key column still auditions without entering a step - it plays through the piano model, not through the
 track's MIDI input - so only a MIDI keyboard and the computer keys enter notes. Live (transport-time) recording is
-still the classic roll's (§7).
+§3b.
+
+## 3b. Recording
+
+The **Record** button beside Step input (a toggle, `window.note_editor_set` `record`) records what you play into
+the clip while the transport runs. Step input and Record are exclusive: arming one disarms the other, because a
+step is written where the cursor is and a recorded note where the playhead is.
+
+- A key **down** is one `note.record_on`: the note starts at the playhead inside the clip, snapped down to the
+  editor's grid (`step`), in the velocity the editor draws with, and the editor follows the playhead so the note
+  arrives as it is written.
+- Its **up** is one `note.record_off`, which closes it where the playhead is then - the length you played, at
+  least one grid step. A release with nothing open writes nothing.
+- The whole take is **one undo step**: the first `note.record_on` of a take takes the clip's journal checkpoint and
+  nothing later in the take adds another, so `control.undo` takes the phrase back in one go and `control.redo`
+  puts it back.
+- The take **ends** on the transport's stop (the command layer's own `Song::stopped` listener, so an agent's take
+  ends the same way), when Record is disarmed, and with `note.record_end` - and an open `control.undo` or
+  `control.redo` ends it first, so no checkpoint is unwound under a held key. A key still held at the stop keeps
+  the one grid step it had already written.
+- A clip change, a closed clip or the panel going away drops both MIDI connections (`dropRecord`), so a key still
+  down writes nothing more and a later key reaches no editor.
+
+Both MIDI edges arrive on queued connections - the emitter can be the MIDI input thread - and the commands that
+write the note run on the GUI thread with every other command, so nothing here touches the audio thread.
+
+Limits: no punch region, no loop-pass take lanes and no count-in of its own - those are the classic roll's (§7);
+a key shorter than one grid step is recorded one grid step long; and Record is editor state, not saved with the
+project.
 
 ## 4. Rows, scale and folding
 
@@ -260,15 +288,16 @@ The +20 % regression gate stays opt-in per machine (`ZENE_BENCH_BASELINE`). The 
 
 ## 7. The classic piano roll
 
-The classic editor (`PianoRollWindow`) still exists, for what the new editor does not do yet:
-live (transport-time) recording from a MIDI keyboard, chord stamping and detuning automation. It opens
+The classic editor (`PianoRollWindow`) still exists, for what the new editor does not do yet: chord
+stamping, detuning automation, and recording passes with a punch region, loop take lanes and a count-in (the new
+editor records one take at the playhead, §3b). It opens
 as a floating window from View ▸ Classic Piano Roll, and `window.toggle` accepts the name
 `classic_piano_roll`. Opening a clip sets it in both editors.
 
 ## 8. Not done, stated
 
-- **Not in the new editor yet:** live (transport-time) MIDI recording, chord stamping and detuning
-  automation - step input is here (§3a). Use the classic piano roll (§7).
+- **Not in the new editor yet:** chord stamping and detuning automation - step input (§3a) and live recording
+  (§3b) are here. Use the classic piano roll (§7) for the rest.
 - **Gain lane:** there is no separate per-note gain lane (§5).
 - **Not measured:** clips of several thousand notes with the expression lane open; the lane
   uses the same visible range as the note area.
