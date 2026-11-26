@@ -305,6 +305,17 @@ cursor. Arming starts the cursor at the playhead
 inside the clip; <code>window.note_editor_set</code>'s <code>step_cursor</code> puts it anywhere, and that cursor is edit
 state - it is not saved with the project and Undo does not move it. A step is written when the key goes down, so
 stopping the transport, disarming the mode or opening another clip under a held key leaves no note half-entered.</p>
+<p><b>Recording.</b> The Record button beside Step input in the note editor's header records what you play into the
+clip while the transport runs: each key writes a note from the moment it goes down to the moment it comes up, at the
+playhead snapped down to the header's grid, in the velocity the editor draws with. A key shorter than one grid step is
+one grid step long, and a key still held when the transport stops keeps the step it had. The notes arrive as the
+playhead passes the clip. Step input and Record are exclusive, so arming one disarms the other. Each press and release
+is one <code>note.record_on</code> / <code>note.record_off</code> - the same commands an agent on the control socket
+calls - and the whole take is <b>one Undo step</b>. The take ends by itself when the transport stops, when you disarm
+Record, or with <code>note.record_end</code>, and Undo or Redo ends it as well so a checkpoint is never undone under a
+held key. <code>window.note_editor_set</code>'s <code>record</code> arms the button and
+<code>window.get_state.note_editor.record</code> reads it back. A key that is down when the clip or the panel changes
+writes nothing more.</p>
 <p>A MIDI clip also reads as a melodic step grid, for agents and scripts: <code>note.step_get_state</code> lists every
 note by its step (a column of <code>step_ticks</code> ticks, a sixteenth by default), key, velocity, chance and ratchet, says
 which notes are in the set scale and their degree, and lists each column's stacked pitches. <code>note.step_set</code> edits
