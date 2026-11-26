@@ -883,6 +883,13 @@ LMMS_EXPORT void registerNoteMelodyCommands(ControlRegistry& registry);
 //! 0.5.0 Q050-294.3: note.step_fill, a seeded shape or random fill of a clip's step columns in the active scale
 //! (ControlCommandsNoteStepFill.cpp).
 LMMS_EXPORT void registerNoteStepFillCommands(ControlRegistry& registry);
+/*! Q050-211 (0.5.0 L07): note.step_input - one step of step entry: a note (or a chord) lands at the
+ *  clip's step cursor (include/ControlStepInput.h) and the cursor moves on by the grid step, one
+ *  MidiClip journal checkpoint per step. The note editor's Step input mode calls it for a MIDI key
+ *  and for a computer key alike, and an agent on the socket makes the same call
+ *  (ControlCommandsNoteStepInput.cpp).
+ */
+LMMS_EXPORT void registerNoteStepInputCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (W3): note.move_to_track / split_by_pitch, scale.detect, transport.panic
 //! (ControlCommandsNoteMoves.cpp).
 LMMS_EXPORT void registerNoteMoveCommands(ControlRegistry& registry);

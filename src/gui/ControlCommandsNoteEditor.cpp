@@ -111,6 +111,10 @@ void applyView(gui::NoteEditor* editor, const QJsonObject& args)
 			args.value(QStringLiteral("new_velocity")).toInt(editor->state().lastVelocity));
 	}
 	if (args.contains(QStringLiteral("audio_behind"))) { editor->setAudioBehind(args.value(QStringLiteral("audio_behind")).toString()); }
+	// Q050-211: arming puts the cursor at the playhead, so it comes first and an explicit
+	// `step_cursor` in the same call still wins.
+	if (args.contains(QStringLiteral("step_input"))) { editor->setStepInput(args.value(QStringLiteral("step_input")).toBool()); }
+	if (args.contains(QStringLiteral("step_cursor"))) { editor->setStepCursor(args.value(QStringLiteral("step_cursor")).toInt()); }
 }
 
 //! The zoom: pixels per tick, then a fit to the clip or (FL's Z) to the selected notes.
@@ -176,8 +180,11 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		"gets; `audio_behind` draws an audio clip's waveform behind the notes (a clip id, auto - the first one sounding with the "
 		"clip - or empty); `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes "
 		"(after the panel is shown); `zoom_to_selection` fits the selected notes, or the clip when none is (the Z key); `reveal` (default true) brings the note editor "
-		"panel into view. Interface state, not project state: nothing is journalled - the notes themselves "
-		"are edited through note.*. Refused `requires` in a process with no interface.");
+		"panel into view; `step_input` arms Step input, where a MIDI key or a computer key enters one "
+		"`note.step_input` step and the step cursor moves on by `grid`, and `step_cursor` (ticks) puts that cursor "
+		"somewhere else - edit state, not project state, so arming, moving it and disarming take no undo step. "
+		"Interface state, not project state: nothing is journalled - the notes themselves are edited through "
+		"note.*. Refused `requires` in a process with no interface.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("tool"), enumProperty(kTools)},
@@ -191,6 +198,8 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		{QStringLiteral("new_length"), integerProperty(0, 192 * 16)},
 		{QStringLiteral("new_velocity"), integerProperty(1, 200)},
 		{QStringLiteral("audio_behind"), stringProperty()},
+		{QStringLiteral("step_input"), booleanProperty()},
+		{QStringLiteral("step_cursor"), integerProperty(0, 192 * 9999)},
 		{QStringLiteral("zoom"), numberProperty()},
 		{QStringLiteral("reveal"), booleanProperty()},
 		{QStringLiteral("fit"), booleanProperty()},
@@ -206,6 +215,8 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		{QStringLiteral("controller_lane"), stringProperty()},
 		{QStringLiteral("new_length"), integerProperty(0, 192 * 16)}, {QStringLiteral("new_velocity"), integerProperty(1, 200)},
 		{QStringLiteral("audio_behind"), stringProperty()},
+		{QStringLiteral("step_input"), booleanProperty()},
+		{QStringLiteral("step_cursor"), integerProperty(0, 192 * 9999)},
 		{QStringLiteral("scroll_ticks"), numberProperty()}, {QStringLiteral("scroll_y"), integerProperty(0, 1 << 20)},
 		{QStringLiteral("row_height"), integerProperty(6, 40)},
 		{QStringLiteral("top_key"), integerProperty(-1, 127)}, {QStringLiteral("bottom_key"), integerProperty(-1, 127)},

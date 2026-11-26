@@ -138,6 +138,10 @@ const ReversibilityRow kArrangerRows[] = {
 	R("note.scale", RC::TrueInverse, true, "it moves and resizes notes", "MidiClip journal checkpoint", ""),
 	R("note.ratchet", RC::TrueInverse, true, "it splits notes into repeats", "MidiClip journal checkpoint", ""),
 	R("note.add_many", RC::TrueInverse, true, "it adds notes to a clip", "MidiClip journal checkpoint", ""),
+	R("note.step_input", RC::TrueInverse, true,
+		"it adds the step's notes to a clip - the pitches, positions and lengths the owner MidiClip serializes in its note list; "
+		"the step cursor it advances is edit state and is not saved",
+		"MidiClip journal checkpoint (one per step; the cursor is not project state and undo does not move it)", ""),
 	R("note.restore_timing", RC::TrueInverse, true, "it puts back or forgets the notes' pre-quantise timing", "MidiClip journal checkpoint", ""),
 	R("note.list", RC::NotMutating, false, "it reads a clip's notes. Nothing is written", "no write", ""),
 	R("note.step_set", RC::TrueInverse, true,

@@ -214,6 +214,8 @@ SET(LMMS_SRCS
 	gui/noteeditor/StepGridCanvas.cpp
 	gui/ControlCommandsStepGrid.cpp
 	gui/noteeditor/NoteEditorToolbar.cpp
+	# Q050-211: Step input mode - a MIDI key and a computer key both enter one note.step_input step.
+	gui/noteeditor/NoteStepInput.cpp
 	gui/noteeditor/NoteGrid.cpp
 	gui/noteeditor/NoteProperties.cpp
 	gui/noteeditor/NoteLanes.cpp

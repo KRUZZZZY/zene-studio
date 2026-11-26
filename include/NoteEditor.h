@@ -97,6 +97,7 @@ struct NoteEditorState
 	NoteColor colorMode = NoteColor::Velocity;
 	bool keepInScale = false;     //!< drawn and moved notes land on the nearest key of the scale
 	QString controllerLane;       //!< the controller lane shown instead of the note lane ("cc:1", ...), or empty
+	bool stepInput = false;       //!< Q050-211: Step input mode - a MIDI key or a computer key enters one step
 };
 
 //! The reworked piano roll (owner direction 2026-10-02; its gestures FL Studio's, 2026-10-03). Every edit it
@@ -134,6 +135,17 @@ public:
 	//! Show the clip's controller lane @a id (cc:<n>, pitchbend, aftertouch) under the notes; empty
 	//! goes back to the note lane.
 	void setControllerLane(const QString& id);
+	/*! Q050-211: Step input mode. While it is on, a MIDI key (the clip track's midiNoteOn, i.e. what a
+	 *  MIDI keyboard sends) and a computer key (the piano-view letters) each enter one step: a note at
+	 *  the clip's step cursor (include/ControlStepInput.h), the cursor advancing by the grid, through
+	 *  `note.step_input` - one command and one undo step per key. Arming puts the cursor at the playhead
+	 *  inside the clip, on the grid. Disarming (or the clip going away) drops the MIDI connection, so a
+	 *  key pressed afterwards writes nothing.
+	 */
+	void setStepInput(bool on);
+	bool stepInputArmed() const { return m_state.stepInput; }
+	//! Put the clip's step cursor at @a ticks (window.note_editor_set `step_cursor`; edit state, not saved).
+	void setStepCursor(int ticks);
 	//! The clip track's name for @a key (key_names.*), or empty.
 	QString keyLabel(int key) const;
 	//! Horizontal zoom, pixels per tick (NoteGrid clamps it).
@@ -203,6 +215,19 @@ private:
 	void readScale();
 	//! readScale() when the scale context changed since it last ran (a change made elsewhere).
 	void followScale();
+	//! Q050-211: one step entered at @a key - the one call both entry sources make.
+	void stepEnter(int key);
+	//! A computer key that plays a piano key while Step input is on: enters a step for it (true), or
+	//! leaves the event for the editor's tools (false).
+	bool stepInputKey(const QKeyEvent* event);
+	//! Connect the clip track's midiNoteOn (a MIDI keyboard) while Step input is on; drop the old one.
+	void followStepInput();
+	void dropStepInput();
+	//! The note length a step takes: New Note Length when one is set, else the last drawn one (ED-073).
+	int stepEntryLength() const;
+	//! Keep the step cursor on screen while a phrase is entered.
+	void revealStepCursor();
+	void onMidiNoteOn(const lmms::Note& note);
 	//! Show the playhead at @a tick (-1: none) in the note area and the lanes under it.
 	void showPlayhead(int tick);
 	void onClipDestroyed();
@@ -232,6 +257,10 @@ private:
 	bool m_scaleDeferred = false;  //!< readScale() ran before the engine was ready: followScale() asks again
 	bool m_syncing = false;
 	bool m_pendingFit = false;
+	//! Q050-211: the MIDI-keyboard connection Step input mode holds while it is on (an empty handle when
+	//! it is off). One connection, dropped on disarm and on a clip change, so a key pressed after either
+	//! writes nothing.
+	QMetaObject::Connection m_stepConnection;
 	class QTimer* m_playheadTimer = nullptr;
 };
 

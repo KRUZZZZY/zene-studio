@@ -226,6 +226,9 @@ void registerControlCommands(ControlRegistry& registry)
 	registerNoteEditCommands(registry);
 	registerNoteStepCommands(registry);
 	registerNoteStepFillCommands(registry);
+	// Q050-211: note.step_input - step entry from a MIDI keyboard or the computer keys, one note
+	// (or chord) per call, the cursor advancing by the grid step.
+	registerNoteStepInputCommands(registry);
 	registerTrackChannelCommands(registry);
 	registerTrackRoutingCommands(registry);
 	registerCollectMediaCommand(registry);

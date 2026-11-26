@@ -39,6 +39,7 @@
 #include "ControlRegistry.h"
 #include "ControlScaleShared.h"
 #include "ControlVocabulary.h"
+#include "ControlStepInput.h"
 #include "ControllerLaneView.h"
 #include "DesignTokens.h"
 #include "InstrumentTrack.h"
@@ -218,6 +219,8 @@ void NoteEditor::setClip(MidiClip* clip)
 	}
 	readScale();
 	refresh();
+	// Q050-211: Step input follows the clip that is open now (a no-op when the mode is off).
+	followStepInput();
 	// Fit the clip once the note area has its real size: a panel that is parked or not yet laid
 	// out has none, and a fit computed then scrolls to the wrong keys.
 	m_pendingFit = clip != nullptr;
@@ -237,6 +240,9 @@ void NoteEditor::onClipDestroyed()
 void NoteEditor::cancelGestures()
 {
 	auditionRelease(m_auditionKey);
+	// Q050-211: a step in flight belongs to the clip that is going; no key pressed afterwards may
+	// write to it, so the MIDI connection is dropped here (setClip re-makes it for the new clip).
+	dropStepInput();
 	m_canvas->cancelGesture();
 	m_ruler->cancelDrag();
 	m_lanes->cancelDrag();
@@ -489,6 +495,8 @@ QJsonObject NoteEditor::describe() const
 		{QStringLiteral("new_length"), m_state.newLength},
 		{QStringLiteral("new_velocity"), m_state.lastVelocity},
 		{QStringLiteral("audio_behind"), m_state.audioBehind},
+		{QStringLiteral("step_input"), m_state.stepInput},
+		{QStringLiteral("step_cursor"), m_state.clip == nullptr ? 0 : control::stepInputCursor(clipId())},
 		{QStringLiteral("zoom"), g.pixelsPerTick()},
 		{QStringLiteral("scroll_ticks"), g.scrollTicks()},
 		{QStringLiteral("scroll_y"), g.scrollY()},

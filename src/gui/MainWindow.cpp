@@ -677,7 +677,7 @@ void MainWindow::finalize()
 	m_shell->mount(QStringLiteral("arranger"), gui->songEditor());
 	m_shell->mount(QStringLiteral("detail"), gui->noteEditor());
 	// The classic piano roll stays, as a floating window, for what the note editor does not do
-	// yet - MIDI recording, step input, chord stamping (docs/NOTE-EDITOR.md §7).
+	// yet - live (transport-time) MIDI recording and chord stamping (docs/NOTE-EDITOR.md §7).
 	addWindowedWidget(gui->pianoRoll());
 	gui->pianoRoll()->parentWidget()->hide();
 	m_shell->mount(QStringLiteral("automation"), gui->automationEditor());
