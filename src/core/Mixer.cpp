@@ -1452,6 +1452,12 @@ void Mixer::deleteChannel( int index )
 	}
 
 	MixerChannel * ch = m_mixerChannels[index];
+	// A record route tapping this channel would stay skipped by the input path with nothing left to push
+	// into it (cluster new-p17-140): put it back on the input, and say so.
+	if (const int reset = recordertaps::channelDeleted(ch->id()); reset > 0)
+	{
+		qWarning("Mixer: deleting channel %d put %d record route(s) tapping it back on the input", index, reset);
+	}
 
 	// delete all of this channel's sends and receives
 	while (!ch->m_sends.empty())

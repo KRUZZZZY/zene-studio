@@ -57,6 +57,7 @@ struct Tap
 
 //! Point route @a route at @a tap (Source::Input puts it back on the engine's input). UI thread. The
 //! change is pending: it takes effect at the next period boundary, so one route has one source per period.
+//! A Source::Channel tap whose channel no longer exists puts the route on the input instead.
 LMMS_EXPORT void set(int route, const Tap& tap);
 //! The tap set for route @a route (pending included: the UI and command replies see it immediately).
 LMMS_EXPORT Tap get(int route);
@@ -64,6 +65,10 @@ LMMS_EXPORT Tap get(int route);
 //! Includes get/command replies, so a tap is visible here before the next period. Audio code must use
 //! audioTapped() for the published per-period value; this is not the audio decision.
 LMMS_EXPORT bool tapped(int route) noexcept;
+//! UI thread, while the channel still exists: mixer channel @a channelId (its persistent id) is being
+//! deleted. Every route tapping it goes back to the input (pending, published at the next period boundary),
+//! so no route stays skipped by the input path on a source that can never push again. Returns how many.
+LMMS_EXPORT int channelDeleted(int channelId);
 
 //! Render thread, at the very top of a period: publish every pending tap as the active one for this period.
 LMMS_EXPORT void beginPeriod() noexcept;
