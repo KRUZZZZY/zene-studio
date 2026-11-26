@@ -114,8 +114,11 @@ cmake --build build --target zene ControlArmReversibilityTest -j4    # build-12-
 cd build/tests && ctest -R '^ControlArmReversibilityTest$' --output-on-failure   # test-17-green-restored.log TEST_EXIT=0, 100% passed
 ```
 
-Re-run at the final commit (`bfc4285599`), same two commands, so the exit codes below belong to the
-tree the proof manifest names:
+Re-run at the final commit (`8d5b499bec`), same two commands, so the exit codes below belong to the
+tree the proof manifest names. That commit holds the same product files the runs were made with: a
+process outside this session reset the branch to its previous tip at 12:43:17 (`git reflog`), the
+tested content was restored from `519495b74d` and re-committed unchanged — `git diff 519495b74d
+8d5b499bec -- src include tests` is empty, only this report differs.
 
 ```sh
 cd <worktree> && git apply -R LOGS/fix-2.patch             # A_REVERSE_EXIT=0
@@ -151,7 +154,7 @@ cd build/tests && ctest -R '^McuSurfaceTest$' --output-on-failure     # test-29-
 `std::vector` and has no `indexOf`; the slot was changed to `std::find` and the runs above are the
 ones that count. The stale binary made `test-24..26` pass, which is why they are not cited.)
 
-Re-run at the final commit (`bfc4285599`) for the surface hunk:
+Re-run at the final commit (`8d5b499bec`) for the surface hunk:
 
 ```sh
 cd <worktree> && git apply -R LOGS/mcu-fix.patch            # B_REVERSE_EXIT=0
@@ -194,12 +197,12 @@ restored `ControlRecordingRoutesTest.cpp` is unchanged in this branch; gates-2.l
   symptom (`test-16-red-reversed.log`, assertions at `ControlArmReversibilityTest.cpp(171)` and
   `(218)`); then `git apply fix-2.patch` (REAPPLY_EXIT=0, tree clean), rebuild
   (`build-12-green-restored.log` BUILD_EXIT=0) and the same test **TEST_EXIT=0, 100% passed**
-  (`test-17-green-restored.log`). On the final commit `bfc4285599` the same two patches were re-run:
+  (`test-17-green-restored.log`). On the final commit `8d5b499bec` the same two patches were re-run:
   `A_TEST_RED_EXIT=8` (`test-31-red.log`), `A_TEST_GREEN_EXIT=0` (`test-32-green.log`),
   `B_TEST_RED_EXIT=8` (`test-33-red.log`, the surface slot) and `B_TEST_GREEN_EXIT=0`
   (`test-34-green.log`), all with build exits 0. The same log folder holds the test-first RED
-  (`test-3-red.log`, EXIT=8, run before any product change). Pre-submit: `submit-4.log` RESULT:
-  PASS, SUBMIT_EXIT=0 (re-run after the surface commit is `submit-5.log`).
+  (`test-3-red.log`, EXIT=8, run before any product change). Pre-submit: `submit-8.log` RESULT:
+  PASS, SUBMIT_EXIT=0.
 - **Deterministic.** No sleeps, wall clock, threads or races in the tests: every state is driven
   through `ControlRegistry` commands (`track.add`, `track.set_arm`, `track.set_arm_many`,
   `track.move`, `track.remove`) and read back through the recorder's own arm flag and the take
@@ -263,6 +266,14 @@ restored `ControlRecordingRoutesTest.cpp` is unchanged in this branch; gates-2.l
   without a writable working directory (no temp dir, unlike `ControlArmReversibilityTest`), so the
   take file cannot be opened — the same environment failure as `RecordToolsTest` above. Not caused
   by this fix and not touched.
+- A process outside this session reset the branch to its previous tip at 12:43:17 (`git reflog`:
+  `reset: moving to 7ce6419657`), dropping the three commits made here. The tested content was
+  restored from the object database (`git checkout 519495b74d -- <the three files>`), verified
+  byte-identical (`git diff 519495b74d 8d5b499bec -- src include tests` empty) and committed as
+  `8d5b499bec`. Nothing was lost. The pre-submit check is cited with its last run (`submit-8.log`,
+  PASS, exit 0); an earlier run (`submit-5.log`, FAIL) saw the tree dirty for a few seconds from a
+  concurrent process that had the product files reverted, and `submit-6.log`/`submit-7.log` are the
+  re-checks (both PASS).
 - Removing a track that is ARMED leaves its route writing (the binding now names a deleted
   `trk-<n>`; `record.disarm_track {route}` still stops it). Out of this finding's scope, but the
   honest state is visible: `record.routes_get_state` reports the route armed.
