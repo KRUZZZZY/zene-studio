@@ -149,8 +149,9 @@ The family at the tip, same rebuild (`LOGS/build-17-family.log`, `LOGS/test-15-f
 `AutomationPreFirstValueTest`, `AutomationModesTest` pass; `ControllerSurfaceTest` fails only at
 `TemplatesSaveListReadAndApply` (`saveTemplate()` returned FALSE), which writes under
 `ConfigManager::userPresetsDir()`; `~/Documents/Zene Studio` does not exist in this sandbox
-(`ls: cannot access '/home/kruzzzzy/Documents/LMMS': No such file or directory` for the presets
-root), so it is environmental and unrelated to this change. `LOGS/test-16-rt-safety.log`:
+(`ls: cannot access '/home/kruzzzzy/Documents/Zene Studio': No such file or directory`, and
+`ConfigManager::initInstalledWorkingDir()` sets it to `DocumentsLocation + "/Zene Studio/"`,
+`src/core/ConfigManager.cpp:762-766`), so it is environmental and unrelated to this change. `LOGS/test-16-rt-safety.log`:
 `RtSafetySweep` and `RtSafetySelfTest` both pass.
 
 One caveat, recorded because it is in the logs: in a combined script run (`LOGS/proof-4b-this-session.log`)
@@ -161,12 +162,15 @@ in that file), so that run's ctest passed instead of failing. A controlled run
 `121afca203c8b3cb…`), so the build is not what changed it. The authoritative RED is the first run
 above (`LOGS/test-13-red.log`, `TEST_EXIT=8`, pre-fix symptom in the failure text); the
 authoritative GREEN is `run-green2.sh` with the hashes before and after
-(`LOGS/test-18-green.log`, `GREEN_TEST_EXIT=0`). No product file was edited for either run.
+(`LOGS/test-18-green.log`, `GREEN_TEST_EXIT=0`). No product file was edited by hand; the only
+difference between the two phases is `LOGS/fix.patch`.
 
 The gates at the tip, second session: `python3 .../feature_check.py <worktree>` ->
 `LOGS/gates-6-reverify.log`, `GATES_EXIT=0`, all eight rows `PASS`, `RESULT: PASS`. The completion
 check `python3 .../submit_check.py <worktree> new-p12-56` -> `LOGS/submit-3-reverify.log`,
-`SUBMIT_EXIT=0`, `RESULT: PASS - submit`.
+`SUBMIT_EXIT=0`, `RESULT: PASS - submit`. Both were run again at this report's commit:
+`LOGS/gates-8-final.log` (`GATES_EXIT=0`, all eight `PASS`) and `LOGS/submit-4-final.log`
+(`SUBMIT_EXIT=0`, `RESULT: PASS - submit`, no `FAIL` row).
 
 ## The rest of the family, and the gates
 
