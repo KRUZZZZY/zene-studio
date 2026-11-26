@@ -52,6 +52,9 @@
 #include <QWheelEvent>
 #include <QWidget>
 
+#include <memory>
+
+#include "AutomatableButton.h"
 #include "AutomatableModel.h"
 #include "BarModelEditor.h"
 #include "ColorChooser.h"
@@ -67,6 +70,7 @@
 #include "LcdFloatSpinBox.h"
 #include "LcdSpinBox.h"
 #include "LedCheckBox.h"
+#include "LfoController.h"
 #include "TempoSyncBarModelEditor.h"
 #include "TempoSyncKnob.h"
 #include "TempoSyncKnobModel.h"
@@ -148,6 +152,36 @@ public:
 
 private:
 	QList<QLayoutItem*> m_items;
+};
+
+//! A real LFO controller, with its six models reachable for the dialog's binding checks. They are
+//! protected, so a subclass reaches them without an access-specifier #define.
+class ProbeLfoController : public LfoController
+{
+public:
+	using LfoController::LfoController;
+
+	QList<Model*> models()
+	{
+		return {&m_baseModel, &m_speedModel, &m_amountModel, &m_phaseModel, &m_waveModel, &m_multiplierModel};
+	}
+};
+
+//! The dialog's controls are protected for the same reason: the binding check reads them here.
+class ProbeLfoControllerDialog : public LfoControllerDialog
+{
+public:
+	using LfoControllerDialog::LfoControllerDialog;
+
+	LfoController* lfoForTest() { return m_lfo; }
+	LfoController* castForTest() { return castModel<LfoController>(); }
+
+	//! The six controls modelChanged() binds, in its order.
+	QList<Model*> boundModels() const
+	{
+		return {m_baseKnob->model(), m_speedKnob->model(), m_amountKnob->model(),
+			m_phaseKnob->model(), m_waveBtnGrp->model(), m_multiplierBtnGrp->model()};
+	}
 };
 
 } // namespace
@@ -275,6 +309,79 @@ private slots:
 
 		model.setTempoSync(TempoSyncKnobModel::SyncMode::QuarterNote);
 		QCOMPARE(editor.syncDescription(), QStringLiteral("Synced to Quarter Note"));
+	}
+
+	//! cluster new-p21-214: LfoControllerDialog::modelChanged() dereferenced the result of
+	//! castModel<LfoController>() at once, for every knob and button group. ModelView::setModel()
+	//! calls modelChanged() for whatever it is handed, so a detached model crashed the dialog.
+	//! The shipped construction still binds all six controls to the controller's own models.
+	void anLfoControllerDialogBindsEveryControlOfItsController()
+	{
+		ProbeLfoController lfo(nullptr);
+		std::unique_ptr<ControllerDialog> shipped(lfo.createDialog(nullptr));
+		QVERIFY2(shipped != nullptr, "the LFO controller created no dialog");
+		QVERIFY2(qobject_cast<LfoControllerDialog*>(shipped.get()) != nullptr,
+			"an LFO controller no longer creates an LFO dialog");
+		QCOMPARE(shipped->model(), static_cast<Model*>(&lfo));
+
+		ProbeLfoControllerDialog dialog(&lfo, nullptr);
+		QCOMPARE(dialog.lfoForTest(), static_cast<LfoController*>(&lfo));
+		QCOMPARE(dialog.castForTest(), static_cast<LfoController*>(&lfo));
+		QCOMPARE(dialog.boundModels(), lfo.models());
+	}
+
+	//! Failure path: a detached model (ModelView::setModel(nullptr)) crashed in modelChanged().
+	void anLfoControllerDialogSurvivesADetachedModel()
+	{
+		ProbeLfoController lfo(nullptr);
+		ProbeLfoControllerDialog dialog(&lfo, nullptr);
+
+		dialog.setModel(nullptr);
+
+		QCOMPARE(dialog.model(), static_cast<Model*>(nullptr));
+		QVERIFY(dialog.lfoForTest() == nullptr);
+		QVERIFY(dialog.castForTest() == nullptr);
+	}
+
+	//! The base class's own detach installs a default-constructed Model, which is not an LFO
+	//! controller either: castModel() returns null for it, and nothing may dereference it.
+	void anLfoControllerDialogSurvivesUnsetModel()
+	{
+		ProbeLfoController lfo(nullptr);
+		ProbeLfoControllerDialog dialog(&lfo, nullptr);
+
+		dialog.unsetModel();
+
+		QVERIFY(dialog.model() != nullptr);
+		QVERIFY(dialog.castForTest() == nullptr);
+		QVERIFY(dialog.lfoForTest() == nullptr);
+	}
+
+	//! Exhaustion of the accepted type: a foreign model is refused, not dereferenced as an LFO.
+	void anLfoControllerDialogRefusesAForeignModel()
+	{
+		ProbeLfoController lfo(nullptr);
+		ProbeLfoControllerDialog dialog(&lfo, nullptr);
+		FloatModel foreign(0.0f, 0.0f, 1.0f, 0.01f, nullptr, QStringLiteral("foreign model"));
+
+		dialog.setModel(&foreign);
+
+		QCOMPARE(dialog.model(), static_cast<Model*>(&foreign));
+		QVERIFY(dialog.castForTest() == nullptr);
+		QVERIFY(dialog.lfoForTest() == nullptr);
+	}
+
+	//! Reconfiguration: re-attaching the controller after a detach binds every control again.
+	void anLfoControllerDialogBindsAgainWhenTheControllerComesBack()
+	{
+		ProbeLfoController lfo(nullptr);
+		ProbeLfoControllerDialog dialog(&lfo, nullptr);
+
+		dialog.setModel(nullptr);
+		dialog.setModel(&lfo);
+
+		QCOMPARE(dialog.lfoForTest(), static_cast<LfoController*>(&lfo));
+		QCOMPARE(dialog.boundModels(), lfo.models());
 	}
 
 	void barModelEditorStoresItsFixedVerticalPolicy()
