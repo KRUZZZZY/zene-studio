@@ -96,10 +96,14 @@ made from `build/tests`; builds with `-j4`.
 | Family test | `ctest -R 'ControlArmReversibilityTest\|ReversibilityContractTest\|ReversibilityUndoTest\|ReversibilityUndoDeviceTest\|PatcherCommandsTest\|PatcherWiringPersistenceTest\|PatcherCanvasTest\|ControlReversibilityTranscript\|ControlCommandsSnapshot' --output-on-failure` (`42-test-family.log`) | 0 | 100% passed out of 9, including the ControlCommandsSnapshot canary |
 | Wider build | `cmake --build build --target zene MissingDevicesRound2Test ModulationLayerProjectRoundTripTest HybridTrackRoundTripTest RoutingGraphTest -j4` (`43-build-wide.log`) | 0 | |
 | Wider test | `ctest -R 'MissingDevicesRound2Test\|ModulationLayerProjectRoundTripTest\|HybridTrackRoundTripTest\|RoutingGraphTest' --output-on-failure` (`44-test-wide.log`) | 0 | 100% passed out of 4 |
-| Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`45-feature-check.log`) | 0 | every row PASS, `RESULT: PASS` |
-| Submit check (pre-commit) | `python3 .../qwen/submit_check.py <worktree> new-p11-64` (`46-submit-check-pre.log`) | 0 | only FAIL: `working tree clean - M include/PatchWiring.h` (the comment was not committed yet) |
+| Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (`49-feature-check.log`) | 0 | every row PASS, `RESULT: PASS` |
 
-Final gate table (`45-feature-check.log`):
+A pre-commit run of the completion check (`46-submit-check-pre.log`) found exactly one FAIL,
+`working tree clean - M include/PatchWiring.h`, because the header comment was not committed yet.
+After the commit, `submit_check.py` (`48-submit-check.log`) reports every item PASS and
+`RESULT: PASS - submit`.
+
+Final gate table (`49-feature-check.log`):
 ```
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
@@ -160,6 +164,11 @@ RESULT: PASS
 - **Header changed:** `include/PatchWiring.h` (comment only) and `include/EffectChain.h` (the
   private `loadPatchWiring` declaration, committed earlier). `zene` and every test target used here
   were rebuilt from the final tree (`35`, `39`, `41`, `43` logs).
+- **Completion check.** `submit_check.py <worktree> new-p11-64` prints `RESULT: PASS - submit`
+  (`48-submit-check.log`): commits on the branch, clean tree, report verdict, tests, test
+  registration and gates all PASS, and the only ask left is the sibling-command list answered
+  above. The pre-commit run (`46-submit-check-pre.log`) had exactly one FAIL, the uncommitted
+  header comment.
 
 ## Other findings
 
