@@ -157,6 +157,10 @@ the non-zero exit is. It is not a regression claim either way.
 - **Portability:** the changed header uses no Qt API at all, no `windows.h` names, no `std::filesystem`;
   the test uses only QtTest and `MidiOutQueue`. Not compiled here for Qt 5.15 / MSVC / macOS - no such
   toolchain on this host; unverified.
+- **Verdict evidence (the ALREADY-FIXED / FALSE-POSITIVE question does not apply - the verdict is
+  FIXED):** the finding's code is quoted at the top with its pre-change line numbers
+  (`src/core/midi/MidiAlsaSeq.cpp:374`, `include/MidiOutQueue.h:47-52`), and the fix is the two
+  product hunks named under "The fix", proved by the exit codes above.
 - **Not verified:** bytes on a real device. `/dev/snd/seq` does not exist in this environment, so
   `MidiOutQueueTest::queuedEventReachesAnAlsaSequencerClientPromptly` skips
   (`ALSA sequencer is unavailable`), and nothing here can watch an instrument hold or release a note.
