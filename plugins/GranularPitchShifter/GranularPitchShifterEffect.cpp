@@ -68,8 +68,17 @@ GranularPitchShifterEffect::GranularPitchShifterEffect(Model* parent, const Desc
 	autoQuitModel()->setValue(autoQuitModel()->maxValue());
 	m_grains.reserve(MaxGrains);
 	sampleRateNeedsUpdate();
+	// Run the preparation in the emitting thread.  Every producer of the signal stops the
+	// backend first and announces the rate before it lets audio run again
+	// (AudioEngine::setAudioDevice() and restoreAudioDevice() in
+	// src/core/AudioEngine.cpp:1420-1429 and :1446-1456, initDevices() before processing
+	// starts), and ProjectRenderer relies on the slot being called immediately
+	// (src/core/ProjectRenderer.cpp:265-267).  A queued slot would arrive after
+	// startProcessing(), so the first blocks after the swap would run with the old rate and
+	// the old ring buffer.  AutoConnection keeps that ordering and still queues a signal
+	// emitted from another thread.
 	QObject::connect(Engine::audioEngine(), &AudioEngine::sampleRateChanged, this,
-		[this] { sampleRateNeedsUpdate(); }, Qt::QueuedConnection);
+		[this] { sampleRateNeedsUpdate(); });
 	m_reclaimTimer = new QTimer(this);
 	m_reclaimTimer->setObjectName(QStringLiteral("granularRetiredBufferReclaimTimer"));
 	m_reclaimTimer->setTimerType(Qt::VeryCoarseTimer);

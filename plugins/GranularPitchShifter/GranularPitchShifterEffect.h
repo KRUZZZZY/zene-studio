@@ -35,6 +35,10 @@
 #include "GranularPitchShifterControls.h"
 #include "interpolation.h"
 
+#ifdef LMMS_TESTING
+class GranularPitchShifterRealtimeTest;
+#endif
+
 namespace lmms
 {
 
@@ -200,6 +204,11 @@ private:
 	bool m_updatePitches = true;
 
 	friend class GranularPitchShifterControls;
+#ifdef LMMS_TESTING
+	//! The regression seam for the sample-rate handoff: reads the rate and the ring buffer
+	//! the next processed block will use. Test only, no product API.
+	friend class ::GranularPitchShifterRealtimeTest;
+#endif
 };
 
 
