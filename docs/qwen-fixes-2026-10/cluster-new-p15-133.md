@@ -31,7 +31,7 @@ connects the instrument watch at `:233-237`.
 
 - `include/ModulationLayer.h:316` - `ModulationAudioView::Entry::instrument` ("valid while the
   entry's token is alive"): the pointer the finding names.
-- `include/ModulationLayer.h:409-433` - `targetAlive()` / `beginTargetWrite()` / `endTargetWrite()`:
+- `include/ModulationLayer.h:409-441` - `targetAlive()` / `beginTargetWrite()` / `endTargetWrite()`:
   the pin is taken only while the slot's token is the live one, and `beginTargetWrite()` re-checks
   `targetAlive()` after its CAS, so a pin cannot be taken once the slot's closing bit is set.
 - `include/ModulationLayer.h:517` - `m_instrumentWatch`, the per-slot instrument connection.
