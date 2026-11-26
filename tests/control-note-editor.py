@@ -32,6 +32,10 @@ a user does. This driver starts the REAL `zene` binary headless and proves:
      advances it by the grid step, the step's notes are the selection, ONE control.undo takes a step back, a transport
      stop under a step writes nothing and leaves the cursor where it was, and a step that cannot be entered is refused
      typed and changes nothing.
+ 10. (Q050-211) Live recording over the socket: note.record_on opens a note where the playhead is (or at a named
+     position) and note.record_off closes it where the key came up, ONE control.undo takes the whole take back, a
+     key held across transport.stop is kept one step long and the stop ends the take, and disarming Record writes
+     nothing more.
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-note-editor.py <zene> [<screenshot dir>]
 Exit 0 only when every check held.
@@ -551,6 +555,72 @@ def check_step_input(session, recorder):
     check_step_under_transport(session, recorder, clip)
     check_step_refusals(session, recorder, clip)
 
+def record_notes(session, clip):
+    """A clip's notes as sorted key@position+length strings, so a take reads at a glance."""
+    rows = session.result("note.list", {"clip": clip}).get("notes") or []
+    return sorted("%d@%d+%d" % (n["key"], n["position"], n["length"]) for n in rows)
+
+
+def check_record_armed(session, recorder, clip):
+    """The switch, through the command the toolbar's Record button runs."""
+    armed = session.result("window.note_editor_set", {"clip": clip, "record": True, "step_input": False})
+    editor = step_input_state(session)
+    recorder.check("window.note_editor_set arms Record and reports it",
+                   armed.get("record") is True and editor.get("record") is True,
+                   "reply=%r state=%r" % (armed, editor))
+
+
+def check_record_phrase(session, recorder, clip):
+    """Two notes of ONE take: each edge at a named position, and one undo takes the take back."""
+    first = session.result("note.record_on", {"clip": clip, "key": 60, "position": 0, "step": 24})
+    session.result("note.record_off", {"clip": clip, "key": 60, "position": 48, "step": 24})
+    second = session.result("note.record_on", {"clip": clip, "key": 64, "position": 48, "step": 24})
+    session.result("note.record_off", {"clip": clip, "key": 64, "position": 60, "step": 24})
+    notes = record_notes(session, clip)
+    recorder.check("note.record_on opens a note and note.record_off closes it where the key came up",
+                   notes == ["60@0+48", "64@48+12"] and first.get("take_started") is True
+                   and second.get("take_started") is False,
+                   "notes=%r first=%r second=%r" % (notes, first, second))
+    session.result("control.undo")
+    recorder.check("ONE control.undo takes the whole take back", record_notes(session, clip) == [],
+                   "notes=%r" % record_notes(session, clip))
+
+
+def check_record_under_transport(session, recorder, clip):
+    """A key held while the transport runs, and the stop that ends the take under it."""
+    session.result("transport.play")
+    during = session.result("note.record_on", {"clip": clip, "key": 67, "step": 24})
+    session.result("transport.stop")
+    notes = record_notes(session, clip)
+    ended = session.result("note.record_end", {"clip": clip})
+    late = session.result("note.record_off", {"clip": clip, "key": 67, "step": 24})
+    recorder.check("a note recorded while the transport runs stays one step long after the stop",
+                   during.get("position") is not None and notes == ["67@%d+24" % during.get("position")],
+                   "during=%r notes=%r" % (during, notes))
+    recorder.check("the stop ended the take: record_end closes nothing and the late key-up writes nothing",
+                   ended.get("count") == 0 and late.get("closed") is False,
+                   "ended=%r late=%r" % (ended, late))
+
+
+def check_record_disarm(session, recorder, clip):
+    """Record goes off through the same command, and a take that never started writes nothing."""
+    off = session.result("window.note_editor_set", {"record": False})
+    stray = session.result("note.record_off", {"clip": clip, "key": 70})
+    recorder.check("window.note_editor_set disarms Record, and a key-up with nothing open writes nothing",
+                   off.get("record") is False and stray.get("closed") is False,
+                   "reply=%r stray=%r" % (off, stray))
+
+
+def check_recording(session, recorder):
+    """Q050-211: live recording over the socket - the two MIDI edges write the notes a keyboard plays,
+    ONE undo step covers the take, and the transport's stop ends it."""
+    _, clip = new_clip(session, "Record")
+    check_record_armed(session, recorder, clip)
+    check_record_phrase(session, recorder, clip)
+    check_record_under_transport(session, recorder, clip)
+    check_record_disarm(session, recorder, clip)
+
+
 def main(argv):
     if len(argv) < 2:
         print(__doc__)
@@ -579,6 +649,7 @@ def main(argv):
         check_controller_conversion(session, recorder)
         check_input_transform(session, recorder)
         check_step_input(session, recorder)
+        check_recording(session, recorder)
     report_results(recorder)
     if recorder.problems:
         transcript.dump()
