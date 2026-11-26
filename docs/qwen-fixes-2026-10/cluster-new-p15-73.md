@@ -154,4 +154,57 @@ RESULT: PASS
 
 ## Self-check
 
-(answers to `submit_check.py`'s ASK items, with evidence)
+`submit_check.py` exit 0, no FAIL, five ASK items. Answers, each with the evidence this session saw:
+
+1. **The regression FAILS with the product change reverted and PASSES with it.** The 4b pair is
+   above: `git apply -R .../fix.patch` EXIT 0, rebuild EXIT 0 → ctest EXIT **8**
+   (`logs/test-4-reverted-red.log`: `Actual (granular->m_sampleRate): 44100`, `Expected: 48000`,
+   line 291); `git apply .../fix.patch` EXIT 0, rebuild EXIT 0 → ctest EXIT **0**
+   (`logs/test-5-restored-green.log`). Independently, the test was RED before the fix existed at
+   all (`logs/test-2-red.log`, EXIT 8) and the baseline binary was green (`logs/test-1-baseline.log`,
+   EXIT 0), so the failure is the change under test and not the harness.
+2. **The test is deterministic: no wall-clock timing, no sleeps, no threads, no event loop.** The
+   new slot starts no thread and calls neither `processEvents()` nor any timer; it renders blocks by
+   calling `renderOneBlock()` directly. The rate is *injected*: `FixedRateAudioDevice` sets it with
+   `AudioDevice::setSampleRateForTesting()` and the engine announces it through
+   `AudioEngine::setAudioDevice()` — the same seam `tests/src/plugins/LommSampleRateTest.cpp` and
+   `DispersionNonFiniteTest` use. The observation is the state the next block reads (`m_sampleRate`,
+   `m_ringBuf.size()`), read through the `LMMS_TESTING`-only friend
+   (`GranularPitchShifterEffect.h:207-211`), not through timing. The only guard in the slot is the
+   `QCOMPARE(outputSampleRate(), ...)` pre-condition that the injection landed.
+3. **The fix is at the cause and complete.** The cause was the connection type
+   (`GranularPitchShifterEffect.cpp:71-72` before the fix), and that one line was changed. Checked:
+   (a) the three callers of `sampleRateNeedsUpdate()` — constructor `:70`, this signal `:80-81`, and
+   `GranularPitchShifterControls::updateRange()` (`GranularPitchShifterControls.cpp:104`); (b) all
+   three producers of `sampleRateChanged` (`AudioEngine.cpp:812`, `:1427`, `:1454`) fire off the
+   audio thread with the backend stopped (`AudioDevice.cpp:137-155`); (c) every sibling listener in
+   the tree already runs in the emitting thread (list above, 12 sites), so nothing else needs the
+   same change, and no listener needed its own ordering fix. Local TSan does not run on this box, so
+   the thread-safety statement is the design argument above, not a detector report.
+4. **No collateral damage.** The DSP (`processImpl`), `sampleRateNeedsUpdate()`,
+   `applyPreparedBuffers()`, the retired-buffer reclamation and the control models are byte-for-byte
+   unchanged; only *when* the already-existing preparation runs changed, so a saved project loads
+   and sounds exactly as before (no serialization, no parameter, no default touched). No limit or
+   check was added anywhere. Within the same binary, the three pre-existing slots still pass
+   (`sampleRateHandoffDoesNotAllocateAndKeepsPitchShift`: allocations 0, frees 0;
+   `retiredBuffersAreReclaimedWithoutAnotherUpdate`; `savedOutOfRangeValueIsBoundedByTheControlModel`),
+   and the family binary `PluginPortsMigrationTest` reports the same 4 environment failures with and
+   without the fix (`test-6-family.log` vs `test-7-family-ab.log`).
+5. **Not ALREADY-FIXED and not FALSE-POSITIVE — verdict FIXED.** The queued connection was present
+   in this tree (`GranularPitchShifterEffect.cpp:71-72` at `3436a808b`) and the RED run showed the
+   old rate in force after the swap (`logs/test-2-red.log`), so the defect was live, not already
+   fixed and not a phantom. The contract it violated is the engine's own
+   (`src/core/AudioEngine.cpp:1420-1429`, `:1446-1456`, and the comment at
+   `src/core/ProjectRenderer.cpp:265-267`).
+
+## Other findings
+
+- `PluginPortsMigrationTest` cannot be green in this checkout: `thirdparty/stk-rawwaves` is absent
+  (only `mts-esp` is in `thirdparty/`) and the SWH Decimator LADSPA fixture is not installed. Same
+  four slots with and without this change; not touched here.
+- Engine-side: a plugin whose `sampleRateChanged` slot is slow now delays `startProcessing()` inside
+  `setAudioDevice()` / `restoreAudioDevice()`, which is the ordering the engine already documents
+  (`ProjectRenderer.cpp:265-267`) and what every other listener already does. The granular slot
+  allocates and zero-fills up to 120 s × 96 kHz of ring buffer, so a device swap now pays that cost
+  before audio restarts instead of after. That is the intended trade (no audio is processed with the
+  stale state); noted, not changed.
