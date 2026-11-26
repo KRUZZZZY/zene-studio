@@ -31,7 +31,7 @@ All logs are in `~/.config/kads/zene/state/runs/new-p9-348-port-port.r12/logs/`.
 | --- | --- | ---: | --- |
 | Build the two tests after the fixture move and the new assertions | `cmake --build build --target PatmanLoadTest AudioResamplerPoolMemoryTest -j4` | 0 | `001-build.log` |
 | GREEN before the mutation | `ctest -R '^(PatmanLoadTest\|AudioResamplerPoolMemoryTest)$' --output-on-failure` | 0 | `002-test.log` (2/2) |
-| Mutation: one converter freed inside T2's `RealtimeScope` | build `PatmanLoadTest` / same ctest | 0 / **8** | `003-mutation-build.log`, `004-mutation-test.log`: `FAIL! overPolyphonyKeepsEverySincBestBlockAudible()` `realtimeConverterDeletionsForTest()` 1 != 0, line 452; allocations assertion passed |
+| Mutation: one converter freed inside T2's `RealtimeScope` | build `PatmanLoadTest` / same ctest | 0 / **8** | `003-mutation-build.log`, `004-mutation-test.log`: `FAIL! overPolyphonyKeepsEverySincBestBlockAudible()` `realtimeConverterDeletionsForTest()` 1 != 0 (log line 452; the mutation added two lines above the assertion, which sits at `:450` in the committed file); allocations assertion passed |
 | Mutation reverted | edit only | — | — |
 | Rebuild + GREEN | `cmake --build build --target PatmanLoadTest AudioResamplerPoolMemoryTest -j4` / `ctest -R '^(PatmanLoadTest\|AudioResamplerPoolMemoryTest)$'` | 0 / 0 | `011-green-build.log`, `012-green-test.log` |
 | Regenerate the whole-tree manifest from its own recipe (new header, `git add`ed first) | `bash logs/regen-all-sources2.sh` | 0 | `009-regen-all-sources.log` (3539 entries) |
