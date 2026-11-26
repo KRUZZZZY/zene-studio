@@ -42,6 +42,7 @@ therefore make the same call, leave the same transaction record and share one un
 | Scale and root | `scale.set`, `scale.root_set` (read back with `scale.get_state`) |
 | Drag the end of the loop region | `clip.resize` |
 | Tool, grid, fold, lane, ghosts, zoom, fit, open a clip | `window.note_editor_set` (view state, not journalled); `window.get_state` reports the same object as `note_editor` |
+| Step input: the header's Step input toggle, then a MIDI key or a computer key | `note.step_input`: one note (or chord) at the step cursor, the cursor advancing by the grid, one undo step each (§3a) |
 
 `note.edit` is new in 0.5.0. Several notes' `position`, `key`, `length`, `velocity`, `pan`
 and `probability` change as **one** edit, so a drag of a forty-note selection is one undo step,
@@ -108,6 +109,38 @@ With the Draw (and Select) tool:
   submenu has the same verbs. On macOS Ctrl reads as Command and Alt as Option.
 - **New Note Length** (the Notes menu, or a right-click on the grid box) fixes the length a new
   note takes instead of the last note's.
+
+## 3a. Step input
+
+The header's **Step input** button (a toggle, `window.note_editor_set` `step_input`) enters notes one key at a
+time, which is how a phrase is written when it cannot be played in time. Both entry sources go through
+`note.step_input`:
+
+- a **MIDI keyboard**: the clip track's `midiNoteOn` - the signal the classic roll's record pass listens to as
+  well - received on a queued connection, so the note is written on the GUI thread like every other command;
+- the **computer keys** the instrument window's piano plays: Z S X D C V G B H N J M (with `,` L `.` `;` `/`
+  above them) and Q 2 W 3 E R 5 T 6 Y 7 U I O P (with 9 0 above them), mapped by the logical Qt key so the same
+  letter plays the same pitch on every platform this build supports.
+
+Each key puts one note - or a chord, when the command is given `keys` - at the clip's **step cursor** and moves
+the cursor on by the editor's **grid**, with the note length the editor draws with (`new_length` when one is set,
+else the last note drawn), the velocity it draws with, and the new notes selected. One step is one
+`note.step_input` and **one undo step**; `control.undo` takes that step's notes back and leaves the cursor where it
+was, because the cursor is edit state, not project state.
+
+The cursor is per clip (`include/ControlStepInput.h`). Arming puts it at the playhead inside the clip, snapped to
+the grid; `window.note_editor_set`'s `step_cursor` puts it anywhere, and `window.get_state.note_editor.step_cursor`
+reads it back. It is not saved with the project, so an old project opens and renders exactly as before.
+
+A step is written on the key's **note-on**, so nothing is pending afterwards: a key held across a transport stop
+writes nothing more, disarming drops the track's connection, and a clip change (or a closed clip) drops it too - no
+key pressed afterwards can write into a clip the editor no longer holds.
+
+Two limits are deliberate. While Step input is on the piano keys win over the tool letters (P, B, D, T, C, E, Y
+and 1..7 all play a note): the tools stay one click away, and turning the mode off gives the letters back. And the
+on-screen key column still auditions without entering a step - it plays through the piano model, not through the
+track's MIDI input - so only a MIDI keyboard and the computer keys enter notes. Live (transport-time) recording is
+still the classic roll's (§7).
 
 ## 4. Rows, scale and folding
 
@@ -228,14 +261,14 @@ The +20 % regression gate stays opt-in per machine (`ZENE_BENCH_BASELINE`). The 
 ## 7. The classic piano roll
 
 The classic editor (`PianoRollWindow`) still exists, for what the new editor does not do yet:
-recording from a MIDI keyboard, step input, chord stamping and detuning automation. It opens
+live (transport-time) recording from a MIDI keyboard, chord stamping and detuning automation. It opens
 as a floating window from View ▸ Classic Piano Roll, and `window.toggle` accepts the name
 `classic_piano_roll`. Opening a clip sets it in both editors.
 
 ## 8. Not done, stated
 
-- **Not in the new editor yet:** MIDI recording, step input, chord stamping and detuning
-  automation. Use the classic piano roll (§7).
+- **Not in the new editor yet:** live (transport-time) MIDI recording, chord stamping and detuning
+  automation - step input is here (§3a). Use the classic piano roll (§7).
 - **Gain lane:** there is no separate per-note gain lane (§5).
 - **Not measured:** clips of several thousand notes with the expression lane open; the lane
   uses the same visible range as the note area.

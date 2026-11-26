@@ -294,6 +294,17 @@ the Repeats lane plays a note several times inside its length; the Velocity Spre
 Articulation picks one of the track's articulations (Track &gt; Articulations... sets the keyswitch, program or controller
 each one sends). New Note Length fixes the length a click draws; Audio Behind the Notes shows an audio clip's waveform
 under them. The controller lane can also hold program changes.</p>
+<p><b>Step input.</b> The step-input button in the note editor's header arms step entry: with it on, every key you
+press - a MIDI keyboard's, or the computer keys the instrument window uses (Z S X D C V G B H N J M, and
+Q 2 W 3 E R 5 T 6 Y 7 U I O P an octave above) - puts one note at the step cursor and moves the cursor on by the
+grid, so a phrase is entered one key at a time instead of played in time. The note takes the length New Note Length
+sets (else the last one you drew) and the velocity the editor draws with, and the notes just entered are the
+selection, so the next edit acts on them. Each key is one <code>note.step_input</code> and one Undo step; an agent
+on the control socket makes the same call (naming the step and the note length itself), so it advances the same
+cursor. Arming starts the cursor at the playhead
+inside the clip; <code>window.note_editor_set</code>'s <code>step_cursor</code> puts it anywhere, and that cursor is edit
+state - it is not saved with the project and Undo does not move it. A step is written when the key goes down, so
+stopping the transport, disarming the mode or opening another clip under a held key leaves no note half-entered.</p>
 <p>A MIDI clip also reads as a melodic step grid, for agents and scripts: <code>note.step_get_state</code> lists every
 note by its step (a column of <code>step_ticks</code> ticks, a sixteenth by default), key, velocity, chance and ratchet, says
 which notes are in the set scale and their degree, and lists each column's stacked pitches. <code>note.step_set</code> edits
