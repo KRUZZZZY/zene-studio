@@ -124,7 +124,8 @@ GATES_EXIT=0
 
 `LOGS/gates-2.log`: `fork-sources PASS, all-sources-reproduce PASS, no-upstream-regression PASS,
 check-namespace PASS, no-tautology PASS, doc-figures PASS, complexity PASS (no new item in your
-files), file-length PASS (no new item in your files)`, `RESULT: PASS`. An earlier run before the
+files), file-length PASS (no new item in your files)`, `RESULT: PASS`, and the same table re-run at the tip after the report and
+ledger commit is `LOGS/gates-4-final.log`, `GATES_EXIT=0`, all eight rows PASS. An earlier run before the
 commit (`LOGS/gates-1.log`, `GATES_EXIT=1`) failed `fork-sources` and `all-sources-reproduce` only
 because `all-sources.txt`'s recipe is `git diff --diff-filter=A <base> HEAD` and the new test file
 was still untracked; it reproduces once the file is committed.
