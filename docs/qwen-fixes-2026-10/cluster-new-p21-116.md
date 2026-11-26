@@ -121,12 +121,13 @@ The existing area test `tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp` alre
 
 | command | EXIT | log |
 | --- | --- | --- |
-| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p21-116 > …/logs/gate-1.log 2>&1; echo EXIT=$? >> …/logs/gate-1.log` | 0 | `logs/gate-1.log` |
+| `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p21-116 > …/logs/gate-1.log 2>&1; echo EXIT=$? >> …/logs/gate-1.log` (before the report existed: 0 changed files) | 0 | `logs/gate-1.log` |
+| the same command again with this report committed in scope (`> …/logs/gate-2.log 2>&1; echo EXIT=$? >> …/logs/gate-2.log`, 1 changed file) | 0 | `logs/gate-2.log` |
 
-The gate table as it was printed (`logs/gate-1.log`):
+The gate table as printed with this report in scope (`logs/gate-2.log`):
 
 ```
-feature-check kads-new-p21-116 (base 3436a808b, 0 changed files; …)
+feature-check kads-new-p21-116 (base 3436a808b, 1 changed files; …)
   PASS  fork-sources            exit 0
   PASS  all-sources-reproduce   exit 0
   PASS  no-upstream-regression  exit 0
@@ -138,6 +139,8 @@ feature-check kads-new-p21-116 (base 3436a808b, 0 changed files; …)
 RESULT: PASS
 EXIT=0
 ```
+
+`logs/gate-1.log` printed the same eight rows with `0 changed files` and `EXIT=0`.
 
 No build and no test were run before this commit: no product file changes, so there is nothing to compile and no
 red/green pair to produce. The source facts above were read with the fff tools (`grep` queries `tailFrames`,
