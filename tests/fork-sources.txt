@@ -4123,3 +4123,7 @@ tests/ScriptClockQt5JsonIntegerPortCheck.py
 tests/src/plugins/ClapNoteQueueTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-348.md
 plugins/VstEffect/VstWetDryMix.h
+
+# Cluster ci-d3e29f18fa53a626: the Qt 5 QStringList fill-constructor build regression and its port report.
+tests/ci-d3e29f18-mixer-faders-portability-check.py
+docs/qwen-fixes-2026-10/cluster-ci-d3e29f18fa53a626-port.md
