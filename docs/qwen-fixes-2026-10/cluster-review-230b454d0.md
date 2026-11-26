@@ -94,6 +94,7 @@ deterministic: no playback, no clock, no sleeps.
 | run after the revert | `ctest -R ArrangementModesTest --output-on-failure` | `test-4.log` | 0 |
 | fade/arrangement family build | `cmake --build build --target zene ArrangementModesTest ClipOffsetFadeTest ClipOffsetFadePairTest ClipEditsTest ClipFadesRenderTest CrossfadeEditorTest -j4` | `build-5.log` | 0 |
 | fade/arrangement family run | `ctest -R "^(ArrangementModesTest\|ClipOffsetFadeTest\|ClipOffsetFadePairTest\|ClipEditsTest\|ClipFadesRenderTest\|CrossfadeEditorTest)$" --output-on-failure` | `test-6.log` | 0 (6/6) |
+| the test binary by hand | `build/tests/ArrangementModesTest` | `test-7.log` | 0 (`Totals: 19 passed, 0 failed`) |
 | gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` | `gates-1.log` | 0 (`RESULT: PASS`, 8/8 gates PASS) |
 
 The mutation in `logs/mutation.patch` is the finding's requested behaviour expressed in product code: it sets the
@@ -124,8 +125,10 @@ RESULT: PASS`.
    (`test-4.log`). Both builds were rerun around both runs (`build-3.log`, `build-4.log`, both exit 0).
 2. **Deterministic.** The test drives `arrangement::applyOverlap` and then evaluates `clipFadeGainAt` at literal
    frames; ticks stand in for frames because the ramps are ratios. No engine playback, no audio device, no clock, no
-   sleeps, no threads: the values are injected frames and the assertions are fixed numbers. QtTest reports 17 passed
-   in `test-4.log` with the new case among them.
+   sleeps, no threads: the values are injected frames and the assertions are fixed numbers. Run directly
+   (`build/tests/ArrangementModesTest > logs/test-7.log`, exit 0) QtTest reports
+   `PASS : ArrangementModesTest::theDefaultCrossfadeDoesNotDuckTheOuterClipUnderTheContainedClip()` and
+   `Totals: 19 passed, 0 failed, 0 skipped`.
 3. **Cause and completeness, every caller and sibling.** There is no changed behaviour to complete, but both entry
    points into the default crossfade were checked and are consistent with the ruling: the drop path
    (`src/core/ArrangementEdits.cpp:402-414` → `crossfade()` `:373-397`) and the command path
