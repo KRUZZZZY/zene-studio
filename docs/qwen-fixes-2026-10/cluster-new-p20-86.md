@@ -143,23 +143,61 @@ RESULT: PASS
 
 ## Self-check
 
-- **Verdict backed by code, not by the finding's wording.** The engine's concurrency bound is cited at
-  `AudioEngine.cpp:552-562`/`581-584` and `AudioEngineWorkerThread.h:151-154`; the reachable gap and
-  its sibling precedent at `Mixer.h:186-193`/`Mixer.cpp:427`. The bug is real: the 4b RED run shows
-  the dropped voice.
-- **The test fails without the product change and passes with it.** Proven by the fix.patch round trip
-  above: `git apply -R` -> EXIT 8 with the targeted assertion, `git apply` -> EXIT 0.
+Answers to `submit_check.py`'s five ASK items (its table is in `submit-check.log`, `RESULT: PASS`).
+
+**ASK 1 — the regression test fails with the product change reverted and passes with it (exit codes).**
+The round trip was run twice; the second run used the final test text. Commands and exits, unpiped:
+`git apply -R logs/fix.patch` EXIT 0 -> `cmake --build build --target monstro NotePlaybackTest -j4`
+EXIT 0 (`build-7-final-red.log`) -> `ctest -R '^NotePlaybackTest$' --output-on-failure` **EXIT 8**
+(`test-6-final-red.log`), failing on
+`sameSamples(outsideOutput, subject.outputs[outsideVoice])` — "the voice rendered by a caller that is
+not on a render job was dropped", with 38 passing and 1 failing. Then `git apply logs/fix.patch`
+EXIT 0 -> build EXIT 0 (`build-8-final-green.log`) -> the same ctest **EXIT 0**, "100% tests passed
+out of 1" (`test-7-final-green.log`).
+
+**ASK 2 — the test is deterministic: no wall-clock timing, sleeps or races (name the seam).**
+The seam is `Instrument::setVoiceScratchProbeForTesting()` / `voiceScratchProbe()`
+(`include/Instrument.h:120-128`, called from `plugins/Monstro/Monstro.cpp:1094-1095`), installed by
+`tests/src/core/NotePlaybackTest.cpp:280` `holdScratchLease`. Each of the first `renderThreadCount()`
+leases blocks on a `testsupport::Latch`; the test waits on `allHeld` before rendering the outside
+voice, so the pool is provably full as a *happens-before* fact, not a scheduling bet. The holders
+are released by a second `Latch` the test counts down after the outside call. There is no `sleep`,
+no timeout, no elapsed-time check and no unguarded shared mutable state in the test (the probe's
+counters are atomics, the latches carry the ordering).
+
+**ASK 3 — the fix is at the cause and complete: every caller and sibling checked.**
+- Callers of `playNoteImpl()`: one production path, `NotePlayHandle::play()` (`NotePlayHandle.cpp:368`)
+  -> `InstrumentTrack::playNote()` (`InstrumentTrack.cpp:783`) -> `Instrument::playNote()`; it runs
+  inside a render job, never re-entrantly and never nested (`InstrumentTrack::playNote()` adds chord
+  and arpeggio children as play handles instead of calling `playNote()` again).
+- Consumers of `AudioEngine::renderThreadCount()`: exactly two in the tree — `MixerChannel`
+  (`src/core/Mixer.cpp:427`, already `+1`, unchanged) and this plugin. No other plugin keeps a
+  render-slot workspace.
+- Every place that touches the pool: the constructor sizing (`Monstro.cpp:1056-1058`), the buffer
+  sizing loop (`:1059-1063`), `updateSamplerate()`'s resize loop, the lease in `playNoteImpl()`
+  (`:1084-1096`) and the release at the end of it (`:1112-1117`). All of them use
+  `m_modulationScratchCount`, so the one extra slot is covered by all of them.
+- The header change (`include/Instrument.h`) was followed by rebuilding the targets that include it:
+  `zene`, every instrument plugin and the note/instrument tests (`build-6-header-targets.log` EXIT 0).
+
+**ASK 4 — no collateral damage; nothing old stops loading; no new limit rejects a legitimate caller.**
+This change adds no limit — it adds capacity, so no caller that used to work can now be refused. No
+saved state, project format, id, model or undo journal entry is touched (the pool is runtime-only,
+constructed in `MonstroInstrument`'s constructor, never serialised), so old projects load exactly as
+before. `updateSamplerate()` still resizes every slot on a sample-rate change. The other 37
+NotePlaybackTest slots and the render-slot siblings (`MixerConcurrencyTest`, `RenderJobQueueTest`,
+`test-9-slots.log` EXIT 0) pass.
+
+**ASK 5 — ALREADY-FIXED / FALSE-POSITIVE evidence.** Not applicable: the verdict is FIXED. For the
+record, the finding's stated trigger was *not* the reachable one — the engine cannot exceed
+`renderThreadCount()` render contexts (`AudioEngine.cpp:552-562`, `581-584`,
+`AudioEngineWorkerThread.h:151-154`) — and the reachable gap is the caller outside a render job that
+`Mixer.h:186-193` reserves capacity for. That is why the fix is a capacity match with the sibling
+rather than a scheduler change.
+
+**Other checks.**
 - **The test cannot pass vacuously.** It asserts the reference voice is audible before comparing
   (`NotePlaybackTestParts1.h:243-246`), and the comparison is over every voice of the set.
-- **No wall-clock timing, no sleep, no race in the test.** The holders are released by a
-  `testsupport::Latch` the test counts down after the outside call; `allHeld.wait()` is the barrier
-  that proves the pool is full.
-- **Siblings checked.** `renderThreadCount()` has exactly two consumers in the tree: `MixerChannel`
-  (already `+1`, unchanged) and Monstro (this fix). No other plugin leases a render-slot pool.
-- **No collateral damage.** The pool is still allocated once at construction on the control thread;
-  `updateSamplerate()` still resizes every slot for the new period; old projects load unchanged
-  (no saved state, no format, no id, no model touched). `monstroConcurrentVoicesKeepIndependentModulation`
-  and the other 37 NotePlaybackTest slots pass in both runs.
 - **Realtime.** The render path gains one atomic load of a null function pointer and a branch
   (`Instrument::voiceScratchProbe()`, `Monstro.cpp:1095`); no allocation, free, lock, wait or log.
   `monstroNoteStartDoesNotAllocate` passes. Undo and control commands are untouched (no CANARY move).
@@ -168,17 +206,16 @@ RESULT: PASS
   are fork-new (`tests/fork-sources.txt:794`, `:2920`), so they need no ledger entry.
 - **Not verified here.** A local full build is refused by the build guard
   (`bunny-guard: build a named target ... (full builds are the parent's job)`, `build-6-full.log`
-  EXIT 97), so the header rebuild was done over named targets: `zene`, `monstro` and the
-  note/instrument test binaries (`build-6-header-targets.log` EXIT 0, which relinked every instrument
-  plugin because `include/Instrument.h` changed). ThreadSanitizer does not run on this box; the
-  probe's hand-off is a release/acquire pair on an atomic function pointer, and the held leases are
-  the test's own barrier.
+  EXIT 97), so the header rebuild was done over named targets (above). ThreadSanitizer does not run
+  on this box; the probe's hand-off is a release/acquire pair on an atomic function pointer, and the
+  held leases are the test's own barrier.
 - **Wider run.** `MixerConcurrencyTest` and `RenderJobQueueTest` (the render-slot siblings) pass
   (`test-9-slots.log` EXIT 0). `PluginPortsMigrationTest` fails 4 slots on this box for reasons
   unrelated to this change: three are Mallets/STK ("malletsstk rendered silence", "Mallets note 0 of
   instrument 0 was silenced") and one is a missing SWH Decimator fixture; its Monstro slot
   `monstroLfoAttackRampsWithinPeriod` passes (`test-8-family.log`). Those four are not caused by this
   change and are not fixed here.
+
 
 ## Other findings
 
