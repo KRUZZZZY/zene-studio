@@ -4150,3 +4150,6 @@ tests/src/wasm/WasmOfflineRenderLimitTest.cpp
 tests/src/gui/CarlaRackNoRuntimeTest.cpp
 docs/050-features/Q050-359.md
 docs/qwen-fixes-2026-10/cluster-Q050-359.md
+# cluster new-p10-505: the wide, checked frame total AudioSampleRecorder::createSampleBuffer()
+# sizes its destination with, and its INT_MAX / SIZE_MAX boundaries (fork-NEW test).
+tests/src/core/AudioSampleRecorderTest.cpp
