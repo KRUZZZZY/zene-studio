@@ -57,6 +57,12 @@ Two honest caveats, neither of them the finding's scenario:
 - With a controller connected, `value()` takes `controllerValue()` (`src/core/AutomatableModel.cpp:755-780`) — the
   established automation read path of every device's render code, again not a property of `tailFrames()`.
 
+Platform assumption, stated openly: `std::atomic<std::uint64_t>` is lock-free on the supported targets (x86-64,
+arm64), the same assumption the engine already makes for its own 64-bit atomics on render paths
+(`include/AudioEngine.h:856-862`, `include/AudioBusHandle.h:256-261`); the tree carries no `is_always_lock_free`
+assertion for them. TSan does not run on this box, so this is a design argument from the acquire/release pair above,
+not a dynamic race report.
+
 ## 2. The engine read is not introduced here, and it cannot race a device swap
 
 | file:line | what it shows |
