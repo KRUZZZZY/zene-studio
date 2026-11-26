@@ -150,13 +150,20 @@ void ControlShutdownHookTest::aClientDeadlineIsAnchoredToTheMonotonicClock() {
 // acceptor over it - the pre-fix `m_acceptThread = std::thread(...)` in
 // listenWin32() - therefore ended the process on the retry path.
 //
-// RestartableThread owns that join. These two cases drive it through the sequence
-// the transport uses. No timing decides a result: every body signals a semaphore
-// as its last statement and the test waits for that signal. The 30 s cap only
-// turns a body that never ran into a failure with a message instead of a hang.
+// RestartableThread owns that join. This case drives it through the sequence the
+// transport uses, including 64 restarts with no join in between - the accept
+// loop's failure-and-retry path. No timing decides a result: every body signals a
+// semaphore as its last statement and the test waits for that signal. The 30 s
+// cap only turns a body that never ran into a failure with a message instead of a
+// hang.
 void ControlShutdownHookTest::aFinishedAcceptThreadIsJoinedBeforeTheNextStart() {
 #if defined(LMMS_HAVE_RESTARTABLE_THREAD)
 	RestartableThread acceptThread;
+	// close(), closeWin32() and the destructor all call it, the first two on a
+	// server that may never have listened.
+	acceptThread.join();
+	QVERIFY2(!acceptThread.joinable(), "joining nothing made the thread joinable");
+
 	QSemaphore firstBodyRan;
 	acceptThread.start([&firstBodyRan]() { firstBodyRan.release(); });
 	QVERIFY2(firstBodyRan.tryAcquire(1, 30000), "the first accept body never ran");
@@ -169,31 +176,6 @@ void ControlShutdownHookTest::aFinishedAcceptThreadIsJoinedBeforeTheNextStart() 
 	QSemaphore secondBodyRan;
 	acceptThread.start([&secondBodyRan]() { secondBodyRan.release(); });  // pre-fix: std::terminate here
 	QVERIFY2(secondBodyRan.tryAcquire(1, 30000), "the retried listen body never ran");
-	acceptThread.join();
-	QVERIFY2(!acceptThread.joinable(), "join() left the accept thread joinable");
-#else
-	// The seam is not in this tree: this is the pre-fix shape of the very defect
-	// the finding names. A body returns on its own (its std::thread stays
-	// joinable) and the next body is moved into the same std::thread object.
-	std::thread acceptThread;
-	QSemaphore firstBodyRan;
-	acceptThread = std::thread([&firstBodyRan]() { firstBodyRan.release(); });
-	QVERIFY2(firstBodyRan.tryAcquire(1, 30000), "the first accept body never ran");
-	QVERIFY2(acceptThread.joinable(),
-		"a body that returned left no thread to join: the hazard state was not reached");
-
-	acceptThread = std::thread([]() {});  // BUG 15: std::terminate, not an exception
-	QFAIL("moving a new std::thread over the finished acceptor did not end the process");
-#endif
-}
-
-void ControlShutdownHookTest::theRestartableThreadRetiresAFinishedBodyEveryTime() {
-#if defined(LMMS_HAVE_RESTARTABLE_THREAD)
-	RestartableThread acceptThread;
-	// close(), closeWin32() and the destructor all call it, the first two on a
-	// server that may never have listened.
-	acceptThread.join();
-	QVERIFY2(!acceptThread.joinable(), "joining nothing made the thread joinable");
 
 	std::atomic<int> bodies{0};
 	for (int attempt = 0; attempt < 64; ++attempt)
@@ -226,6 +208,17 @@ void ControlShutdownHookTest::theRestartableThreadRetiresAFinishedBodyEveryTime(
 	}
 	QCOMPARE(shortLivedBodies.load(), 1);
 #else
-	QSKIP("RestartableThread is absent: the pre-fix shape is asserted by aFinishedAcceptThreadIsJoinedBeforeTheNextStart()");
+	// The seam is not in this tree: this is the pre-fix shape of the very defect
+	// the finding names. A body returns on its own (its std::thread stays
+	// joinable) and the next body is moved into the same std::thread object.
+	std::thread acceptThread;
+	QSemaphore firstBodyRan;
+	acceptThread = std::thread([&firstBodyRan]() { firstBodyRan.release(); });
+	QVERIFY2(firstBodyRan.tryAcquire(1, 30000), "the first accept body never ran");
+	QVERIFY2(acceptThread.joinable(),
+		"a body that returned left no thread to join: the hazard state was not reached");
+
+	acceptThread = std::thread([]() {});  // BUG 15: std::terminate, not an exception
+	QFAIL("moving a new std::thread over the finished acceptor did not end the process");
 #endif
 }

@@ -440,13 +440,9 @@ private slots:
 	//! listening" while it still owns a joinable std::thread. The retried
 	//! listen() used to assign the new acceptor over it - std::terminate - so a
 	//! pipe that could not be created plus one retry killed the process.
+	//! RestartableThread owns the join; the case drives it through one retry, 64
+	//! restarts with no join between them, a double join and the destructor.
 	void aFinishedAcceptThreadIsJoinedBeforeTheNextStart();
-
-	//! The same owner's whole lifecycle: one body per start, join() idempotent
-	//! (close() and the destructor both call it), and a restart over a body that
-	//! finished by itself - repeated, because the accept loop takes that path
-	//! every time a pipe cannot be created.
-	void theRestartableThreadRetiresAFinishedBodyEveryTime();
 
 	//! Removal is targeted, ids are never reused, and running twice runs once:
 	//! the store is the process's, so a second pass must not re-run what the
