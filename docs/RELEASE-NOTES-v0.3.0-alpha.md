@@ -1144,10 +1144,10 @@ after merging `050/m0-train-26`, 2026-11-12): `record.midi_capture_commit` adds 
 
 **Q050-183.1** (running audio output and test tone, 2026-11-16): `audio.test_tone` and `audio.test_tone_stop` add two `not_mutating` rows (session audio, not the project) - `rows=944 true_inverse=465 snapshot=42 irreversible=25 not_mutating=412`.
 
-**Q050-211** (step input in the note editor, 2026-11-26): `note.step_input` adds one `true_inverse` row (one MidiClip journal checkpoint per step; the step cursor it advances is edit state, not saved) - `rows=945 true_inverse=466 snapshot=42 irreversible=25 not_mutating=412`.
+**Q050-211** (step input and recording in the note editor, 2026-11-26): `note.step_input` adds one `true_inverse` row (one MidiClip journal checkpoint per step; the step cursor it advances is edit state, not saved); live recording adds `note.record_on` and `note.record_off` (`true_inverse`, the take's one checkpoint taken by its first note) and `note.record_end` (`not_mutating`, it ends a take and changes no note) - `rows=948 true_inverse=468 snapshot=42 irreversible=25 not_mutating=413` in the block's reference configuration. This lane's build has the wasm sandbox off, so it measures 939 rows = 467 + 39 + 25 + 408, which is the published block less the nine `wasm.*` rows the configuration line names.
 
 <!-- A16-HISTOGRAM-BEGIN
-     measured: rows=945 true_inverse=466 snapshot=42 irreversible=25 not_mutating=412
+     measured: rows=948 true_inverse=468 snapshot=42 irreversible=25 not_mutating=413
      configuration: telemetry.status wasm.load session.get_state stem.get_state app.update_check_get
      option telemetry.status rows=2 not_mutating=2
      option wasm.load rows=9 true_inverse=1 snapshot=3 not_mutating=5
