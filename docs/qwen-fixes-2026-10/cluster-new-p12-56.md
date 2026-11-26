@@ -106,6 +106,68 @@ The same cycle was run once before the final comment-only edit to `include/Contr
 `ControllerFrameNotificationTest` Passed), and the RED run before the fix existed is
 `LOGS/test-2-red.log` `EXIT=8`.
 
+## RED / GREEN re-run at the tip (2026-11-26, second session)
+
+The whole cycle was run again in a second session against the committed tip, and this time each step
+also prints the sha256 of both product files, so the phase a run measured is not a guess. New logs,
+`LOGS` as above (`run-red.sh`, `run-green2.sh`, `proof-4b-this-session.log`).
+
+```
+cd <worktree>
+git apply -R LOGS/fix.patch; echo PATCH_REVERSE_EXIT=$?
+PATCH_REVERSE_EXIT=0
+sha256sum include/Controller.h src/core/Controller.cpp
+aa4b9db62d10829fbc72634029e43b4190aaa808a10264e55185421df9802995  include/Controller.h
+121afca203c8b3cb75c81822aa06e4302b4262ac40e38fff0c7bfdc628d417cd  src/core/Controller.cpp
+    # both equal `git show 3436a808b6:<path> | sha256sum`, the pre-fix files of the base commit
+cmake --build build --target ControllerFrameNotificationTest -j4 > LOGS/build-15-red.log 2>&1; echo BUILD_EXIT=$?
+BUILD_EXIT=0
+cd build/tests && ctest -R '^ControllerFrameNotificationTest$' --output-on-failure > LOGS/test-13-red.log 2>&1; echo TEST_EXIT=$?
+TEST_EXIT=8          # 2 passed, 5 failed
+cd <worktree> && git apply LOGS/fix.patch; echo RESTORE_EXIT=$?
+RESTORE_EXIT=0
+sha256sum include/Controller.h src/core/Controller.cpp
+bf00d3de24de36cbbd8dde0972a2a13e4eb0f5f023345e97693c6fa2f763fd77  include/Controller.h
+39ea3aad4e5f62cabb1c2323f26cb683fff2fa7d1ef89fbe78386101db00104e  src/core/Controller.cpp
+    # both equal `git show HEAD:<path> | sha256sum`, the committed fix
+cmake --build build --target ControllerFrameNotificationTest zene -j4 > LOGS/build-20-green.log 2>&1; echo GREEN_BUILD_EXIT=$?
+GREEN_BUILD_EXIT=0
+cd build/tests && ctest -R '^ControllerFrameNotificationTest$' --output-on-failure > LOGS/test-18-green.log 2>&1; echo GREEN_TEST_EXIT=$?
+GREEN_TEST_EXIT=0    # 100% tests passed; the hashes are unchanged after the build and after the test
+git status --porcelain
+    # empty
+```
+
+`LOGS/test-13-red.log` (the pre-fix symptom, measured not asserted): "one render period posted 1
+queued controller notification(s) to the GUI thread and allocated 2 time(s) on the render thread"
+and four slots reporting "no control-thread notification timer was created for the controller".
+`LOGS/test-18-green.log`: `1/1 Test #739: ControllerFrameNotificationTest ... Passed`.
+
+The family at the tip, same rebuild (`LOGS/build-17-family.log`, `LOGS/test-15-family.log`):
+`ControllerFrameNotificationTest`, `PeakControllerNullEffectTest`, `LfoControllerUserWaveTest`,
+`MidiLearnTest`, `MixerConcurrencyTest`, `AutomationPrepassProofTest`, `MixerStripTest`,
+`AutomationPreFirstValueTest`, `AutomationModesTest` pass; `ControllerSurfaceTest` fails only at
+`TemplatesSaveListReadAndApply` (`saveTemplate()` returned FALSE), which writes under
+`ConfigManager::userPresetsDir()`; `~/Documents/Zene Studio` does not exist in this sandbox
+(`ls: cannot access '/home/kruzzzzy/Documents/LMMS': No such file or directory` for the presets
+root), so it is environmental and unrelated to this change. `LOGS/test-16-rt-safety.log`:
+`RtSafetySweep` and `RtSafetySelfTest` both pass.
+
+One caveat, recorded because it is in the logs: in a combined script run (`LOGS/proof-4b-this-session.log`)
+both product files were back at the committed content after the RED build (hashes `bf00…`/`39ea…`
+in that file), so that run's ctest passed instead of failing. A controlled run
+(`LOGS/run-experiment.sh`) reverted the patch, watched the hash for 20 s and through one
+`cmake --build`, and the pre-fix content stayed in place (`before-build` and `after-build` both
+`121afca203c8b3cb…`), so the build is not what changed it. The authoritative RED is the first run
+above (`LOGS/test-13-red.log`, `TEST_EXIT=8`, pre-fix symptom in the failure text); the
+authoritative GREEN is `run-green2.sh` with the hashes before and after
+(`LOGS/test-18-green.log`, `GREEN_TEST_EXIT=0`). No product file was edited for either run.
+
+The gates at the tip, second session: `python3 .../feature_check.py <worktree>` ->
+`LOGS/gates-6-reverify.log`, `GATES_EXIT=0`, all eight rows `PASS`, `RESULT: PASS`. The completion
+check `python3 .../submit_check.py <worktree> new-p12-56` -> `LOGS/submit-3-reverify.log`,
+`SUBMIT_EXIT=0`, `RESULT: PASS - submit`.
+
 ## The rest of the family, and the gates
 
 ```
@@ -125,7 +187,8 @@ GATES_EXIT=0
 `LOGS/gates-2.log`: `fork-sources PASS, all-sources-reproduce PASS, no-upstream-regression PASS,
 check-namespace PASS, no-tautology PASS, doc-figures PASS, complexity PASS (no new item in your
 files), file-length PASS (no new item in your files)`, `RESULT: PASS`, and the same table re-run at the tip after the report and
-ledger commit is `LOGS/gates-4-final.log`, `GATES_EXIT=0`, all eight rows PASS. An earlier run before the
+ledger commit is `LOGS/gates-4-final.log`, `GATES_EXIT=0`, all eight rows PASS, and once more in the
+second session (`LOGS/gates-6-reverify.log`, `GATES_EXIT=0`). An earlier run before the
 commit (`LOGS/gates-1.log`, `GATES_EXIT=1`) failed `fork-sources` and `all-sources-reproduce` only
 because `all-sources.txt`'s recipe is `git diff --diff-filter=A <base> HEAD` and the new test file
 was still untracked; it reproduces once the file is committed.
@@ -146,7 +209,11 @@ system`. The same slot fails identically with the product change reverted
    '^ControllerFrameNotificationTest$'` -> `TEST_EXIT=8`, 5 of 7 slots failed, the first naming the
    bug ("posted 1 queued controller notification(s) ... allocated 2 time(s) on the render thread");
    `git apply LOGS/fix.patch` (APPLY_EXIT=0), rebuild (BUILD_EXIT=0), same ctest -> `TEST_EXIT=0`.
-   Logs: `LOGS/test-11-red-final.log`, `LOGS/test-12-green-final.log`.
+   Logs: `LOGS/test-11-red-final.log`, `LOGS/test-12-green-final.log`. Re-run at the tip in a
+   second session with the file hashes printed at each step: `LOGS/test-13-red.log`
+   (`TEST_EXIT=8`, pre-fix hashes `aa4b…`/`121a…`) and `LOGS/test-18-green.log`
+   (`GREEN_TEST_EXIT=0`, fixed hashes `bf00…`/`39ea…` before the build and unchanged after it);
+   see "RED / GREEN re-run at the tip".
 2. **The test is deterministic.** No sleeps, no event loop, no wall clock. The seam is the timer's
    object name: `QCoreApplication::instance()->findChild<QTimer*>("controllerFrameNotificationTimer")`
    (the pattern `AutomationRenderLockTest`, `AutomationModesTest` and `GranularPitchShifterRealtimeTest`
