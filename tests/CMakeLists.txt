@@ -1788,6 +1788,11 @@ set(LMMS_TESTS
 	# a call that changed nothing records no transaction, so the journal's top is
 	# still the last REAL edit. Its own target, so the proof is one suite.
 	src/core/ControlNoteNoOpUndoTest.cpp
+	# cluster new-p10-505: the frame total AudioSampleRecorder::createSampleBuffer() sizes its
+	# destination with. The recorder is abstract and holds its blocks privately, so the wide,
+	# checked sum is a public static seam - the INT_MAX and size_t boundaries are reachable
+	# without recording, or allocating, more than a few frames.
+	src/core/AudioSampleRecorderTest.cpp
 )
 
 # Ogg is optional; these regressions require the Ogg decoder and compile against the concrete Ogg writer.
