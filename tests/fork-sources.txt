@@ -4122,3 +4122,6 @@ tests/ScriptClockQt5JsonIntegerPortCheck.py
 # cluster new-p12-348 (2026-11): a full CLAP note queue must not lose a note-off or choke (fork-NEW regression).
 tests/src/plugins/ClapNoteQueueTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p12-348.md
+# cluster new-p12-56 (2026-11): the per-period controller notification is a control-thread timer, not a
+# Qt signal emitted from the render thread - the regression drives the timer by its object name (fork-NEW).
+tests/src/core/ControllerFrameNotificationTest.cpp
