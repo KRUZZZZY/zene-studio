@@ -255,6 +255,19 @@ cd build/tests && ctest -R '^(RenderSourceGuardTest|ProjectToolsTest|ControlRend
 # EXIT=0   100% tests passed out of 6
 ```
 
+The two checks that decide this round, run on the committed tree with lizard on `PATH` (so the complexity
+gate really measures):
+
+```sh
+PATH=.../venv/bin:$PATH python3 ~/.local/share/zene-bunny-fix/qwen/submit_check.py <wt> 5273 > .../logs/submit-1.log 2>&1
+# SUBMIT1_EXIT=0   RESULT: PASS - submit (5/5 PASS rows)
+PATH=.../venv/bin:$PATH python3 ~/.local/share/zene-bunny-fix/qwen/kads_submit_extra.py --base 3436a808b6 --worktree <wt> > .../logs/extra-2.log 2>&1
+# EXTRA2_EXIT=0   "weakening, registration and ratchet checks pass against base 3436a808b6"
+```
+
+`.../logs/venv` is the scratch env (lizard 1.26.1) left inside this round's log folder; nothing outside the
+worktree and the log folder was written.
+
 One family run in this round failed on `RenderMenuQueueTest` (`shellRenderMenuQueuesEveryEntry`: two bounce
 jobs where it expects one, `test-4.log` EXIT=8). That is a pre-existing flake, not this fix: the same slot
 fails with the whole fix reverted (`without-fix-menu-1.log`, `-2.log`: 2 of 5 runs) and with it
