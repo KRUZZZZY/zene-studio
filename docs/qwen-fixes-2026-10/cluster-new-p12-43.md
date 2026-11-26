@@ -111,6 +111,10 @@ against the final test:
 The three cases that fail without the product change and pass with it are the regression; the other three pin
 behaviour that must not move (neutral cell, repitched buffer, MIDI).
 
+Re-run on the committed tree (same binaries, nothing changed since the green build): `ctest -R
+"^ControlSessionRecordLandPlaybackTest$"` from `build/tests` - **CTEST_EXIT=0** (`logs/test-10-postcommit.log`),
+and `git status --porcelain` prints nothing.
+
 ## The family
 
 - `cmake --build build --target zene ControlSessionRecordLandTest ControlSessionRecordLandUndoTest SessionArrangementRecordTest SessionPlaybackTest SessionAudioCellPlaybackTest ClipEditsTest AudioClipLoopTest ReversibilityContractTest UndoHonestyTest UndoBoundsTest SessionTransitionsTest -- -j4 > logs/build-12-family-final.log 2>&1` - **FAMILY_BUILD_EXIT=0**
