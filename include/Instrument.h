@@ -118,6 +118,15 @@ public:
 		playNoteImpl(noteToPlay, out);
 	}
 
+	//! Test-only observation point on an instrument's per-voice render workspace (cluster
+	//! new-p20-86). An instrument that leases such a workspace from a fixed pool reports, once
+	//! per voice callback and after the lease attempt, whether it obtained one - so a test can
+	//! hold every lease and drive the exhaustion path deterministically instead of racing for it.
+	//! Production installs no probe. The render path costs one atomic load and a branch.
+	using VoiceScratchProbe = void (*)(bool leased);
+	static void setVoiceScratchProbeForTesting(VoiceScratchProbe probe);
+	static VoiceScratchProbe voiceScratchProbe() noexcept;
+
 	// needed for deleting plugin-specific-data of a note - plugin has to
 	// cast void-ptr so that the plugin-data is deleted properly
 	// (call of dtor if it's a class etc.)

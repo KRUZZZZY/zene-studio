@@ -1086,6 +1086,8 @@ void MonstroInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 			break;
 		}
 	}
+	// cluster new-p20-86: report the lease attempt to a probe a test installs (null in production).
+	if (auto probe = voiceScratchProbe()) { probe(scratch != nullptr); }
 	if (scratch == nullptr) { return; }
 
 	if (!nph->m_pluginData)
