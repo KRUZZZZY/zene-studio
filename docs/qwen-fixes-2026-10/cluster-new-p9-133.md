@@ -170,12 +170,12 @@ codes").
   thread and now allocates and frees nothing; it writes two plain floats through
   `BasicFilters::setSampleRate()` and clears the filter history, the same shape every other
   in-repo sample-rate slot uses (`plugins/Bitcrush/Bitcrush.cpp:87-93`,
-  `plugins/CrossoverEQ/CrossoverEQ.cpp:82-87`, `plugins/SlewDistortion/SlewDistortion.cpp:679-706`),
+  `plugins/CrossoverEQ/CrossoverEQ.cpp:82-87`, `plugins/SlewDistortion/SlewDistortion.cpp:679-698`),
   and it does so with the engine's device stopped, exactly as the engine emits the signal. The one
   object-lifetime hazard the bug was about - freeing an object the render path holds - is gone.
 - **Undo, commands and canaries.** No model setter, undo command or `ControlCommands*` file is
-  touched (`git status` lists three files: the plugin `.cpp`, the test and the registration list),
-  so undo stays as it was and the `ControlCommandsSnapshot` canary does not move.
+  touched (`git show --stat HEAD` lists the plugin `.cpp`, the test, the registration list and
+  this report), so undo stays as it was and the `ControlCommandsSnapshot` canary does not move.
 - **Old projects and sibling effects.** `tests/reference/DualFilter/` keeps the verbatim
   base-commit sources on purpose; the Part C slots that compare the migrated plugin against that
   reference still pass (`13-test-family-green-proof.log`).
@@ -185,8 +185,8 @@ codes").
 - `DualFilterControls` connects to `sampleRateChanged()` in its own constructor
   (`DualFilterControls.cpp:102`), and `DualFilterEffect` allocates `m_filter1`/`m_filter2` only
   afterwards, in the effect's constructor body (`DualFilter.cpp:56-66`). An emission inside that
-  window would reach the slot with uninitialised pointers - before this fix it would `delete`
-  them, after it dereferences them. The window is a single-threaded constructor body in which no
+  window would reach the slot with uninitialised pointers: the old code would `delete` them, the
+  new code dereferences them. The window is a single-threaded constructor body in which no
   signal can be emitted, so it is not reachable today; fixing it would need the filters to be
   created before the controls are constructed. Not changed here (outside the finding).
 - Three `PluginPortsMigrationTest` slots cannot pass in this checkout because the configured
