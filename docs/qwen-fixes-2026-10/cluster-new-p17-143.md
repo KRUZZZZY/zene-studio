@@ -147,8 +147,11 @@ Round 1 (same product fix; the test has since dropped its two skips):
 
 The five ASK items of `submit_check.py` (log: `submit-1.log`), in its order:
 
-1. "The regression test FAILS with your product change reverted and PASSES with it (exit codes)." - Reverted
-   (`git diff -- src/core/RemotePlugin.cpp > fix.patch` EXIT=0, `git apply -R fix.patch` EXIT=0, build EXIT=0):
+1. "The regression test FAILS with your product change reverted and PASSES with it (exit codes)." - The final
+   (round 2) test, logs in the r2 folder: fix reversed (`git apply -R fix.patch` EXIT=0) and rebuilt (EXIT=0) the test
+   is EXIT=1 (`test-1-red.log`, `Totals: 2 passed, 1 failed, 0 skipped`); fix re-applied (EXIT=0) and rebuilt (EXIT=0)
+   it is EXIT=0 (`test-2-green.log`, `Totals: 3 passed, 0 failed, 0 skipped`). Round 1, same product fix:
+   reverted (`git diff -- src/core/RemotePlugin.cpp > fix.patch` EXIT=0, `git apply -R fix.patch` EXIT=0, build EXIT=0):
    `./RemotePluginAudioPortsTest clientConnectingToAnExistingBlockIsToldItsKey` EXIT=1
    (`test-5-reverse-red.log`: `Totals: 2 passed, 1 failed`). Re-applied (`git apply fix.patch` EXIT=0, build EXIT=0):
    same command EXIT=0 (`test-6-reapply-green.log`: `Totals: 3 passed, 0 failed, 0 skipped`). The whole-file red run
@@ -177,6 +180,10 @@ The five ASK items of `submit_check.py` (log: `submit-1.log`), in its order:
 
 - Realtime: `init()` runs on the thread that loads the plugin; `process()`/`processPeriod()` and
   `updateAudioBuffer()`'s shortcut are untouched, so nothing new allocates, locks, waits or logs on the audio thread.
+- No test was weakened: the two `QSKIP`s of round 1 are `QVERIFY2` assertions now, and the base..HEAD test diff adds
+    0 skip lines, removes 0 assertions and adds 14 (`test-diff.patch`, counted with the checker's own patterns).
+  `kads_submit_extra.py --base 3436a808b6` reports `weakening, registration and ratchet checks pass` EXIT=0
+  (`extra-check-2.log`).
 - Unverified: no real two-process reinitialisation was driven (see the watcher-loop note under Other findings), and the
   change was not built for Windows/macOS here; the send is not behind any transport `#ifdef`, and the test compiles out
   on the `SYNC_WITH_SHM_FIFO` build (`RemotePluginAudioPortsShmCompileCheck` target, built with the suite).
