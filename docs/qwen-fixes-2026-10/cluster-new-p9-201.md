@@ -164,6 +164,23 @@ The two pre-existing slots that remove a monitor handle (`inPassesTheInputAndOff
   `git log -S"InputMonitorHandle" -- src/tracks/SampleTrack.cpp` →
   `58ee8b03f7 wip: input monitoring (R2.1)` (the guard shipped with the feature).
 
+## Completion check
+
+```
+python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> new-p9-201
+EXIT=0                                    (logs/submit-1.log)
+
+  PASS  commits on the branch
+  PASS  working tree clean
+  PASS  report docs/qwen-fixes-2026-10/cluster-new-p9-201.md
+  PASS  tests added or changed - claim-only closure: independent QA must verify its cited code/contract
+  PASS  gates (feature_check.py)
+RESULT: PASS - submit
+```
+
+`feature_check.py` on the committed tree: all eight rows PASS, `RESULT: PASS`, EXIT=0
+(logs/gates-2.log).
+
 ## Other findings
 
 - `ArrangingCatchUpTest` fails in this build tree for environment reasons only:
