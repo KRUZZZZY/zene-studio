@@ -85,9 +85,11 @@ private slots:
 	}
 
 	// A capacity that no power of two can hold must be refused. Without that check the rounding loop never ends.
+	// The whole expression is parenthesised: unparenthesised, this statement is a declaration of
+	// std::numeric_limits<std::size_t>::max ([dcl.ambig.res]) and clang rejects it. ArrayVectorTest wraps the same way.
 	void rejectsCapacityThatCannotBeRounded()
 	{
-		QVERIFY_EXCEPTION_THROWN(AudioRing(std::numeric_limits<std::size_t>::max()), std::length_error);
+		QVERIFY_EXCEPTION_THROWN((AudioRing(std::numeric_limits<std::size_t>::max())), std::length_error);
 	}
 };
 
