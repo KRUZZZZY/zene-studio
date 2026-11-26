@@ -336,6 +336,7 @@ include/ControlMasteringSupport.h
 include/ControlMeterSupport.h
 include/ControlMixerSupport.h
 include/ControlModulationSupport.h
+include/ControlNoteRecord.h
 include/ControlNoteShared.h
 include/ControlProjectAssets.h
 include/ControlProjectMedia.h
@@ -1788,6 +1789,7 @@ src/core/ControlCommandsNoteMoves.cpp
 src/core/ControlCommandsNotePlayback.cpp
 src/core/ControlCommandsNoteProbability.cpp
 src/core/ControlCommandsNoteRandom.cpp
+src/core/ControlCommandsNoteRecord.cpp
 src/core/ControlCommandsNoteSelect.cpp
 src/core/ControlCommandsNoteShape.cpp
 src/core/ControlCommandsNoteShared.h
@@ -1948,6 +1950,7 @@ src/core/ControlHardwareIoSupport.cpp
 src/core/ControlMasteringSupport.cpp
 src/core/ControlMixerSupport.cpp
 src/core/ControlModulationSupport.cpp
+src/core/ControlNoteRecord.cpp
 src/core/ControlNoteShared.cpp
 src/core/ControlProjectAssets.cpp
 src/core/ControlProjectAssetsDocument.cpp

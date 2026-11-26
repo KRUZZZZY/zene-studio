@@ -54,6 +54,10 @@
 # (src/core/ControlCommandsNoteStepInput.cpp), the editor's MIDI/computer-key step entry
 # (src/gui/noteeditor/NoteStepInput.cpp) and its regression test (tests/src/gui/NoteEditorStepInputTest.cpp).
 # Emitted in the sorted source list below; no other entry changed.
+# 2026-11-26 (Q050-211, round 2): three fork-NEW sources for live recording in the note editor - the take
+# state and its one undo step (include/ControlNoteRecord.h, src/core/ControlNoteRecord.cpp) and the
+# note.record_on / note.record_off / note.record_end commands (src/core/ControlCommandsNoteRecord.cpp).
+# Emitted in the sorted source list below; no other entry changed.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -749,8 +753,11 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/warp-docs-agree.py ; \
 
 # Train 29: retain independently accepted Linux Qt5 compile/scanner regressions and MinGW no-gestures regression.
+include/ControlNoteRecord.h
 include/ControlStepInput.h
+src/core/ControlCommandsNoteRecord.cpp
 src/core/ControlCommandsNoteStepInput.cpp
+src/core/ControlNoteRecord.cpp
 src/core/ControlStepInput.cpp
 src/gui/noteeditor/NoteStepInput.cpp
 tests/qt5-signal-overload-check.py
