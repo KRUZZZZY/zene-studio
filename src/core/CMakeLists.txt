@@ -477,6 +477,7 @@ set(LMMS_SRCS
 	core/ControlCommandsHostNotes.cpp
 	core/ControlCommandsArrangementState.cpp
 	core/ControlCommandsProject.cpp
+	core/ControlRenderStaging.cpp
 	core/ControlCommandsProjectFiles.cpp
 	# M3.2: the File menu / toolbar verbs the registry lacked (project.new, ...).
 	core/ControlCommandsProjectLifecycle.cpp
