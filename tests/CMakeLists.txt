@@ -514,6 +514,10 @@ set(LMMS_TESTS
 	src/core/LufsMeterTest.cpp
 	src/core/MasteringTest.cpp
 	src/core/MasteringTestSourceMix.cpp
+	# cluster 4056 (BUG 8): a mastering undo that could not remove or write back a
+	# file reports it instead of answering "undone" over files that are still
+	# there. The refusal is a permission bit, so it is deterministic.
+	src/core/MasteringUndoFailureTest.cpp
 	# Startup and CLI regressions: the selected UI scale, dump/compress refusals,
 	# and session-marker cleanup on failed command startup.
 	src/core/MainCliStartupTest.cpp
@@ -4347,6 +4351,10 @@ set_tests_properties(ProjectRestoreMissingTargetTest PROPERTIES
 # RevisionRestoreCreatedFileUndoTest drives a real Engine through the registry,
 # the same way RevisionTimelineTest does, so it needs the same Qt platform plugin.
 set_tests_properties(RevisionRestoreCreatedFileUndoTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# MasteringUndoFailureTest starts a real Engine and unwinds a recorded mastering
+# step, so it needs a Qt platform plugin for the same reason.
+set_tests_properties(MasteringUndoFailureTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # The dither and SRC-quality tests build a real Engine and drive the real
