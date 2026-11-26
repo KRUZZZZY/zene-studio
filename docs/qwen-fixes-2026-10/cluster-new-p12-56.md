@@ -170,7 +170,9 @@ The gates at the tip, second session: `python3 .../feature_check.py <worktree>` 
 check `python3 .../submit_check.py <worktree> new-p12-56` -> `LOGS/submit-3-reverify.log`,
 `SUBMIT_EXIT=0`, `RESULT: PASS - submit`. Both were run again at this report's commit:
 `LOGS/gates-8-final.log` (`GATES_EXIT=0`, all eight `PASS`) and `LOGS/submit-4-final.log`
-(`SUBMIT_EXIT=0`, `RESULT: PASS - submit`, no `FAIL` row).
+(`SUBMIT_EXIT=0`, `RESULT: PASS - submit`, no `FAIL` row), and once more after the final wording
+commit (`LOGS/gates-9-final2.log`, `GATES_EXIT=0`, all eight `PASS`;
+`LOGS/submit-5-final2.log`, `SUBMIT_EXIT=0`, `RESULT: PASS - submit`).
 
 ## The rest of the family, and the gates
 
