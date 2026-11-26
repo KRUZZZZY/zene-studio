@@ -27,6 +27,7 @@
 
 #include <QtTest>
 
+#include <atomic>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
@@ -74,6 +75,24 @@ class RetroMidiRingTest : public QObject
 	Q_OBJECT
 
 private slots:
+	//! cluster new-p10-333: push() runs on the MIDI thread, so every atomic it
+	//! touches must be lock-free - where a 64-bit atomic is served with an
+	//! internal lock, that lock lands on the MIDI thread. The header machine
+	//! checks the premise after the class; this pins the check, and shows that
+	//! it is a check and not a constant.
+	void theProducerCountersAreLockFree()
+	{
+		QVERIFY(RetroMidiRing::producerCountersAreLockFree());
+		QVERIFY(RetroMidiRing::atomicOfTypeIsLockFree<std::uint64_t>());
+		QVERIFY(RetroMidiRing::atomicOfTypeIsLockFree<std::uint32_t>());
+		QVERIFY(RetroMidiRing::atomicOfTypeIsLockFree<bool>());
+
+		// A type this target cannot serve lock-free answers false: that is the
+		// answer the header refuses to build with, so the check discriminates.
+		struct NeedsALock { char bytes[64]; };
+		QVERIFY(!RetroMidiRing::atomicOfTypeIsLockFree<NeedsALock>());
+	}
+
 	//! Capacity is rounded up to a power of two and never below the request.
 	void Capacity_IsPowerOfTwoAndAtLeastRequested()
 	{

@@ -88,6 +88,25 @@ public:
 	//! pressed record.
 	static constexpr std::size_t DefaultCapacityFrames = 1u << 20;
 
+	//! True when this target serves a \a T atomic lock-free. The audio thread
+	//! touches two atomics of its own here - the arm flag and the 64-bit rate tag
+	//! push() publishes - on top of the ring's, so a target that serves any of
+	//! them with an internal lock would lock on the audio thread (cluster
+	//! new-p10-333).
+	template <typename T>
+	static constexpr bool atomicOfTypeIsLockFree() noexcept
+	{
+		return std::atomic<T>::is_always_lock_free;
+	}
+
+	//! True when every atomic the audio thread touches in push() is lock-free.
+	//! Checked by the static_assert after this class, so a target that would lock
+	//! on the audio thread does not build.
+	static constexpr bool producerCountersAreLockFree() noexcept
+	{
+		return atomicOfTypeIsLockFree<std::uint64_t>() && atomicOfTypeIsLockFree<bool>();
+	}
+
 	RetroAudioCapture();
 
 	RetroAudioCapture(const RetroAudioCapture&) = delete;
@@ -193,6 +212,15 @@ private:
 	//! it without admitting to the ring).
 	bool transitionRateIfNeeded(int sampleRate, bool pending, std::uint64_t tag) noexcept;
 } ;
+
+
+//! cluster new-p10-333: the same machine check the ring this capture owns
+//! carries (include/RetroAudioRing.h), for the atomics the capture itself
+//! touches on the audio thread. A class-scope static_assert cannot call a member
+//! function, which is why the check sits after the class.
+static_assert(RetroAudioCapture::producerCountersAreLockFree(),
+		"RetroAudioCapture: this target does not serve a producer-path atomic lock-free, so push() "
+		"would take an internal lock on the audio thread (cluster new-p10-333)");
 
 
 //! Write \a window to \a filePath as a 24-bit WAV at \a sampleRate.
