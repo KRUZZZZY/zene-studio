@@ -4141,3 +4141,12 @@ docs/qwen-fixes-2026-10/cluster-ci-d3e29f18fa53a626-port.md
 # test-only sandbox/worker stubs (fork-NEW test).
 tests/src/wasm/WasmOfflineRenderLimitStubs.cpp
 tests/src/wasm/WasmOfflineRenderLimitTest.cpp
+
+# Q050-359 (2026-11): a build with no Carla runtime links the weak stand-in (plugins/CarlaBase/DummyCarla.cpp),
+# whose carla_get_native_rack_plugin() / carla_get_native_patchbay_plugin() answer nullptr - and CarlaInstrument's
+# constructor dereferenced it, so choosing Carla Rack to load a VST3 inside it killed Zene with SIGSEGV. The two
+# host modules now decline with a reason the control surface reports; this test is the regression (the agent path,
+# the device card's Replace Instrument action, the Patchbay sibling, and a project that names Carla Rack).
+tests/src/gui/CarlaRackNoRuntimeTest.cpp
+docs/050-features/Q050-359.md
+docs/qwen-fixes-2026-10/cluster-Q050-359.md

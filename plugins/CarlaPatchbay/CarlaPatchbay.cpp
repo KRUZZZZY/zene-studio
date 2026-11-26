@@ -27,6 +27,7 @@
 #include "embed.h"
 #include "plugin_export.h"
 #include "InstrumentTrack.h"
+#include "PluginInstantiationFailure.h"
 
 namespace lmms
 {
@@ -51,6 +52,18 @@ Plugin::Descriptor PLUGIN_EXPORT carlapatchbay_plugin_descriptor =
 
 PLUGIN_EXPORT Plugin* lmms_plugin_main(Model* m, void*)
 {
+    // Q050-359: the same null native descriptor as CarlaRack's guard - a build without a Carla runtime links
+    // DummyCarla, whose carla_get_native_patchbay_plugin() answers nullptr, and CarlaInstrument would
+    // dereference it. Decline, so the track keeps its XML (Q050-018) and plugin.load refuses, typed.
+    if (carla_get_native_patchbay_plugin() == nullptr)
+    {
+        pluginload::noteInstantiationFailure(QStringLiteral(
+            "this build has no Carla runtime, so Carla Patchbay cannot host anything: the module links the "
+            "weak stand-in. Install a Carla runtime (or build one with tools/build-carla-runtime.sh) to "
+            "load plug-ins inside Carla Patchbay; a VST3 loads through Zene's own VST3 host instead "
+            "(plugin.list format vst3, then plugin.load its dev-<n>)"));
+        return nullptr;
+    }
     return new CarlaInstrument(static_cast<InstrumentTrack*>(m), &carlapatchbay_plugin_descriptor, true);
 }
 

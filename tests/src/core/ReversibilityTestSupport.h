@@ -144,6 +144,12 @@ inline QStringList loadableDevices(const QString& kind)
 
 inline QString firstLoadable(const QString& kind)
 {
+	// Q050-359: catalogue order alone is not enough for an instrument. A build-in host module can list
+	// itself and still decline to instantiate - Carla Patchbay without a Carla runtime answers nullptr -
+	// and plugin.load then refuses it, typed, instead of installing a stand-in as a live instrument. An
+	// instrument fixture therefore asks firstLoadableInstrument(), which prefers the synth this build
+	// ships; everything else stays catalogue order.
+	if (kind == QLatin1String("instrument")) { return firstLoadableInstrument(); }
 	const QStringList ids = loadableDevices(kind);
 	return ids.isEmpty() ? QString() : ids.first();
 }

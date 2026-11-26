@@ -29,6 +29,7 @@
 #include "ConfigManager.h"
 #include "ControllerConnection.h"
 #include "DataFile.h"
+#include "DummyInstrument.h"
 #include "Mixer.h"
 #include "InstrumentTrackView.h"
 #include "Instrument.h"
@@ -1430,11 +1431,40 @@ QString InstrumentTrack::getSavedInstrumentName(const QDomElement &thisElement) 
 
 
 
+/*! Q050-359: trial first, swap second.
+ *
+ *  A module can decline: no Carla runtime for Carla Rack / Carla Patchbay, a plug-in binary that is not
+ *  installed, a host this build does not ship. Instrument::instantiate() answers such a refusal with an
+ *  empty stand-in (DummyInstrument, whose descriptor is nullptr and whose unavailableReason() says the
+ *  module could not be created), which the callers already read as a refusal (ControlCommandsPlugin.cpp,
+ *  ControlCommandsAudioSlice.cpp). Destroying the musician's instrument before finding out cost them the
+ *  device, its settings and, on the next save, the project's copy of them: a refused replacement is not a
+ *  replacement. So the candidate is built and judged FIRST, with the current instrument still in place, and
+ *  only a real one is adopted. A refusal leaves the instrument, its state, the track's name and
+ *  m_preservedInstrument exactly as they were, and returns nullptr with nothing changed. */
 Instrument * InstrumentTrack::loadInstrument(const QString & _plugin_name,
 	const Plugin::Descriptor::SubPluginFeatures::Key *key, bool keyFromDnd)
 {
 	if(keyFromDnd)
 		Q_ASSERT(!key);
+
+	Instrument * candidate = Instrument::instantiate(_plugin_name, this, key, keyFromDnd);
+	const bool requested = candidate != nullptr && candidate->descriptor() != nullptr
+		&& _plugin_name == QString::fromUtf8(candidate->descriptor()->name)
+		&& candidate->unavailableReason().isEmpty();
+	if( !requested )
+	{
+		delete candidate;
+		// A track that has no instrument at all still needs one every reader can dereference, otherwise a
+		// refused first load (a new track whose requested module declined) leaves a null behind. It is the
+		// same empty placeholder a project with an unavailable device opens with.
+		if( m_instrument == nullptr )
+		{
+			m_instrument = new DummyInstrument( this );
+			emit instrumentChanged();
+		}
+		return nullptr;
+	}
 
 	silenceAllNotes( true );
 
@@ -1445,8 +1475,7 @@ Instrument * InstrumentTrack::loadInstrument(const QString & _plugin_name,
 	destroyInstrument();
 	m_preservedInstrument = QDomElement();  // 0.5.0 Q050-018: the user chose a new instrument; no placeholder remains
 	Engine::audioEngine()->doneChangeInModel();
-	m_instrument = Instrument::instantiate(_plugin_name, this,
-					key, keyFromDnd);
+	m_instrument = candidate;
 	unlock();
 	setName(m_instrument->displayName());
 
