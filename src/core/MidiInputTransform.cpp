@@ -112,11 +112,14 @@ bool MidiInputTransform::noteOn(MidiEvent* event)
 bool MidiInputTransform::follow(MidiEvent* event, bool ends)
 {
 	// A note-off (or pressure) goes to the key its note-on (on the same channel) was given, whatever
-	// the channel filter is now; one whose note-on came before the transform was set passes unchanged
-	// when its channel does.
+	// the channel filter is now. One whose note-on was never transformed - the live-input path skips
+	// the transform while it is the identity - is sounding at the key that arrived, and its release
+	// passes whatever the filter says now: the filter gates the START of a note, and a filter set
+	// while the key was held would otherwise hold that note down for ever. Pressure is not a release
+	// and cannot hold a note down, so it keeps the gate.
 	std::atomic<int>* held = heldFor(*event);
 	const int as = held != nullptr ? held->load(Relaxed) : NotHeld;
-	if (as == NotHeld) { return passesChannel(*event); }
+	if (as == NotHeld) { return ends || passesChannel(*event); }
 	if (ends) { held->store(NotHeld, Relaxed); }
 	if (as == Dropped) { return false; }
 	event->setKey(static_cast<int16_t>(as));
