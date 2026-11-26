@@ -81,6 +81,30 @@ bool writeWithTime(const QString& path, const QByteArray& bytes, const QDateTime
 	return stamped;
 }
 
+//! Name the file system's case rule for one scope and put the environment back
+//! afterwards, so a failing assertion cannot leak the rule into the cases after
+//! it. The rule is a property of the file system, and this host's is
+//! case-sensitive, so it cannot show the Windows rule without being injected.
+struct ScopedPathCaseRule
+{
+	explicit ScopedPathCaseRule(const char* value)
+		: m_hadValue(qEnvironmentVariableIsSet("ZENE_PATH_CASE"))
+		, m_previous(qgetenv("ZENE_PATH_CASE"))
+	{
+		qputenv("ZENE_PATH_CASE", value);
+	}
+	~ScopedPathCaseRule()
+	{
+		if (m_hadValue) { qputenv("ZENE_PATH_CASE", m_previous); }
+		else { qunsetenv("ZENE_PATH_CASE"); }
+	}
+	ScopedPathCaseRule(const ScopedPathCaseRule&) = delete;
+	ScopedPathCaseRule& operator=(const ScopedPathCaseRule&) = delete;
+
+	bool m_hadValue;
+	QByteArray m_previous;
+};
+
 } // namespace
 
 class ProjectRecoveryTest : public QObject
@@ -237,6 +261,93 @@ private slots:
 		const RecoveryDecision d = decideRecovery(
 			recoveryOf("/tmp/rec.mmp", "/home/u/songs/Gone.mmp", at(11, 12), QDateTime()),
 			"/home/u/songs/Gone.mmp");
+		QVERIFY2(d.offered(), qPrintable(why(d)));
+	}
+
+	// ------------------------------------------------------------- path case --
+
+	void aRecoveryOfTheSameProjectIsOfferedWhenOnlyThePathCaseDiffers_data()
+	{
+		QTest::addColumn<QString>("recorded");
+		QTest::addColumn<QString>("opened");
+		// The sidecar records the path as the launch that wrote it spelled it; the
+		// next launch is handed another spelling of the SAME file. Every pair below
+		// names one file on a file system that compares names case-insensitively.
+		QTest::newRow("file name")
+			<< QString("/home/u/songs/Track.mmp") << QString("/home/u/songs/track.mmp");
+		QTest::newRow("directory")
+			<< QString("/home/u/Songs/Track.mmp") << QString("/home/u/songs/Track.mmp");
+		QTest::newRow("windows drive letter and whole path")
+			<< QString("C:/Music/Song.mmp") << QString("c:/music/song.mmp");
+	}
+
+	void aRecoveryOfTheSameProjectIsOfferedWhenOnlyThePathCaseDiffers()
+	{
+		// BUG new-p16-175. Project identity compared the two paths as plain
+		// strings, so on a file system that compares names case-insensitively the
+		// project's OWN recovery was classified as OtherProject: the crashed
+		// session's unsaved work was never offered, and the next autosave wrote over
+		// it. The identity is the file, and the file system's case rule decides
+		// which spellings name it.
+		QFETCH(QString, recorded);
+		QFETCH(QString, opened);
+
+		const ScopedPathCaseRule rule("insensitive");
+		const RecoveryDecision d = decideRecovery(
+			recoveryOf("/tmp/rec.mmp", recorded, at(11, 12), at(11, 11)), opened);
+		QVERIFY2(d.offered(), qPrintable(why(d)));
+	}
+
+	void anotherProjectStaysAnotherProjectWhateverTheCase()
+	{
+		// The fold is not a wildcard. Under the same rule a genuinely different
+		// project is still a different project, so its recovery is refused: offering
+		// another project's unsaved work is the one thing the identity check exists
+		// to prevent.
+		const ScopedPathCaseRule rule("insensitive");
+		const RecoveryDecision d = decideRecovery(
+			recoveryOf("/tmp/rec.mmp", "/home/u/songs/Other.mmp", at(11, 12), at(11, 11)),
+			"/home/u/songs/Track.mmp");
+		QCOMPARE(QString::fromLatin1(recoveryVerdictName(d.verdict)), QString("OtherProject"));
+		QVERIFY(!d.offered());
+	}
+
+	void thePlatformCaseRuleDecidesWhenNoOverrideIsSet()
+	{
+		// With no override the decision uses the file system's own rule: Windows
+		// compares names case-insensitively, so the two spellings are one project,
+		// while POSIX compares them case-sensitively, so they are two entries and
+		// the recovery of one is not offered as the other's.
+		const RecoveryInfo info =
+			recoveryOf("/tmp/rec.mmp", "/home/u/songs/Track.mmp", at(11, 12), at(11, 11));
+		const RecoveryDecision d = decideRecovery(info, "/home/u/Songs/Track.mmp");
+#ifdef Q_OS_WIN
+		QVERIFY2(d.offered(), qPrintable(why(d)));
+#else
+		QCOMPARE(QString::fromLatin1(recoveryVerdictName(d.verdict)), QString("OtherProject"));
+		QVERIFY(!d.offered());
+#endif
+	}
+
+	void readingRealFilesOffersARecoveryWhoseProjectPathCaseChanged()
+	{
+		// The same case through the real sidecar: the identity records the path as
+		// the session that crashed spelled it, and the next launch opens another
+		// spelling of the same file.
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString recoveryFile = dir.filePath("recover.mmp");
+		const QString project = dir.filePath("Song.mmp");
+		QVERIFY(writeWithTime(project, "<lmms/>", at(11, 11)));
+		QVERIFY(writeWithTime(recoveryFile, "<lmms/>", at(11, 12)));
+		QVERIFY(writeRecoveryIdentity(recoveryFile, project, at(11, 12)));
+
+		QString reopened = project;
+		reopened.replace(QStringLiteral("Song.mmp"), QStringLiteral("song.MMP"));
+		QVERIFY(reopened != project);
+
+		const ScopedPathCaseRule rule("insensitive");
+		const RecoveryDecision d = decideRecovery(readRecoveryInfo(recoveryFile), reopened);
 		QVERIFY2(d.offered(), qPrintable(why(d)));
 	}
 
