@@ -281,6 +281,48 @@ private slots:
 		QCOMPARE(transactionCount(), before);
 	}
 
+	//! Both halves of the dirty question for the three clip transforms (Luna cluster
+	//! new-p14-39 / new-p17-14). The *_AdvertisesNoUndo slots above count transactions
+	//! only, so this is where "a transform that moved a note marks the project modified,
+	//! and one that changed nothing leaves it clean" is pinned: closing or replacing the
+	//! project after a transpose, a velocity offset or a velocity scale has to ask.
+	void noteTransformsTrackProjectDirtyState()
+	{
+		Fixture fixture;
+		QVERIFY2(makeOneNoteFixture(&fixture), "could not build a one-note fixture");
+		QStringList failures;
+		checkProjectDirtyAfter(QStringLiteral("note.transpose"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("semitones"), 2}}, &failures);
+		checkProjectDirtyAfter(QStringLiteral("note.velocity_offset"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("delta"), -10}}, &failures);
+		checkProjectDirtyAfter(QStringLiteral("note.velocity_scale"),
+			{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("factor"), 0.5}}, &failures);
+		QVERIFY2(failures.isEmpty(), qPrintable(failures.join(QLatin1Char('\n'))));
+
+		// The control: the same three verbs asked to change nothing leave the project
+		// clean - the marking above is not a blanket true.
+		markProjectClean();
+		const ControlResult transposed = run(QStringLiteral("note.transpose"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("semitones"), 0}});
+		QVERIFY2(transposed.ok, qPrintable(transposed.errorMessage));
+		QCOMPARE(transposed.result.value(QStringLiteral("notes_changed")).toInt(), 0);
+		QVERIFY(!Engine::getSong()->isModified());
+
+		markProjectClean();
+		const ControlResult offset = run(QStringLiteral("note.velocity_offset"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("delta"), 0}});
+		QVERIFY2(offset.ok, qPrintable(offset.errorMessage));
+		QCOMPARE(offset.result.value(QStringLiteral("notes_changed")).toInt(), 0);
+		QVERIFY(!Engine::getSong()->isModified());
+
+		markProjectClean();
+		const ControlResult scaled = run(QStringLiteral("note.velocity_scale"),
+			QJsonObject{{QStringLiteral("clip"), fixture.clip}, {QStringLiteral("factor"), 1.0}});
+		QVERIFY2(scaled.ok, qPrintable(scaled.errorMessage));
+		QCOMPARE(scaled.result.value(QStringLiteral("notes_changed")).toInt(), 0);
+		QVERIFY(!Engine::getSong()->isModified());
+	}
+
 	//! A note with the largest tick_t length is refused before a paste checkpoint.
 	void clipboardPasteRefusesAnOverflowingEndpoint()
 	{
