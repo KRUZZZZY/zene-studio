@@ -116,8 +116,11 @@ public:
 private:
 	const SaControls *m_controls;
 
-	// thread communication and control
-	bool m_terminate;
+	// thread communication and control: the GUI thread stores these (terminate,
+	// the view timers, the controls dialog) and analyze() reads them on the
+	// analyzer thread, so they must be atomic. No buffer state is published
+	// through them; that stays under m_reallocationAccess and m_dataAccess.
+	std::atomic<bool> m_terminate;
 
 	// currently valid configuration
 	unsigned int m_zeroPadFactor = 2;		//!< use n-steps bigger FFT for given block size
@@ -150,10 +153,10 @@ private:
 	const unsigned int m_waterfallMaxWidth = 3840;
 
 	// book keeping
-	bool m_spectrumActive;
-	bool m_waterfallActive;
+	std::atomic<bool> m_spectrumActive;
+	std::atomic<bool> m_waterfallActive;
 	std::atomic<unsigned int> m_waterfallNotEmpty;	//!< number of lines remaining visible on display
-	bool m_reallocating;
+	std::atomic<bool> m_reallocating;
 
 	// merge L and R channels and apply gamma correction to make a spectrogram pixel
 	QRgb makePixel(float left, float right) const;
