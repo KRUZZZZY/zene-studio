@@ -135,6 +135,35 @@ environment fixtures, not this change; the A/B run above is the evidence, and
 The other four binaries pass: `BasicFiltersSampleRateTest`, `LommSampleRateTest`, `AudioPluginTest`,
 `GranularPitchShifterRealtimeTest`.
 
+## Re-verification on the committed tree (this session)
+
+Re-ran the 4b pair, the family and the gates from a clean tree at `fc27954f5a` (only `fix.patch` from
+this run's log folder was applied and reversed), so the verdict also rests on output produced in this
+session rather than on the earlier run's logs:
+
+| Step | Command | EXIT | Log |
+| --- | --- | --- | --- |
+| revert the fix | `git apply -R ~/.config/kads/zene/state/runs/new-p15-73.r1/logs/fix.patch` | 0 | — |
+| rebuild reverted | `cmake --build build --target GranularPitchShifterRealtimeTest -j4` | 0 | `build-11-verify-red.log` |
+| RED proof | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R '^GranularPitchShifterRealtimeTest$' --output-on-failure` | 8 | `test-10-verify-red.log` |
+| restore the fix | `git apply ~/.config/kads/zene/state/runs/new-p15-73.r1/logs/fix.patch` | 0 | — |
+| rebuild restored | `cmake --build build --target zene GranularPitchShifterRealtimeTest -j4` | 0 | `build-12-verify-green.log` |
+| GREEN proof | same ctest command | 0 | `test-11-verify-green.log` |
+| family | `cd build/tests && QT_QPA_PLATFORM=offscreen ctest -R 'GranularPitchShifter|AudioPlugin|SampleRate|Lomm' --output-on-failure` | 0 | `test-12-verify-family.log` (6 of 6 passed) |
+
+RED output this session (`test-10-verify-red.log`):
+
+```
+FAIL!  : GranularPitchShifterRealtimeTest::sampleRateHandoffCompletesBeforeTheNextBlock() Compared floats are not the same (fuzzy compare)
+   Actual   (granular->m_sampleRate)         : 44100 (0x1.5888p+15)
+   Expected (static_cast<float>(ChangedRate)): 48000 (0x1.77p+15)
+   Loc: [../../tests/src/core/GranularPitchShifterRealtimeTest.cpp(291)]
+Totals: 5 passed, 1 failed, 0 skipped, 0 blacklisted, 502ms
+```
+
+The reverse apply succeeding on the committed tree shows `fix.patch` is the product change in
+`aa51194b1f`, not a hand-made variant.
+
 ## Gates
 
 ```
@@ -154,6 +183,17 @@ feature-check kads-new-p15-73 (base 3436a808b, 5 changed files; logs in <worktre
 RESULT: PASS
 ```
 
+Re-run this session on the committed tree, unpiped:
+
+```
+cd <worktree> && FEATURE_CHECK_LOG_DIR=<logs>/gate-verify \
+  python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>
+```
+EXIT 0, the same eight PASS rows (`logs/gates-4-verify.log`, per-gate logs in `logs/gate-verify/`):
+`fork-sources`, `all-sources-reproduce`, `no-upstream-regression`, `check-namespace`,
+`no-tautology`, `doc-figures`, `complexity` (no new item in this branch's files), `file-length`
+(no new item).
+
 ## Self-check
 
 `submit_check.py` exit 0, no FAIL, five ASK items. Answers, each with the evidence this session saw:
@@ -164,7 +204,10 @@ RESULT: PASS
    line 291); `git apply .../fix.patch` EXIT 0, rebuild EXIT 0 → ctest EXIT **0**
    (`logs/test-5-restored-green.log`). Independently, the test was RED before the fix existed at
    all (`logs/test-2-red.log`, EXIT 8) and the baseline binary was green (`logs/test-1-baseline.log`,
-   EXIT 0), so the failure is the change under test and not the harness.
+   EXIT 0), so the failure is the change under test and not the harness. Re-run again this session on
+   the committed tree: reverse apply 0, rebuild 0 -> ctest EXIT **8** (`test-10-verify-red.log`);
+   restore 0, rebuild 0 -> ctest EXIT **0** (`test-11-verify-green.log`); the family run of six
+   binaries EXIT **0** (`test-12-verify-family.log`).
 2. **The test is deterministic: no wall-clock timing, no sleeps, no threads, no event loop.** The
    new slot starts no thread and calls neither `processEvents()` nor any timer; it renders blocks by
    calling `renderOneBlock()` directly. The rate is *injected*: `FixedRateAudioDevice` sets it with
@@ -180,8 +223,8 @@ RESULT: PASS
    `GranularPitchShifterControls::updateRange()` (`GranularPitchShifterControls.cpp:104`); (b) all
    three producers of `sampleRateChanged` (`AudioEngine.cpp:812`, `:1427`, `:1454`) fire off the
    audio thread with the backend stopped (`AudioDevice.cpp:137-155`); (c) every sibling listener in
-   the tree already runs in the emitting thread (the eleven sites listed above), so nothing else needs the, so nothing else needs the
-   same change, and no listener needed its own ordering fix; a ranked repo-wide search for
+   the tree already runs in the emitting thread (the eleven sites listed above), so nothing else
+   needs the same change, and no listener needed its own ordering fix; a ranked repo-wide search for
    `Qt::QueuedConnection` returned no `plugins/` hit. Local TSan does not run on this box, so
    the thread-safety statement is the design argument above, not a detector report.
 4. **No collateral damage.** The DSP (`processImpl`), `sampleRateNeedsUpdate()`,
@@ -195,7 +238,8 @@ RESULT: PASS
    without the fix (`test-6-family.log` vs `test-7-family-ab.log`).
 5. **Not ALREADY-FIXED and not FALSE-POSITIVE — verdict FIXED.** The queued connection was present
    in this tree (`GranularPitchShifterEffect.cpp:71-72` at `3436a808b`) and the RED run showed the
-   old rate in force after the swap (`logs/test-2-red.log`), so the defect was live, not already
+   old rate in force after the swap (`logs/test-2-red.log`, re-confirmed in
+   `logs/test-10-verify-red.log`), so the defect was live, not already
    fixed and not a phantom. The contract it violated is the engine's own
    (`src/core/AudioEngine.cpp:1420-1429`, `:1446-1456`, and the comment at
    `src/core/ProjectRenderer.cpp:265-267`).
