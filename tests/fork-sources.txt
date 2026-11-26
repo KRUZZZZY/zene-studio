@@ -802,6 +802,7 @@ tests/src/core/RecordToolsTestParts2.h
 tests/src/core/RevisionTimelineTestParts1.h
 tests/src/core/RevisionTimelineTestParts2.h
 tests/src/core/RevisionTimelineTestParts3.h
+tests/src/core/SamplePlayHandleRetireTest.cpp
 tests/src/core/UpnpMapperFakeRouterTestParts1.h
 tests/src/core/VideoTrackTestParts1.h
 tests/src/core/VideoTrackTestParts2.h
