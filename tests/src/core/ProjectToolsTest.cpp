@@ -40,6 +40,9 @@
 
 #include <sndfile.h>
 
+#include <mutex>
+#include <thread>
+
 #include "ControlRegistry.h"
 #include "ControlEdit.h"
 #include "ControlVocabulary.h"
@@ -47,6 +50,7 @@
 #include "Engine.h"
 #include "InstrumentTrack.h"
 #include "MidiClip.h"
+#include "RenderQueue.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackFolder.h"
@@ -71,6 +75,52 @@ int alternativeCount()
 {
 	return static_cast<int>(run(QStringLiteral("project.alternatives")).result.value(QStringLiteral("alternatives")).toArray().size());
 }
+
+//! Where the queue's report scan ran (RenderQueue::setReportProbeForTesting). The probe runs on whichever
+//! thread reads the finished file, so it only records the thread and returns: nothing is waited for.
+struct ReportProbeRecord
+{
+	std::mutex mutex;
+	std::thread::id thread;
+	int calls = 0;
+};
+
+ReportProbeRecord g_reportProbe;
+
+void observeReportThread()
+{
+	const std::thread::id self = std::this_thread::get_id();
+	std::lock_guard<std::mutex> lock(g_reportProbe.mutex);
+	++g_reportProbe.calls;
+	g_reportProbe.thread = self;
+}
+
+//! Installs the probe for the life of a slot, and takes it off again when an assertion returns early.
+class ReportProbeScope
+{
+public:
+	ReportProbeScope() { RenderQueue::setReportProbeForTesting(&observeReportThread); }
+	~ReportProbeScope() { RenderQueue::setReportProbeForTesting(nullptr); }
+	ReportProbeScope(const ReportProbeScope&) = delete;
+	ReportProbeScope& operator=(const ReportProbeScope&) = delete;
+
+	void reset()
+	{
+		std::lock_guard<std::mutex> lock(g_reportProbe.mutex);
+		g_reportProbe.calls = 0;
+		g_reportProbe.thread = std::thread::id{};
+	}
+	int calls()
+	{
+		std::lock_guard<std::mutex> lock(g_reportProbe.mutex);
+		return g_reportProbe.calls;
+	}
+	std::thread::id thread()
+	{
+		std::lock_guard<std::mutex> lock(g_reportProbe.mutex);
+		return g_reportProbe.thread;
+	}
+};
 
 } // namespace
 
@@ -114,6 +164,33 @@ private slots:
 		sf_close(file);
 		QCOMPARE(run(QStringLiteral("render.convert"), {{QStringLiteral("files"), QJsonArray{QStringLiteral("/no/such.wav")}},
 			{QStringLiteral("out_dir"), outDir}}).errorKind, ControlErrorKind::NotFound);
+	}
+
+	// A finished job's report is read from its output file: the whole file's SHA-256 and the loudness
+	// meter's decode of it. It used to be read inside the queue's own completion callback - the control
+	// thread that answers this surface and the UI - so a long conversion froze both for as long as reading
+	// the file takes. The probe records the thread that ran the scan; nothing is waited for (the job is
+	// driven to "done" through the event loop), so the observation is an order, not a race.
+	void aConversionReportIsReadOffTheControlThread()
+	{
+		ReportProbeScope probe;
+		probe.reset();
+		const QString tone = taketest::writeToneWav(QDir(m_dir.path()).filePath(QStringLiteral("probe.wav")), 440.0);
+		QVERIFY(!tone.isEmpty());
+		const QString outDir = QDir(m_dir.path()).filePath(QStringLiteral("probed"));
+		const ControlResult queued = run(QStringLiteral("render.convert"), {{QStringLiteral("files"), QJsonArray{tone}},
+			{QStringLiteral("out_dir"), outDir}, {QStringLiteral("format"), QStringLiteral("flac")}});
+		QVERIFY2(queued.ok, qPrintable(queued.errorMessage));
+		const int job = queued.result.value(QStringLiteral("jobs")).toArray().first().toObject().value(QStringLiteral("job")).toInt();
+		QTRY_COMPARE_WITH_TIMEOUT(stateOf(job), QStringLiteral("done"), 20000);
+
+		// A done job always carries its report, and that report was read somewhere other than this thread.
+		const QJsonObject report = run(QStringLiteral("render.queue_report"), {{QStringLiteral("job"), job}})
+			.result.value(QStringLiteral("report")).toObject();
+		QVERIFY(!report.value(QStringLiteral("sha256")).toString().isEmpty());
+		QCOMPARE(probe.calls(), 1);
+		QVERIFY2(probe.thread() != std::this_thread::get_id(),
+			"the finished job's report was read on the control thread, the thread this test runs on");
 	}
 
 	void aConversionLeavesAnUnrelatedDotPartFileAlone()

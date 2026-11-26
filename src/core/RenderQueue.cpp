@@ -34,6 +34,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QMetaObject>
 #include <QProcess>
 #include <QThreadPool>
 #include <QTimer>
@@ -212,13 +213,13 @@ QString staged(const RenderJob& job, const std::shared_ptr<std::atomic_bool>& ca
 	return writeFile(job, *buffer, cancellation);
 }
 
-QJsonObject reportOf(const RenderJob& job)
+QJsonObject reportOf(const QString& out, qint64 startedMs, qint64 finishedMs)
 {
 	if (const RenderQueue::ReportProbe probe = sReportProbe.load(std::memory_order_acquire)) { probe(); }
-	QJsonObject report{{QStringLiteral("bytes"), static_cast<double>(QFileInfo(job.out).size())},
-		{QStringLiteral("sha256"), BounceInPlace::sha256OfFile(job.out)},
-		{QStringLiteral("seconds_taken"), static_cast<double>(job.finishedMs - job.startedMs) / 1000.0}};
-	const ControlResult measured = control::meterMeasureFile(job.out);
+	QJsonObject report{{QStringLiteral("bytes"), static_cast<double>(QFileInfo(out).size())},
+		{QStringLiteral("sha256"), BounceInPlace::sha256OfFile(out)},
+		{QStringLiteral("seconds_taken"), static_cast<double>(finishedMs - startedMs) / 1000.0}};
+	const ControlResult measured = control::meterMeasureFile(out);
 	if (measured.ok) { report.insert(QStringLiteral("loudness"), measured.result); }
 	else { report.insert(QStringLiteral("loudness_error"), measured.errorMessage); }
 	return report;
@@ -234,20 +235,28 @@ bool writtenByJob(const RenderJob& job)
 		&& (job.kind == RenderJob::Kind::Convert || out.lastModified().toMSecsSinceEpoch() >= job.startedMs / 1000 * 1000);
 }
 
-//! A running job's end: done when it wrote a file (with its report), failed otherwise.
-void conclude(RenderJob* job, bool ok, int exitCode, const QString& error)
+//! A running job's end, as far as its output decides it: 'true' when it wrote a file, so only its report is
+//! left (RenderQueue::beginReport) and it is not done until that report is in place; a job that wrote
+//! nothing has failed.
+bool conclude(RenderJob* job, bool ok, int exitCode, const QString& error)
 {
 	job->finishedMs = now();
 	job->exitCode = exitCode;
 	const bool written = ok && writtenByJob(*job);
-	job->state = written ? RenderJob::State::Done : RenderJob::State::Failed;
-	job->error = written ? QString() : (!error.isEmpty() ? error : QStringLiteral("no file was written (exit %1)").arg(exitCode));
-	if (written) { job->report = reportOf(*job); }
+	if (written)
+	{
+		job->error.clear();
+		return true;
+	}
+	job->state = RenderJob::State::Failed;
+	job->error = !error.isEmpty() ? error : QStringLiteral("no file was written (exit %1)").arg(exitCode);
+	return false;
 }
 
 //! A job's end once its process or worker is done: its staged file is committed when it succeeded while
 //! running, dropped otherwise. A previous destination stays in place until the staged file is ready.
-void endJob(RenderJob* job, bool ok, int exitCode, QString error)
+//! 'true' when the job wrote its file, i.e. when its report is the only thing left to do.
+bool endJob(RenderJob* job, bool ok, int exitCode, QString error)
 {
 	const bool running = job->state == RenderJob::State::Running;
 	if (job->kind == RenderJob::Kind::Convert || job->kind == RenderJob::Kind::Render)
@@ -255,8 +264,9 @@ void endJob(RenderJob* job, bool ok, int exitCode, QString error)
 		if (running && ok) { error = commitStaged(*job); ok = error.isEmpty(); }
 		else { QFile::remove(stagedPath(*job)); }
 	}
-	if (running) { conclude(job, ok, exitCode, error); }
+	const bool written = running && conclude(job, ok, exitCode, error);
 	if (job->ownsSource) { QFile::remove(job->source); }
+	return written;
 }
 
 //! 0.5.0 theme 24: what the task area calls this job.
@@ -415,21 +425,66 @@ QString RenderQueue::convert(const RenderJob& job)
 void RenderQueue::finish(const TaskToken& token, int id, bool ok, int exitCode, const QString& error)
 {
 	RenderJob* job = find(id);
+	const bool written = job != nullptr && endJob(job, ok, exitCode, error);
 	if (job != nullptr)
 	{
 		if (job->kind == RenderJob::Kind::Convert) { job->conversionWorkerActive = false; }
-		endJob(job, ok, exitCode, error);
-		job->progress = job->state == RenderJob::State::Done ? 1.0 : job->progress;
-		job->phase = job->state == RenderJob::State::Done ? QStringLiteral("done")
-			: job->state == RenderJob::State::Cancelled ? QStringLiteral("cancelled") : QStringLiteral("failed");
-		TaskCenter::instance().finish(token, taskState(job->state), job->error);
+		if (!written)
+		{
+			job->phase = job->state == RenderJob::State::Cancelled ? QStringLiteral("cancelled") : QStringLiteral("failed");
+			TaskCenter::instance().finish(token, taskState(job->state), job->error);
+		}
 	}
+	endProcess(id);
+	if (job == nullptr || !written)
+	{
+		releaseCurrent(id);
+		return;
+	}
+	beginReport(*job);  // the job ends once its report is in place: applyReport, or cancel()
+}
+
+//! A job that wrote its file is not done until its report is: reading the output - its whole SHA-256 and
+//! the loudness meter's decode - takes as long as reading the file, and the queue runs on the control
+//! thread that answers the surface and the UI. So the scan runs on a worker and is posted back, and the job
+//! stays Running (phase "reporting") until the report is in its hands: a done job always has its report.
+void RenderQueue::beginReport(RenderJob& job)
+{
+	job.phase = QStringLiteral("reporting");
+	job.progress = -1.0;
+	TaskCenter::instance().progress(job.taskToken, -1.0, tr("Reading the rendered file"));
+	const int id = job.id;
+	const QString out = job.out;
+	const qint64 startedMs = job.startedMs;
+	const qint64 finishedMs = job.finishedMs;
+	QThreadPool::globalInstance()->start([this, id, out, startedMs, finishedMs] {
+		const QJsonObject report = reportOf(out, startedMs, finishedMs);
+		QMetaObject::invokeMethod(this, [this, id, report] { applyReport(id, report); }, Qt::QueuedConnection);
+	});
+}
+
+void RenderQueue::applyReport(int id, const QJsonObject& report)
+{
+	RenderJob* job = find(id);
+	if (job != nullptr && job->state == RenderJob::State::Running && job->phase == QLatin1String("reporting"))
+	{
+		job->report = report;
+		job->state = RenderJob::State::Done;
+		job->progress = 1.0;
+		job->phase = QStringLiteral("done");
+		TaskCenter::instance().finish(job->taskToken, TaskState::Done, QString());
+	}
+	releaseCurrent(id);
+}
+
+//! The QProcess of a render that has ended, once its result is in hand.
+void RenderQueue::endProcess(int id)
+{
 	if (m_process != nullptr && id == m_current)
 	{
 		m_process->deleteLater();
 		m_process = nullptr;
 	}
-	releaseCurrent(id);
 }
 
 bool RenderQueue::cancel(int id)
@@ -437,14 +492,16 @@ bool RenderQueue::cancel(int id)
 	RenderJob* job = find(id);
 	if (job == nullptr || (job->state != RenderJob::State::Queued && job->state != RenderJob::State::Running)) { return false; }
 	const bool running = job->state == RenderJob::State::Running;
+	const bool reporting = job->phase == QLatin1String("reporting");  // its output is written, its report is being read
 	job->state = RenderJob::State::Cancelled;
 	job->finishedMs = now();
 	job->phase = running && job->kind == RenderJob::Kind::Bounce
 		? QStringLiteral("cancelling") : QStringLiteral("cancelled");
 	if (!running) { cancelQueued(*job); return true; }
 	// A conversion's worker checks its token at stage boundaries and while writing; release the queue now
-	// so its next job can start while an in-progress decoder or resampler unwinds.
-	if (job->kind == RenderJob::Kind::Convert)
+	// so its next job can start while an in-progress decoder or resampler unwinds. A job whose report is
+	// being read has done its work already: its slot is released here and applyReport drops the report.
+	if (job->kind == RenderJob::Kind::Convert || reporting)
 	{
 		if (job->conversionCancellation != nullptr) { job->conversionCancellation->store(true, std::memory_order_release); }
 		TaskCenter::instance().finish(job->taskToken, TaskState::Cancelled);

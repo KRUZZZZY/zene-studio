@@ -146,6 +146,10 @@ private:
 	void clearBounceProcess();
 	void runConvert(RenderJob& job);
 	void finish(const TaskToken& token, int id, bool ok, int exitCode, const QString& error);
+	//! Read a finished job's report on a worker and post it back; the job ends when it is in place.
+	void beginReport(RenderJob& job);
+	void applyReport(int id, const QJsonObject& report);
+	void endProcess(int id);
 	void bounceProcessEnded(int id, bool ok, int exitCode, const QString& error);
 	void beginBounceFinalization(int id);
 	void finishBounce(int id, BounceInPlace::PreparedRender prepared, BounceInPlace::Result rendered,

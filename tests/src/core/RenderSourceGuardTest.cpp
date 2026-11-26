@@ -24,6 +24,7 @@
 #include <QtTest>
 
 #include <QCoreApplication>
+#include <QCryptographicHash>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
@@ -35,6 +36,8 @@
 #include <QVector>
 
 #include <algorithm>
+#include <mutex>
+#include <thread>
 
 #ifndef _WIN32
 #include <unistd.h>
@@ -61,6 +64,52 @@ QByteArray contents(const QString& path)
 	QFile file(path);
 	return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
 }
+
+//! Where the queue's report scan ran (RenderQueue::setReportProbeForTesting). The probe runs on whichever
+//! thread reads the finished file, so it only records the thread and returns: nothing is waited for.
+struct ReportProbeRecord
+{
+	std::mutex mutex;
+	std::thread::id thread;
+	int calls = 0;
+};
+
+ReportProbeRecord g_reportProbe;
+
+void observeReportThread()
+{
+	const std::thread::id self = std::this_thread::get_id();
+	std::lock_guard<std::mutex> lock(g_reportProbe.mutex);
+	++g_reportProbe.calls;
+	g_reportProbe.thread = self;
+}
+
+//! Installs the probe for the life of a slot, and takes it off again when an assertion returns early.
+class ReportProbeScope
+{
+public:
+	ReportProbeScope() { RenderQueue::setReportProbeForTesting(&observeReportThread); }
+	~ReportProbeScope() { RenderQueue::setReportProbeForTesting(nullptr); }
+	ReportProbeScope(const ReportProbeScope&) = delete;
+	ReportProbeScope& operator=(const ReportProbeScope&) = delete;
+
+	void reset()
+	{
+		std::lock_guard<std::mutex> lock(g_reportProbe.mutex);
+		g_reportProbe.calls = 0;
+		g_reportProbe.thread = std::thread::id{};
+	}
+	int calls()
+	{
+		std::lock_guard<std::mutex> lock(g_reportProbe.mutex);
+		return g_reportProbe.calls;
+	}
+	std::thread::id thread()
+	{
+		std::lock_guard<std::mutex> lock(g_reportProbe.mutex);
+		return g_reportProbe.thread;
+	}
+};
 
 QString fakeOutputPath(int argc, char** argv)
 {
@@ -359,6 +408,32 @@ private slots:
 		QVERIFY(id > 0);
 		QTRY_VERIFY_WITH_TIMEOUT(RenderQueue::instance().job(id)->state == RenderJob::State::Done, 5000);
 		QCOMPARE(contents(destination), QByteArray("rendered output"));
+		RenderQueue::instance().clearFinished();
+	}
+
+	// A finished render's report: the staged file is committed over the destination first, so the byte
+	// count and the SHA-256 are the destination's, and reading them happens away from the control thread
+	// (a long render used to freeze the surface for as long as hashing and metering it takes). The probe
+	// records the thread that ran the scan; nothing is waited for but the job's own completion.
+	void aRenderReportIsReadOffTheControlThread()
+	{
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString destination = dir.filePath(QStringLiteral("probed.wav"));
+		qputenv("ZENE_FAKE_RENDER_SUCCESS", "1");
+		ReportProbeScope probe;
+		probe.reset();
+		const int id = queueRender(dir.filePath(QStringLiteral("project.mmp")), destination);
+		QVERIFY(id > 0);
+		QTRY_VERIFY_WITH_TIMEOUT(RenderQueue::instance().job(id)->state == RenderJob::State::Done, 5000);
+
+		const QJsonObject report = RenderQueue::instance().job(id)->report;
+		QCOMPARE(report.value(QStringLiteral("bytes")).toDouble(), 15.0);
+		QCOMPARE(report.value(QStringLiteral("sha256")).toString(),
+			QString::fromLatin1(QCryptographicHash::hash(QByteArrayLiteral("rendered output"), QCryptographicHash::Sha256).toHex()));
+		QCOMPARE(probe.calls(), 1);
+		QVERIFY2(probe.thread() != std::this_thread::get_id(),
+			"the finished render's report was read on the control thread, the thread this test runs on");
 		RenderQueue::instance().clearFinished();
 	}
 #endif
