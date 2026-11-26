@@ -5336,6 +5336,39 @@ target_compile_definitions(DelayLfoAutomationTest PRIVATE
 	# sources link into the test binary on every platform.
 	PLUGIN_STATIC_DEFINE
 )
+
+# Regression test for cluster new-p18-19 (muted crossover bands froze their
+# filter histories). The CrossoverEQ sources are compiled into the test binary
+# (the DelayLfoAutomationTest pattern) so the effect's processImpl runs
+# in-process.
+add_executable(CrossoverEQMuteHistoryTest
+	src/plugins/CrossoverEQMuteHistoryTest.cpp
+	${CMAKE_SOURCE_DIR}/plugins/CrossoverEQ/CrossoverEQ.cpp
+	${CMAKE_SOURCE_DIR}/plugins/CrossoverEQ/CrossoverEQ.h
+	${CMAKE_SOURCE_DIR}/plugins/CrossoverEQ/CrossoverEQControls.cpp
+	${CMAKE_SOURCE_DIR}/plugins/CrossoverEQ/CrossoverEQControls.h
+	${CMAKE_SOURCE_DIR}/plugins/CrossoverEQ/CrossoverEQControlDialog.cpp
+	${CMAKE_SOURCE_DIR}/plugins/CrossoverEQ/CrossoverEQControlDialog.h
+)
+add_test(NAME CrossoverEQMuteHistoryTest COMMAND CrossoverEQMuteHistoryTest)
+set_tests_properties(CrossoverEQMuteHistoryTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+target_include_directories(CrossoverEQMuteHistoryTest PRIVATE
+	$<TARGET_PROPERTY:lmmsobjs,INCLUDE_DIRECTORIES>
+	${CMAKE_SOURCE_DIR}/plugins/CrossoverEQ
+	${CMAKE_BINARY_DIR}/plugins/CrossoverEQ
+)
+target_static_libraries(CrossoverEQMuteHistoryTest PRIVATE lmmsobjs)
+target_link_libraries(CrossoverEQMuteHistoryTest PRIVATE
+	${QT_LIBRARIES}
+	${QT_QTTEST_LIBRARY}
+)
+target_compile_features(CrossoverEQMuteHistoryTest PRIVATE cxx_std_20)
+target_compile_definitions(CrossoverEQMuteHistoryTest PRIVATE
+	LMMS_TESTING
+	PLUGIN_NAME=crossovereq
+	PLUGIN_STATIC_DEFINE
+)
 add_dependencies(DelayLfoAutomationTest delay)
 
 # Regression test for cluster new-p9-332 (the Organic plugin's oscillator
