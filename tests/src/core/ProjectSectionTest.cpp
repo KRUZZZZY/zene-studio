@@ -82,9 +82,39 @@ class ProjectSectionTest : public QObject
 {
 	Q_OBJECT
 
+private:
+	bool m_sawLaunch = false;
+	bool m_mixerOptionsRegisteredAtLaunch = false;
+
 private slots:
-	void initTestCase() { Engine::init(true); }
+	void initTestCase()
+	{
+		// Engine::init emits this message right before startProcessing(), so no audio thread exists yet:
+		// a deterministic point to look at the registry (a direct connection, same thread).
+		const QMetaObject::Connection connection
+			= connect(Engine::inst(), &Engine::initProgress, this, [this](const QString& message) {
+				  if (message != QStringLiteral("Launching audio engine threads")) { return; }
+				  m_sawLaunch = true;
+				  const auto& all = ProjectSection::sections();
+				  m_mixerOptionsRegisteredAtLaunch
+					  = std::any_of(all.begin(), all.end(), [](const ProjectSection* section) {
+							return section->elementName() == QStringLiteral("mixer-options");
+						});
+			  }, Qt::DirectConnection);
+		Engine::init(true);
+		disconnect(connection);
+	}
 	void cleanupTestCase() { Engine::destroy(); }
+
+	/*! new-p20-81: MixerOptions registers itself lazily; it must already be in ProjectSection::sections() when
+	 *  the audio engine is about to start, not be created by the mixer's first period on the audio thread. */
+	void mixerOptionsIsRegisteredBeforeTheAudioEngineStarts()
+	{
+		QVERIFY(m_sawLaunch);
+		QVERIFY2(m_mixerOptionsRegisteredAtLaunch,
+			"MixerOptions must be created on the main thread before startProcessing, "
+			"not lazily by the mixer's first period");
+	}
 
 	void registeringIsIdempotentAndListed()
 	{
