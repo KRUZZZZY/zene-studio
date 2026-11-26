@@ -48,7 +48,35 @@ readable through `messagesLeft()`'s `poll()` on the still-open socket (`include/
 `init()`'s `m_watcher.wait()` would not return and a second `init()` cannot be driven deterministically from a test.
 The allocation-plus-new-connection state the test drives is the state a reinitialisation produces. See Other findings.
 
+Round 2 (the submit check sent round 1 back): the test added two `QSKIP`s (no python3, client did not start). That is a
+weakened test - a host without the peer would have turned this regression into a silent pass - so both are `QVERIFY2`
+assertions now, and the missing capability fails the test loudly (`python3 is required ...`, `the client stand-in did not
+start: this regression cannot pass without it`). `kads_submit_extra.py --base 3436a808b6 --worktree <worktree>` reports
+`weakening, registration and ratchet checks pass against base 3436a808b6` EXIT=0 (`extra-check-1.log`); the added test
+lines contain no skip and no assertion was removed (checked over the whole base..HEAD test diff: 72 added lines,
+0 added skips, 0 removed assertions, 14 added assertions).
+
 ## Commands and EXIT codes (logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p17-143.r1/logs)
+
+Round 2 (final test, logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p17-143.r2/logs):
+
+- RED with the final test - fix reversed in the working tree: `git diff 3436a808b6 -- src/core/RemotePlugin.cpp >
+  fix.patch` EXIT=0, `git apply -R fix.patch` EXIT=0; `cmake --build build --target RemotePluginAudioPortsTest -j4 >
+  build-1-red.log 2>&1` BUILD_EXIT=0; `cd build/tests && ./RemotePluginAudioPortsTest
+  clientConnectingToAnExistingBlockIsToldItsKey > test-1-red.log 2>&1` EXIT=1 (`Totals: 2 passed, 1 failed, 0 skipped`,
+  `FAIL! ... 'ids.contains(IdChangeSharedMemoryKey)' returned FALSE`).
+- GREEN: `git apply fix.patch` EXIT=0; `cmake --build build --target RemotePluginAudioPortsTest -j4 >
+  build-2-green.log 2>&1` BUILD_EXIT=0; same test command `> test-2-green.log 2>&1` EXIT=0
+  (`Totals: 3 passed, 0 failed, 0 skipped`).
+- Product and family: `cmake --build build --target zene -j4 > build-3-zene.log 2>&1` BUILD_EXIT=0;
+  `cd build/tests && ctest -R 'RemotePlugin|ZynSeparateProcess' --output-on-failure > test-3-family.log 2>&1` EXIT=0
+  (`100% tests passed, 0 tests failed out of 7`).
+- shm-fifo compile check with the final test: `cmake --build build --target RemotePluginAudioPortsShmCompileCheck -j4 >
+  build-4-shm-compile-check.log 2>&1` BUILD_EXIT=0.
+- Weakening / registration / ratchet check: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/kads_submit_extra.py
+  --base 3436a808b6 --worktree <worktree> > extra-check-1.log 2>&1` EXIT=0.
+
+Round 1 (same product fix; the test has since dropped its two skips):
 
 - Warm-up build: `cmake --build build --target RemotePluginAudioPortsTest -j4 > build-0-baseline.log 2>&1` EXIT=0.
 - First version of the test (`build-1-red.log` EXIT=0, `test-1-red.log`): `ctest -R RemotePluginAudioPortsTest`
