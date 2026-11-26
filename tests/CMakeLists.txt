@@ -5127,10 +5127,11 @@ if(TARGET lomm)
 endif()
 
 # Cluster new-p9-130: the dynamics processor's sample-rate request is a flag the control
-# thread writes and the audio path reads and clears. The plugin sources are compiled into
-# this test binary (the LommSampleRateTest pattern), so the regression can read the
-# declared handoff and drive the real slot through AudioEngine::sampleRateChanged()
-# without loading a module.
+# thread writes and the audio path reads and clears, and the RMS window it asks for used to
+# be resized inside the audio callback. The plugin sources are compiled into this test
+# binary (the LommSampleRateTest pattern), so the regression drives the real slot through
+# AudioEngine::sampleRateChanged() and measures the period that applies it with the
+# allocation probe (the plugin test pattern), without loading a module.
 add_executable(DynamicsProcessorSampleRateHandoffTest
 	src/plugins/DynamicsProcessorSampleRateHandoffTest.cpp
 	${CMAKE_SOURCE_DIR}/plugins/DynamicsProcessor/DynamicsProcessor.cpp
@@ -5165,6 +5166,8 @@ target_compile_definitions(DynamicsProcessorSampleRateHandoffTest PRIVATE
 if(TARGET dynamicsprocessor)
 	add_dependencies(DynamicsProcessorSampleRateHandoffTest dynamicsprocessor)
 endif()
+lmms_link_allocation_probe(DynamicsProcessorSampleRateHandoffTest
+	"${CMAKE_CURRENT_SOURCE_DIR}/src/plugins/DynamicsProcessorSampleRateHandoffTest.cpp")
 
 # Cluster new-p12-275: TripleOscillator's user-wave buffer and anti-alias table
 # were published straight onto the model from the control thread while

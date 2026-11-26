@@ -61,10 +61,9 @@ DynProcControls::DynProcControls( DynProcEffect * _eff ) :
 
 void DynProcControls::sampleRateChanged()
 {
-	// Control thread: publish the request for the audio path, which consumes it with one
-	// exchange. The release store publishes the device's new rate, which the engine set
-	// before it emitted this signal (BUG new-p9-130).
-	m_effect->m_needsUpdate.store( true, std::memory_order_release );
+	// Control thread: the engine has set the new device rate, so the window it needs is built
+	// here - this allocates - and the audio path only installs it (BUG new-p9-130).
+	m_effect->prepareSampleRateChange();
 }
 
 
