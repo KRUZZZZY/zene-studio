@@ -383,6 +383,16 @@ bool RemotePlugin::init(const QString &pluginExecutable,
 
 	sendMessage(message(IdSyncKey).addString(Engine::getSong()->syncKey()));
 
+	// The key of the shared audio block, on every connection. A reused object
+	// still holds the block the previous client used, and activation only names
+	// it again when it is re-created (updateAudioBuffer() returns early when the
+	// dimensions are unchanged), so a replacement client would never attach the
+	// block it has to process into (cluster new-p17-143).
+	if (m_audioBuffer)
+	{
+		sendMessage(message(IdChangeSharedMemoryKey).addString(m_audioBuffer.key()));
+	}
+
 	// NOTE: the shared audio buffer is allocated by the audio ports, which are
 	// activated once the remote side reported IdInitDone (see waitForInitDone()).
 	// There is no buffer to size before the client exists (#589).
