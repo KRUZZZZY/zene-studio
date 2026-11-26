@@ -135,6 +135,24 @@ void followTransportStops()
 	QObject::connect(song, &Song::stopped, song, []() { endAllRecordTakes(); });
 }
 
+/*! Declare that @a finished's undo step is the TAKE's, not this call's: point its inverse at the
+ *  journal step an earlier call of the same take took (src/core/ControlRegistry.cpp records a step only
+ *  for the call that produced it, and would otherwise record this one as having no inverse at all).
+ *  `control.undo` then unwinds the take, which is what one undo step per take means.
+ */
+QJsonObject declareTakeStep(QJsonObject finished)
+{
+	QJsonObject tx = finished.value(QStringLiteral("__transaction")).toObject();
+	if (tx.isEmpty()) { return finished; }
+	QJsonObject inverse = tx.value(QStringLiteral("inverse")).toObject();
+	inverse.insert(QStringLiteral("applies"), QStringLiteral("journal_later"));
+	tx.insert(QStringLiteral("inverse"), inverse);
+	tx.insert(QStringLiteral("mechanism"), QStringLiteral("the take's MidiClip journal checkpoint, taken by the "
+		"take's first note.record_on: one control.undo unwinds the whole take"));
+	finished.insert(QStringLiteral("__transaction"), tx);
+	return finished;
+}
+
 //! The notes this clip is holding, as ids, in the order the keys went down.
 QJsonArray heldJson(const QString& clipText)
 {
@@ -202,7 +220,8 @@ ControlResult recordOn(const QJsonObject& args)
 		{QStringLiteral("take_started"), first},
 		{QStringLiteral("held"), heldJson(clipText)},
 	};
-	return ControlResult::success(notes::finish(ref, clip, QStringLiteral("note.record_on"), placed));
+	QJsonObject finished = notes::finish(ref, clip, QStringLiteral("note.record_on"), placed);
+	return ControlResult::success(first ? finished : declareTakeStep(finished));
 }
 
 //! The note-off: close the note @a key is holding where the playhead is, so its length is what was played.
@@ -236,7 +255,8 @@ ControlResult recordOff(const QJsonObject& args)
 		{QStringLiteral("length"), length},
 		{QStringLiteral("closed"), true},
 	};
-	return ControlResult::success(notes::finish(ref, clip, QStringLiteral("note.record_off"), placed));
+	// The take's checkpoint was taken by its first note.record_on: this call writes inside it.
+	return ControlResult::success(declareTakeStep(notes::finish(ref, clip, QStringLiteral("note.record_off"), placed)));
 }
 
 //! The end of the take: keep whatever is still held (one step long) and close the take's undo step.

@@ -34,8 +34,8 @@
  *  takes one step back, and the stop paths (transport stop, disarm, clip change) write nothing and
  *  leave nothing pending. Record (§3b): a key opens a note at the playhead and its release closes it,
  *  ONE undo step covers the whole take, the transport's stop ends it, and a disarm or a clip change
- *  drops both MIDI edges. The two modes share this executable because they share the editor's one MIDI
- *  path, and this lane's build tree cannot register a second test target.
+ *  drops both MIDI edges. The two entry modes share this executable because they share the editor's
+ *  one MIDI path and its one set of mode switches.
  *
  *  The test reads the mode and the cursor through NoteEditor::describe() - the object window.get_state
  *  reports as `note_editor` - so it compiles against a tree without the change and fails on behaviour, not
