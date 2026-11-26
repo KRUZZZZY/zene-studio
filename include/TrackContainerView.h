@@ -54,6 +54,12 @@ public:
 
 	void run() override;
 
+signals:
+	/*! Q050-359: the module declined, so the track kept the instrument it had. \a reason is the module's own
+	 *  (read on this thread and handed over with the signal, because the note is per thread). Emitted before
+	 *  run() returns; the connection is queued, so the reporter runs on the GUI thread that made the drop. */
+	void refused( const QString & plugin, const QString & reason );
+
 private:
 	InstrumentTrack *m_it;
 	QString m_name;

@@ -34,6 +34,7 @@
 #include <QVBoxLayout>
 
 #include "AutomatableButton.h"
+#include "ArrangerFileDrop.h"
 #include "ComboBox.h"
 #include "ConfigManager.h"
 #include "DataFile.h"
@@ -60,6 +61,7 @@
 #include "MainWindow.h"
 #include "PianoView.h"
 #include "PluginFactory.h"
+#include "PluginInstantiationFailure.h"
 #include "PluginView.h"
 #include "Song.h"
 #include "StringPairDrag.h"
@@ -599,11 +601,23 @@ void InstrumentTrackWindow::dropEvent( QDropEvent* event )
 		const QString ext = FileItem::extension( value );
 		Instrument * i = m_track->instrument();
 
-		if( !i->descriptor()->supportsFileType( ext ) )
+		// Q050-359: a placeholder instrument (a module that declined, a device this build does not host) has
+		// no descriptor to ask about file types.
+		if( i == nullptr || i->descriptor() == nullptr ||
+			!i->descriptor()->supportsFileType( ext ) )
 		{
 			PluginFactory::PluginInfoAndKey piakn =
 				getPluginFactory()->pluginSupportingExtension(ext);
 			i = m_track->loadInstrument(piakn.info.name(), &piakn.key);
+			// Q050-359: the module declined; the track keeps the instrument it had and the drop says why.
+			if( i == nullptr )
+			{
+				arrangerdrop::reportRefusedInstrument(piakn.info.name(),
+					pluginload::takeInstantiationFailure());
+				event->ignore();
+				updateSubWindow();
+				return;
+			}
 		}
 
 		i->loadFile( value );

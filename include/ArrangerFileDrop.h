@@ -76,6 +76,11 @@ LMMS_EXPORT bool dropFileAndReport(const QMimeData* mime, Track* track, TimePos 
 //! Q050-093: one file (a browser's sample drag) imported through clip.import_file the same way, and reported.
 LMMS_EXPORT bool importFileAndReport(const QString& path, Track* track, TimePos tick, Qt::KeyboardModifiers modifiers);
 
+/*! Q050-359: why an instrument the user asked for did not load, and that the track kept the instrument it had.
+ *  \a reason is the module's own (pluginload::takeInstantiationFailure(), taken by the caller right after the
+ *  load returned null). The drop paths call this so a refused instrument says why instead of doing nothing. */
+LMMS_EXPORT void reportRefusedInstrument(const QString& pluginName, const QString& reason);
+
 //! The keyboard modifiers a drop was made with (Qt 5 and Qt 6 name the accessor differently).
 LMMS_EXPORT Qt::KeyboardModifiers dropModifiers(const QDropEvent* event);
 
