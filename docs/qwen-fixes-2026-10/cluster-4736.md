@@ -150,6 +150,12 @@ restored `ControlRecordingRoutesTest.cpp` is unchanged in this branch; gates-2.l
   group): consistent — `arrangement.get_state`/`trackEditState` report rows and ids only, never arm
   state, so they needed no change; within `track.*` only `set_arm`/`set_arm_many` address record
   routes, and both share one resolution now.
+- **The other siblings the pre-submit check names** — `arrangement.fit_tracks`, `get_state`, `modes`,
+  `modifier_tools`, `navigator`, `next_transient`, `nudge`, `ruler_lanes`, `scroll`, `select_clip`,
+  `set_tool`, `zoom`, `zoom_back`, `zoom_forward`, `zoom_toggle`: all view, navigation or selection
+  verbs. None reads or writes a record route, an arm flag or a track's recorder index (the only
+  recorder reader in this file is `control::trackRecordArmed`, changed with `setArm`), so none is
+  affected and none was touched.
 - **Not verified here:** TSan does not run on this box, so thread safety is argued from the design
   (single-writer control-thread atomic, no audio-thread reader) rather than measured. The
   `ControlCommandsSnapshot` canary was not regenerated because no command id, schema or description
