@@ -157,9 +157,10 @@ SampleClip::SampleClip(const SampleClip& orig) :
 
 SampleClip::~SampleClip()
 {
-	// main thread: takes nobody claimed (their handles queue the drain threads)
-	delete m_preparedRecord;
-	delete m_spareRecord;
+	// main thread: takes nobody claimed (their handles queue the drain threads). The audio thread
+	// claims these slots during a period (claimRecordHandle), and a clip can be deleted while a
+	// period still holds it, so they are detached under the change lock first (new-p15-177).
+	releaseRecordTakes();
 	auto sampletrack = dynamic_cast<SampleTrack*>(getTrack());
 	if ( sampletrack )
 	{
@@ -265,7 +266,9 @@ void SampleClip::releaseRecordTakes()
 {
 	SampleRecordHandle* released[2] = { nullptr, nullptr };
 	{
-		const auto guard = Engine::audioEngine()->requestChangesGuard();
+		// No engine only at teardown (Engine::destroy deletes the song after it): no audio thread then.
+		AudioEngine* engine = Engine::audioEngine();
+		const auto guard = engine != nullptr ? engine->requestChangesGuard() : AudioEngine::RequestChangesGuard{};
 		released[0] = std::exchange(m_preparedRecord, nullptr);
 		released[1] = std::exchange(m_spareRecord, nullptr);
 	}
