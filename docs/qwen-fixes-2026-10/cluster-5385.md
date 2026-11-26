@@ -21,13 +21,13 @@ whose only writers are:
 
 | writer | site | when |
 |---|---|---|
-| the engine's own value | `Engine::updateFramesPerTick()` | `Song::setTempo()` (`src/core/Song.cpp:398`), the Link release (`src/core/Song.cpp:495`), the `sampleRateChanged` slot (`src/core/Song.cpp:3104`) |
+| the engine's own value | `Engine::updateFramesPerTick()` | `Song::setTempo()` (`src/core/Song.cpp:398`), the Link release (`src/core/Song.cpp:495`), the `sampleRateChanged` slot (`src/core/Song.cpp:3124`) |
 | a mapped tempo | `Engine::updateFramesPerTickForTempo()` | the follower, `src/core/Song.cpp:1569` |
 
 Neither tempo-map command touches the scalar: `transport.tempo_map_clear`
 (`src/core/ControlCommandsTransportMap.cpp:436`) and
 `transport.tempo_map_set_active` both edit through `editMapWithUndo`
-(`src/core/ControlCommandsTransportMap.cpp:157-171`), which is
+(`src/core/ControlCommandsTransportMap.cpp:157-166`), which is
 `Song::tempoMap().edit(...)` - the seqlock publication only
 (`docs/TEMPO-MAP.md` section 4). So once the follower applied a mapped tempo,
 nothing reverted it when the map went away. Confirmed by the RED run: after
@@ -40,7 +40,7 @@ events AND switches the map off) and `tempo_map_set_active(false)` (switches it
 off, events kept). Same defect through a third door, which this fix also closes:
 `Song::clearProject()` dropped the memo without the scalar
 (`src/core/Song.cpp:1854-1855` before the fix) and every accepted project load
-runs it first (`src/core/Song.cpp:2112` in `Song::loadProject`), so a project
+runs it first (`src/core/Song.cpp:2131` in `Song::loadProject`), so a project
 opened after one with an active map inherited the mapped rate when its own global
 tempo happened to equal the previous one (no `setTempo()` signal, no restore).
 The map element reader (`src/core/SongSections.cpp:136-137`) drops the memo too;
@@ -177,7 +177,7 @@ exactly the instructions they executed before.
 
 Undo: the fix adds no command and no undo step; `tempo_map_clear` /
 `tempo_map_set_active` keep their single action checkpoint
-(`src/core/ControlCommandsTransportMap.cpp:157-171`), and `control.undo` writes
+(`src/core/ControlCommandsTransportMap.cpp:157-166`), and `control.undo` writes
 the captured map back through the same `edit()`, so the follower re-applies it on
 the next block.
 
