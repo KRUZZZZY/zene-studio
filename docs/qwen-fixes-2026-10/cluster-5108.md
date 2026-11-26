@@ -23,3 +23,11 @@ The finding describes the old `binIndex()` that clamped every value above +5 LUF
 | `cd build/tests && ctest -R '^(LufsMeterTest\|LoudnessReportTest\|MeterTapTest)$' --output-on-failure > .../5108.r1/logs/test-1.log 2>&1` | 0 | `100% tests passed out of 3` (log read by me) |
 
 Delegation: Haiku ran the build and ctest commands above and reported the exit codes. I re-read the tail of both logs.
+
+## Self-check
+
+- Regression test fails without the fix and passes with it: not re-run this session, because I changed no product code and the verdict is ALREADY-FIXED. The reverse/forward proof (RED exit 8 with the product patch reversed, GREEN exit 0) is in `docs/qwen-fixes-2026-10/cluster-new-p9-233.md`. This session the three tests pass on the current code (ctest EXIT=0, `100% tests passed out of 3`, `logs/test-1.log`).
+- Deterministic: the tests feed generated sine buffers (`makeSine`, `planarChannel`) at a fixed `SampleRate` straight into `LufsMeter` and read the result. There is no clock, sleep or thread.
+- Complete, siblings checked: `binIndex()` has only two callers (`LufsMeter.cpp:232` integrated histogram, `:244` short-term histogram). Both histograms are sized `BinCount + OverflowBinCount` (`LufsMeter.h:275,280`). Every scan loop (`gatedLoudness` 323/334, `shortTermRelativeGate` 387, `shortTermSpreadAbove` 403, `shortTermBinAtCount` 430) runs to `LastBinIndex`, and `binLoudness()` (305-315) handles overflow indices.
+- No collateral damage: this session changed no product code, only the report. The bins up to +5 LUFS are unchanged, and no saved data holds the histogram.
+- ALREADY-FIXED evidence: `src/core/LufsMeter.cpp:290-303`, `include/LufsMeter.h:195-203`, and the tests at `tests/src/core/LufsMeterTest.cpp:290,313,327` (see Evidence above).
