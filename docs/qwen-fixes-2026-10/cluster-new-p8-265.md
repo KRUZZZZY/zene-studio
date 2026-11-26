@@ -26,8 +26,9 @@ The finding's three parts, checked one by one (line numbers are today's, not the
      block in the instrument's `saveSettings`.
    - The value written is the model's value at save time, not a polled copy: both hosts mirror a
      model change into the lock-free snapshot synchronously in the `Model::dataChanged` connection
-     (`Vst3EffectControls.cpp:48-52`, `Vst3Instrument.cpp:144-147`), and the 100 ms `poll()` only
-     pulls plug-in -> model.
+     (`Vst3EffectControls.cpp:48-52`, `Vst3Instrument.cpp:144-147`); the 100 ms `poll()` is what
+     pulls plug-in -> model (and mirrors the model into the edit controller), so a save that lands
+     between two polls still writes the value the model holds.
    - Restore: `plugins/Vst3Effect/Vst3Parameter.cpp:60-79` (`restoreSavedParameters`) is called
      unconditionally after `loadState` by both load paths (`Vst3EffectControls.cpp:152`,
      `Vst3Instrument.cpp:509`). It skips unknown ids, unparseable or non-finite values and
@@ -72,6 +73,10 @@ restore function.
 
 The two tests named above fail when the product half of the fix is removed and pass when it is put
 back. Everything below was run in this session; the exit codes are the ones written into the logs.
+`fix.patch` holds the landed product fix itself: it was taken with `git diff -R` while the two files
+sat in the pre-fix state, and `git apply fix.patch` put them back (`EXIT=0`, `git diff --stat`
+empty) before the cycle below, so `git apply -R fix.patch` reverts the fix from the committed tree
+as well.
 
 ```
 $ cd /home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-new-p8-265
@@ -108,6 +113,12 @@ $ cd build/tests && ctest -R "Vst3(Effect|Instrument)IntegrationTest" --output-o
 `test-1.log` (same command, same two tests, `EXIT=0`). `fix.patch`, `step4b.log`,
 `build-1.log`, `build-2-red.log`, `test-1.log`, `test-2-red.log`, `build-3-red.log`,
 `test-3-red.log`, `build-4-green.log` and `test-4-green.log` are all in the log folder.
+
+The whole `ctest -R Vst3` family passes with the fix in place: `8/8` - `Vst3BusMapTest`,
+`Vst3HostTest`, `Vst3ChunkProbeTest`, `Vst3EffectIntegrationTest`, `Vst3EditorTest`,
+`Vst3InstrumentFixtureProbe`, `Vst3InstrumentTest`, `Vst3InstrumentIntegrationTest` -
+`CTEST_FAMILY_EXIT=0` in `logs/test-5-vst3-family.log`, after `BUILD_FAMILY_EXIT=0` in
+`logs/build-5-vst3-family.log`.
 
 The tests are deterministic: fixed injected values (`0.3` saved, `0.9` after the save, restored
 `0.3`), a fixed 48-frame block, no clock, timer or thread in the assertion path. The effect test has
@@ -162,7 +173,8 @@ RESULT: PASS
   behaviour; a plug-in with no writable parameters writes no element; read-only parameters
   (`:71-75`) and unknown ids are skipped, so a saved file from another plug-in version cannot push a
   value into the wrong parameter. No limit or validation check was added. The round-trip tests
-  (`testStateRoundTripThroughMmp`, `testStateSurvivesTheProjectFile`) still pass.
+  (`testStateRoundTripThroughMmp`, `testStateSurvivesTheProjectFile`) still pass, and the whole
+  `ctest -R Vst3` family is 8/8 (`test-5-vst3-family.log`, `CTEST_FAMILY_EXIT=0`).
 - **ALREADY-FIXED proof.** `plugins/Vst3Effect/Vst3EffectControls.cpp:104-129` (result checked and
   warned, `<parameters>` always written), `plugins/Vst3Instrument/Vst3Instrument.cpp:462-487` (the
   same), `plugins/Vst3Effect/Vst3Parameter.cpp:60-79` (shared restore), calls at
