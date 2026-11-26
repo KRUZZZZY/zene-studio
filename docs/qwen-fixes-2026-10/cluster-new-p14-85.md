@@ -56,9 +56,9 @@ Local TSan does not run on this box; the race argument above is by design.
 
 ## Self-check
 
-Completion check (submit_check.py, submit-check-1.log) EXIT=1: every item PASS except `gates (feature_check.py)`, which FAILs
-only because feature_check.py's internal `git checkout --detach` on its baseline tree is refused by bunny-guard (exit 97, feature-check-1.log). That is BLOCKED
-on the gate runner, not a finding in this change; the hand checks are listed under Gates.
+Current state (round 4, logs in /home/kruzzzzy/.config/kads/zene/state/runs/new-p14-85.r4/logs): `feature_check.py` now runs to the end,
+EXIT=0, all eight rows PASS (feature-check-1.log); the completion check is recorded in the Round 3/4 section below.
+(Rounds 1-2: feature_check.py could not finish, its baseline `git checkout --detach` was refused, exit 97; that is no longer the case.)
 
 - Test fails reverted / passes with fix: reverted product change -> ctest EXIT=8 (test-red-2.log, `gainReductionDb()` 11.99998 vs 0); with fix -> EXIT=0 (test-green-2.log).
 - Deterministic: fixed 4410-frame 10 kHz sine blocks computed in the test, engine fixed at 44100 Hz, no timers, sleeps or threads; the bypass is driven by `setEnabled(false/true)` between blocks.
@@ -83,3 +83,40 @@ None noticed beyond the finding's 60 s vs 60 ms discrepancy.
   signal state (so a bypass round-trip also starts the filters from rest), and they run on every bypassed block (four float stores and two 2-element fills, no allocation),
   unlike Compressor's `m_cleanedBuffers` guard.
 - Delegation (round 2): none; the gate re-runs and the red/green builds are seconds-long here and I ran them directly.
+
+## Round 3/4 (diagnostic re-verification; round 3 committed nothing, so this section is the round 4 record)
+
+No product or test code changed after round 2 (HEAD a980bb872c when verified). All logs in
+/home/kruzzzzy/.config/kads/zene/state/runs/new-p14-85.r4/logs.
+
+| step | command | EXIT |
+|---|---|---|
+| patch | `git diff 9b3d59e2a2~1 HEAD -- plugins/DeEsser/ > fix.patch` (only the DeEsser.h `processBypassedImpl` hunk) | 0 |
+| green build | `cmake --build build --target zene DeEsserBypassTest -j4` (build-1.log) | 0 |
+| green run | `cd build/tests && ctest -R DeEsser --output-on-failure` (test-1-green.log, 1/1 passed) | 0 |
+| 4b revert | `git apply -R fix.patch` | 0 |
+| red build | `cmake --build build --target zene DeEsserBypassTest -j4` (build-2-red.log) | 0 |
+| red run | `ctest -R DeEsserBypassTest --output-on-failure` (test-2-red.log): `quietSignalAfterBypassIsNotAttenuated`, `gainReductionDb()` 11.99998 vs 0 at DeEsserBypassTest.cpp(122) | 8 |
+| 4b re-apply | `git apply fix.patch`; `git status --short` empty | 0 |
+| green build | (build-3-green.log) | 0 |
+| green run | `ctest -R DeEsserBypassTest --output-on-failure` (test-3-green.log, 1/1 passed) | 0 |
+| gate | `bash tests/all-sources-reproduce.sh` (gate-all-sources.log, REPRODUCES) | 0 |
+| gate | `bash tests/fork-sources-gate.sh` (gate-fork-sources.log, PASS) | 0 |
+| gate | `bash tests/file-length-gate.sh --check` (gate-file-length.log, PASS) | 0 |
+| gates | `python3 .../feature_check.py <worktree>` (feature-check-1.log): fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures, complexity, file-length all PASS | 0 |
+
+Review items, all resolved or non-blocking (zero open blocking entries):
+- Resolved: tests/all-sources.txt registration (7004f29f72); both source gates EXIT 0 above.
+- Resolved: MSVC `M_PI` concern; a980bb872c uses a local `Pi` literal (tests/src/plugins/DeEsserBypassTest.cpp:46).
+- Corrections (wording only): the test file is now 137 lines (not 127/134), and the red assertion is at DeEsserBypassTest.cpp:122 (was 119 before a980bb872c).
+- Non-blocking: the regression is carried by the envelope/gain resets; the two biquad `reset()` calls are extra signal-state resets in the same function.
+- Non-blocking: the reset runs on every bypassed block (Compressor guards with `m_cleanedBuffers`); four float stores and two 2-element fills, realtime-safe.
+
+Self-check answers (round 4):
+- Fails reverted / passes with fix: red EXIT=8 (test-2-red.log), green EXIT=0 (test-3-green.log).
+- Deterministic: fixed 4410-frame 10 kHz sine blocks generated in the test at 44100 Hz; bypass driven by `setEnabled(false/true)` between blocks; no timers, sleeps or threads.
+- Cause and completeness: every piece of state `processImpl` carries between blocks (`m_envelope`, `m_gain`, `m_detector`, `m_low`) is reset in `processBypassedImpl` (plugins/DeEsser/DeEsser.h:85-92); `m_frequency`/`m_rate` are coefficient caches and correctly stay; sibling Compressor already resets in its `processBypassedImpl`.
+- Collateral: no model, saved parameter or control command changed; enabled processing is unchanged; projects load as before.
+- ALREADY-FIXED / FALSE-POSITIVE: not applicable (verdict FIXED).
+
+Delegation (round 3/4): Haiku ran the full build / red-green / gate / feature_check sequence twice (r3 and r4 log folders) and reported exit codes; I checked the log endings and `git status` myself and wrote this report. No Sonnet or DeepSeek: no code to write.
