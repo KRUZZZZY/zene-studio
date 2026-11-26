@@ -49,6 +49,11 @@
 # 2026-11-23 (Q050-367): tests/src/gui/EffectEditorTeardownTest.cpp is fork-NEW - the regression for a device's own
 # editor being closed and detached before the device is removed (the rack's Remove this plugin entry and
 # plugin.unload) or its chain is cleared. Emitted in the sorted source list below; no other entry changed.
+# 2026-11-26 (cluster 3118): include/RestartableThread.h enters the list - the thread owner that joins a
+# body which returned on its own before starting the next one (BUG 15: the Windows acceptor that gave up
+# on a pipe it could not create, then a retried listen() assigned over the joinable std::thread and called
+# std::terminate). It is under include/, so the recipe below derives it with no pathspec change; the entry
+# is emitted in the sorted source list and no other entry changed.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -1352,6 +1357,7 @@ include/RemoteControls.h
 include/RemotePluginAudioPorts.h
 include/RenderPresetMenu.h
 include/RenderQueue.h
+include/RestartableThread.h
 include/RetroAudioCapture.h
 include/RetroAudioRing.h
 include/RetroMidiCapture.h

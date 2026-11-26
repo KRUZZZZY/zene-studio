@@ -792,6 +792,7 @@ include/RenderPeriodClock.h
 include/RenderPresetMenu.h
 include/RenderQueue.h
 include/RenderRangeMenu.h
+include/RestartableThread.h
 include/RetroAudioCapture.h
 include/RetroAudioRing.h
 include/RetroMidiCapture.h
