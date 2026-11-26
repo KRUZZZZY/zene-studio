@@ -177,5 +177,3 @@ RESULT: PASS
   (a preset replacing the device list) keeps its authored wiring in memory; the next rebuild drops
   it if it no longer fits, and the next save would now write it. This is pre-existing session-state
   behaviour outside this finding (loss on save/reload), so it was not changed here.
-- `docs/ROUTING-GRAPH-LIVE.md` is still referenced from the `PatchWiring.h` header for a general
-  description of the re-wired session; no claim there contradicts the saved wiring.
