@@ -58,6 +58,9 @@
 # state and its one undo step (include/ControlNoteRecord.h, src/core/ControlNoteRecord.cpp) and the
 # note.record_on / note.record_off / note.record_end commands (src/core/ControlCommandsNoteRecord.cpp).
 # Emitted in the sorted source list below; no other entry changed.
+# 2026-11-26 (Q050-211, round 2, gate fix): tests/control_note_editor_entry.py is the step-input and recording half
+# of tests/control-note-editor.py, split out so neither file passes the code-line target (the driver was at 537).
+# Every check moved verbatim; the driver imports the two orchestrators and passes its own new_clip.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -122,7 +125,7 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
-#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py tests/control_note_editor_entry.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ExprSynthAllocationTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/SlicerTWaveformTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/MpeConsumerProbe.h tests/src/plugins/MpeTestConsumer.cpp ; \
@@ -225,7 +228,7 @@
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
-# git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py ; \
+# git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py tests/control_note_editor_entry.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-tempo-map-persistence.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/SlicerTWaveformTest.cpp ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/MpeConsumerProbe.h tests/src/plugins/MpeTestConsumer.cpp ; \
@@ -2632,6 +2635,7 @@ tests/control-workflow-bindings.py
 tests/control-workflow-models.py
 tests/control_detect_fixtures.py
 tests/control_instance_diagnosis.py
+tests/control_note_editor_entry.py
 tests/control_pipe_client.py
 tests/control_socket_flows.py
 tests/control_clock_capture_checks.py
