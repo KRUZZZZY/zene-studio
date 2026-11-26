@@ -2189,6 +2189,14 @@ ENDIF()
 # test NAMES out of `ctest -N`, and only the high-numbered ones are visible.
 list(APPEND LMMS_TESTS src/core/JournalBeginGuardTest.cpp)
 
+# cluster new-p12-43: a landed clip carries the session cell's playback settings - the gain and the
+# loop region the launcher applied to the cell's audio, taken from the cell as the pass runs and
+# compared against `sessionaudio::prepare()`'s own numbers (and the MIDI half pinned as NOT a
+# defect: a MIDI launch renders none of those settings). Registered LAST for the same reason as the
+# tests above: the mechanical negative control (qwen/negctl.py) reads the test NAMES out of
+# `ctest -N`, and only the high-numbered ones are visible.
+list(APPEND LMMS_TESTS src/core/ControlSessionRecordLandPlaybackTest.cpp)
+
 foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	# TODO CMake 3.20: Use cmake_path
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)

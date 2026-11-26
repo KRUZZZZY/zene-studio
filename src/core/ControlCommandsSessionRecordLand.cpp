@@ -37,6 +37,15 @@
  * clip, and audio cells are loaded into a sample clip. A content/track mismatch
  * or unreadable audio source is refused before the ring is consumed.
  *
+ * AND THE CELL'S PLAYBACK SETTINGS, as the cell holds them when the pass runs
+ * (cluster new-p12-43): the gain and the audio loop region the launcher applied
+ * to the cell's audio move onto the clip's own ClipEdits, because a clip that
+ * played the same audio at unity gain and straight through was not the take that
+ * was heard. The cell's transpose, detune and tempo warp need no transfer - the
+ * launch bakes them into the buffer it publishes, and the pass copies that
+ * buffer. A MIDI cell renders none of these settings at launch, so its landed
+ * clip keeps the neutral defaults (see applySlotPlaybackSettings()).
+ *
  * THE INVERSE. The pass creates clips over ONE composite journal checkpoint
  * covering every touched track - the clip.add and midi.retro_capture_to_clip
  * shape - so ONE control.undo takes the whole pass back. `before`/`inverse` in
@@ -46,7 +55,10 @@
  * one clip per completed launch and a transaction carries one inverse.
  */
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -309,6 +321,61 @@ QString copySlotContent(Clip* clip, const ClipSlot& slot,
 	return QStringLiteral("empty");
 }
 
+/*! @a edits with the cell's audio loop on @a clip: the region the launcher rendered, in the clip's own
+ *  frames.
+ *
+ *  `sessionaudio::prepare()` hands the renderer the cell's loop start and length in frames of the clip it
+ *  published (SessionAudioCells.cpp:262-264), and the renderer folds the start into the buffer and clamps
+ *  the end to it (loopRegion()). The arrangement's copy of that region is a range of the clip's SOURCE
+ *  frames (ClipEdits::audioLoopStart / audioLoopFrames), so it is measured at the clip's own rate and the
+ *  end is clamped to what the clip holds - the launcher's own rule, which is what keeps a loop longer than
+ *  the audio from being dropped altogether. */
+ClipEdits withLandingLoop(const SampleClip& clip, const ClipSlot& slot, ClipEdits edits)
+{
+	const auto size = static_cast<std::int64_t>(clip.sample().sampleSize());
+	const float framesPerTick = clip.clipFramesPerTick();
+	if (size <= 0 || framesPerTick <= 0.0f) { return edits; }
+	const auto start = std::clamp<std::int64_t>(
+		std::llround(static_cast<double>(slot.loopStart()) * framesPerTick), 0, size - 1);
+	const auto length = static_cast<std::int64_t>(
+		std::llround(static_cast<double>(slot.loopLength()) * framesPerTick));
+	if (length <= 0) { return edits; }
+	edits.audioLoopStart = start;
+	edits.audioLoopFrames = std::min(length, size - start);
+	edits.audioLoopOffset = 0;
+	return edits;
+}
+
+/*! The playback settings the ARRANGEMENT has to carry for a landed clip to sound like the cell that
+ *  played (cluster new-p12-43).
+ *
+ *  A launched cell is rendered in two layers. The buffer the launch publishes is already warped and
+ *  repitched the way the cell asks (SessionAudioCells.cpp:260 -> SessionAudioBake.h), which is why this
+ *  pass copies THAT buffer: the cell's transpose, detune and tempo warp come with it. The GAIN and the
+ *  LOOP REGION are applied on top of it by the renderer (SessionAudioCells.cpp:261-264 and loopRegion()),
+ *  and they lived only in the published shape - so the landed clip played the same audio at unity gain and
+ *  straight through. Both move onto the clip's own playback settings, the arrangement's non-destructive
+ *  switchboard for exactly these values.
+ *
+ *  A MIDI cell renders NEITHER: its launch publishes the pattern, its start offset and legato, and no gain,
+ *  transpose or loop length (SessionPlayback.cpp:224-227). Its landed clip therefore keeps the neutral
+ *  defaults it always had - writing settings the launch never played would not preserve anything.
+ *
+ *  The gain goes in through the clip's accepted dB range (Clip::loadClipEdits holds a loaded gain to it),
+ *  so the value the pass writes is the value a save and a re-open give back. */
+void applySlotPlaybackSettings(Clip& clip, const ClipSlot& slot)
+{
+	auto* sample = dynamic_cast<SampleClip*>(&clip);
+	if (sample == nullptr) { return; }
+	ClipEdits edits = clip.clipEdits();
+	if (slot.gainDb() != 0.0f)
+	{
+		edits.gain = gainDbToLinear(std::clamp(slot.gainDb(), MinGainPointDb, MaxGainPointDb));
+	}
+	if (slot.loopLength() > 0) { edits = withLandingLoop(*sample, slot, edits); }
+	clip.setClipEdits(edits);
+}
+
 QJsonObject pairState(const LandPair& pair)
 {
 	return QJsonObject{
@@ -378,6 +445,8 @@ QJsonObject sessionrecord::landPairState(Song& song, const SessionModel& model, 
 	clip->changeLength(TimePos(length));
 	clip->setAutoResize(false);
 	if (!slot.name().isEmpty()) { clip->setName(slot.name()); }
+	// The gain and the loop region the cell played at (cluster new-p12-43).
+	applySlotPlaybackSettings(*clip, slot);
 	clip->dataChanged();
 
 	addLandedClipFields(&landed, clip, track, slot, pattern, content);

@@ -2799,6 +2799,7 @@ tests/src/core/ControlRegistryDisplayTest.cpp
 tests/src/core/ControlRoomTest.cpp
 tests/src/core/ControlRegistryTest.cpp
 tests/src/core/ControlSuccessPathsTest.cpp
+tests/src/core/ControlSessionRecordLandPlaybackTest.cpp
 tests/src/core/ControlSessionRecordLandTest.cpp
 tests/src/core/ControlSessionRecordLandUndoTest.cpp
 tests/src/core/ControlShutdownHookTest.cpp
