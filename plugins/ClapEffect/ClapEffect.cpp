@@ -179,6 +179,15 @@ void ClapEffect::cacheLatency()
 	if (EffectChain* chain = effectChain()) { chain->refreshLatency(); }
 }
 
+void ClapEffect::refreshLatencyIfChanged()
+{
+	// Cleared before the read, as the VST3 effect does: a report arriving from here on stays pending for
+	// the next poll, and one that arrived before it is what this read is for.
+	if (!m_plugin.latencyChangePending()) { return; }
+	m_plugin.clearLatencyChangePending();
+	cacheLatency();
+}
+
 namespace
 {
 

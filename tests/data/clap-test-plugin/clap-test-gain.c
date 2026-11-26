@@ -95,6 +95,9 @@ typedef struct gain_plugin
 	uint32_t gui_width;
 	uint32_t gui_height;
 	bool gui_scale_finite;
+	/* cluster new-p16-320: CLAP_TEST_GAIN_LATENCY_REPORT makes this instance announce its latency with
+	   clap_host_latency.changed(), once, so a test can prove the host acts on the report. */
+	bool latency_reported;
 } gain_plugin_t;
 
 static const clap_plugin_descriptor_t s_descriptor = {
@@ -646,6 +649,7 @@ static bool gain_activate(const clap_plugin_t* plugin, double sample_rate, uint3
 	self->host_flushes = 0;
 	self->in_process = 0;
 	self->return_pending = 0;
+	self->latency_reported = false;
 	if (getenv("CLAP_TEST_GAIN_MAIN_THREAD") != NULL || getenv("CLAP_TEST_GAIN_RESCAN") != NULL
 		|| getenv("CLAP_TEST_GAIN_REQUEST_FLUSH") != NULL || getenv("CLAP_TEST_GAIN_CLOSE_GUI") != NULL)
 	{
@@ -775,6 +779,16 @@ static clap_process_status gain_process(const clap_plugin_t* plugin, const clap_
 	{
 		self->recorded[self->recorded_count] = frames;
 		self->recorded_count += 1;
+	}
+	/* cluster new-p16-320: the plug-in announces that its latency changed - clap_host_latency.changed(),
+	   the plug-in's own notification - once per activation. Reported from process() so the host's answer
+	   is exercised on a thread that is not the host's control thread. */
+	if (!self->latency_reported && getenv("CLAP_TEST_GAIN_LATENCY_REPORT") != NULL)
+	{
+		const clap_host_latency_t* latency =
+			(const clap_host_latency_t*)self->host->get_extension(self->host, CLAP_EXT_LATENCY);
+		if (latency != NULL && latency->changed != NULL) { latency->changed(self->host); }
+		self->latency_reported = true;
 	}
 	self->in_process = 0;
 	return CLAP_PROCESS_CONTINUE;

@@ -157,6 +157,11 @@ public:
 	//! The plug-in asked for a restart (block size/sample rate change).
 	auto needsReprepare() const -> bool;
 	void clearNeedsReprepare();
+	//! The plug-in reported a latency change (clap_host_latency.changed) since the last clear. Any
+	//! thread may have made the report; the owner re-reads latency() on its control thread and lets
+	//! its effect chain re-align - the one place that work may happen.
+	auto latencyChangePending() const -> bool;
+	void clearLatencyChangePending();
 	//! Main thread, from the owner's poll: everything the plug-in asked of the host since the last
 	//! call - its main-thread callback, parameter rescans, a flush while inactive (engine audit
 	//! E8). True when the plug-in marked its state dirty, so the project counts as modified.
