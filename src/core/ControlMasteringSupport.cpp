@@ -227,6 +227,71 @@ QJsonObject masteringCaptureJson(const QString& directory, const QMap<QString, Q
 	return out;
 }
 
+namespace
+{
+
+/*! Applies one recorded mastering inverse and returns why it could not be
+ *  applied completely: an empty string when every operation succeeded, otherwise
+ *  the refusals, `'; '`-joined.
+ *
+ *  The results are the reason this is a function rather than two loops inside the
+ *  closure: a journal action is `void` (see control::addUndoStep), so a removal
+ *  or a write the filesystem refused has no other way back to the caller. Every
+ *  operation is ATTEMPTED - one refused file does not abandon the rest of the
+ *  inverse - and each refusal is collected; the closure reports the joined reason
+ *  ONCE through recordActionRestoreFailure, which control.undo turns into a typed
+ *  `Refused` naming the file. Before this, undo answered `undone: true` over
+ *  files that were still on disk (cluster 4056, BUG 8).
+ *
+ *  UI thread only, like every helper in this file: an undo is never an
+ *  audio-thread operation.
+ */
+QString applyMasteringInverse(const QStringList& created,
+	const QMap<QString, QByteArray>& before)
+{
+	QStringList failures;
+	for (const QString& path : created)
+	{
+		// 1. What the run created is REMOVED. This half is the whole inverse on
+		//    a first run into an empty directory: a revision that never existed
+		//    cannot be restored, only deleted. A name that is already gone is not
+		//    a failure - the inverse's goal (the file is absent) already holds.
+		if (!QFile::exists(path)) { continue; }
+		QFile file(path);
+		if (!file.remove())
+		{
+			failures.append(QStringLiteral("could not remove %1 that mastering.run created: %2")
+				.arg(path, file.errorString()));
+		}
+	}
+	for (auto it = before.constBegin(); it != before.constEnd(); ++it)
+	{
+		// 2. What the run REPLACED is written back byte for byte. A file the run
+		//    left untouched is rewritten with identical bytes, which is a no-op
+		//    rather than a decision this step has to make.
+		QFile file(it.key());
+		if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
+		{
+			failures.append(QStringLiteral("could not write %1 back as it was before the run: %2")
+				.arg(it.key(), file.errorString()));
+			continue;
+		}
+		const qint64 written = file.write(it.value());
+		if (written != it.value().size())
+		{
+			// A SHORT write is a failure too: the file does not hold what it held
+			// before the run, and the bytes that are missing are the ones the
+			// caller would hear.
+			failures.append(QStringLiteral("could not write %1 back as it was before the run: wrote "
+				"%2 of %3 bytes: %4")
+				.arg(it.key()).arg(written).arg(it.value().size()).arg(file.errorString()));
+		}
+	}
+	return failures.join(QStringLiteral("; "));
+}
+
+} // namespace
+
 void recordMasteringUndo(const QStringList& created, const QMap<QString, QByteArray>& before)
 {
 	if (created.isEmpty() && before.isEmpty())
@@ -238,18 +303,16 @@ void recordMasteringUndo(const QStringList& created, const QMap<QString, QByteAr
 	const QStringList createdCopy = created;
 	const QMap<QString, QByteArray> beforeCopy = before;
 	addUndoStep([createdCopy, beforeCopy]() {
-		// 1. What the run created is REMOVED. This half is the whole inverse on
-		//    a first run into an empty directory: a revision that never existed
-		//    cannot be restored, only deleted.
-		for (const QString& path : createdCopy) { QFile::remove(path); }
-		// 2. What the run REPLACED is written back byte for byte. A file the run
-		//    left untouched is rewritten with identical bytes, which is a no-op
-		//    rather than a decision this step has to make.
-		for (auto it = beforeCopy.constBegin(); it != beforeCopy.constEnd(); ++it)
+		// The inverse is applied by applyMasteringInverse, and what it could not do
+		// is REPORTED rather than swallowed: the closure is `void`, so
+		// recordActionRestoreFailure is the one channel that reaches control.undo
+		// (and the GUI's Ctrl+Z), which must not answer "undone" over files that
+		// are still there.
+		const QString why = applyMasteringInverse(createdCopy, beforeCopy);
+		if (!why.isEmpty())
 		{
-			QFile file(it.key());
-			if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) { continue; }
-			file.write(it.value());
+			recordActionRestoreFailure(
+				QStringLiteral("the mastering.run outputs were NOT fully taken back - %1").arg(why));
 		}
 	});
 }
