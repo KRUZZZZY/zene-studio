@@ -155,6 +155,12 @@ worktree, tests from `build/tests`.
 | `ctest -R '^AbletonLinkSessionTest$' --output-on-failure` (this fix reverted) | **8** (same SEGFAULT) | test-9-linksession-red.log |
 | `git apply -R logs/fix.patch; cmake --build build --target zene LinkPhaseLockTest AbletonLinkSessionTest -j4` | 0 / 0 | build-9-restore.log |
 | `ctest -R '^LinkPhaseLockTest$' --output-on-failure` (restored) | **0** | test-10-restore.log |
+| `git apply logs/fix.patch` (the committed tip, fix reverted) | 0 | - |
+| `cmake --build build --target LinkPhaseLockTest -j4` (committed tip, fix reverted) | 0 | build-10-red-committed.log |
+| `ctest -R '^LinkPhaseLockTest$' --output-on-failure` (committed tip, fix reverted) | **8** | test-11-red-committed.log |
+| `git apply -R logs/fix.patch` (fix back) | 0 | - |
+| `cmake --build build --target LinkPhaseLockTest -j4` (committed tip, fix back) | 0 | build-11-green-committed.log |
+| `ctest -R '^LinkPhaseLockTest$' --output-on-failure` (committed tip, fix back) | **0** | test-12-green-committed.log |
 | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` (fix + tests) | **0** | gates-1.log |
 | same, after this report was written (6 changed files) | **0** | gates-2.log |
 
@@ -199,6 +205,11 @@ revert for the SEGFAULT check above used `git apply` (forward).
   `git apply -R logs/fix.patch` (exit 0), rebuild (exit 0), `ctest -R '^LinkPhaseLockTest$'` -> exit **8**,
   `!periodStillRunning` false and `claimed.periods 70 != 69`. Restored: `git apply logs/fix.patch` (exit 0),
   rebuild (exit 0), same test -> exit **0**, 14 passed. Logs build-4/test-5 and build-5/test-6.
+  The same pair was then run once more from the committed tip, so the recorded commands are
+  reproducible as written: `git apply logs/fix.patch` (exit 0) -> build (exit 0) -> ctest exit **8**
+  (build-10-red-committed.log, test-11-red-committed.log), `git apply -R logs/fix.patch` (exit 0) ->
+  build (exit 0) -> ctest exit **0** (build-11-green-committed.log, test-12-green-committed.log),
+  with `git status` clean after the restore.
 - **The test is deterministic.** No wall clock, no sleep, no `QTest::qWait`, no retry. Three seams decide the
   order: `LinkFollowerSeam::inPeriod` parks one period inside the follower on its own thread,
   `LinkFollowerSeam::attachWait` runs on the control thread inside the claim's wait loop, and the two
