@@ -24,3 +24,10 @@ Nothing new on the audio thread: the change is control-thread only, under the ex
 None.
 
 Delegation: Haiku ran the RED build/test, the GREEN build/test, and the proof script (revert/rebuild/reapply); I verified exit codes against the logs' summaries and the diff.
+
+## Self-check
+- Red/green: without the product change test-red2.log EXIT=8 (0.5 vs expected 0); with it test-green3.log EXIT=0 (prove.out).
+- Deterministic: the test calls deliver() directly with fixed planar blocks and a fixed per-channel latency set via MixerChannel::setInputLatencyFrames; no threads, sleeps or clocks.
+- Complete: every route change goes through storeRoute (route(), clearRoutes(), loadSettings(), setLayout shrink); send()/deliver()/routedBuffer() only read the slot. Sibling tests InstrumentLatencyPdcTest, PdcMixerTest, InstrumentLayerZonePublishTest pass (test-green2.log).
+- No collateral damage: save/load format untouched; a deferred route loaded for an absent bus still goes through storeRoute with a null slot, as before; re-publishing the same channel id keeps the existing slot. No limits added.
+- Verdict is FIXED, not ALREADY-FIXED/FALSE-POSITIVE.
