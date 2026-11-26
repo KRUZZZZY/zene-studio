@@ -409,6 +409,11 @@ set(LMMS_SRCS
 	# (ControlStepInput.h): edit state, not project state.
 	core/ControlCommandsNoteStepInput.cpp
 	core/ControlStepInput.cpp
+	# note.record_on / note.record_off / note.record_end (Q050-211): live recording's two MIDI
+	# edges and the end of a take, with the take's held notes and its one undo step
+	# (ControlNoteRecord.h).
+	core/ControlCommandsNoteRecord.cpp
+	core/ControlNoteRecord.cpp
 	# The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
 	# 81): the note randomisation verbs (note.random_seed_get/_set, note.randomize),
 	# the slide verbs (note.slide_set / note.slide_clear), the three note transforms,

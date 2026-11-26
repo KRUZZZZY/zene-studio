@@ -229,6 +229,9 @@ void registerControlCommands(ControlRegistry& registry)
 	// Q050-211: note.step_input - step entry from a MIDI keyboard or the computer keys, one note
 	// (or chord) per call, the cursor advancing by the grid step.
 	registerNoteStepInputCommands(registry);
+	// Q050-211: live recording - the MIDI note-on / note-off pair and the end of a take, one
+	// MidiClip checkpoint per take (the note editor's Record button sends the same three).
+	registerNoteRecordCommands(registry);
 	registerTrackChannelCommands(registry);
 	registerTrackRoutingCommands(registry);
 	registerCollectMediaCommand(registry);

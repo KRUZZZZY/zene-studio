@@ -890,6 +890,13 @@ LMMS_EXPORT void registerNoteStepFillCommands(ControlRegistry& registry);
  *  (ControlCommandsNoteStepInput.cpp).
  */
 LMMS_EXPORT void registerNoteStepInputCommands(ControlRegistry& registry);
+/*! Q050-211 (0.5.0 L07): note.record_on / note.record_off / note.record_end - live recording's two
+ *  MIDI edges and the end of a take: a note is opened where the playhead is and closed where the key
+ *  comes up, and ONE MidiClip journal checkpoint covers the whole take (include/ControlNoteRecord.h).
+ *  The note editor's Record button sends the same commands for every MIDI key it hears
+ *  (ControlCommandsNoteRecord.cpp).
+ */
+LMMS_EXPORT void registerNoteRecordCommands(ControlRegistry& registry);
 //! 0.5.0 L07 (W3): note.move_to_track / split_by_pitch, scale.detect, transport.panic
 //! (ControlCommandsNoteMoves.cpp).
 LMMS_EXPORT void registerNoteMoveCommands(ControlRegistry& registry);
