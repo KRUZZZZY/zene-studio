@@ -68,7 +68,7 @@ line 259; claim 5 in the file header).
 | Step | Command | Exit |
 |---|---|---|
 | RED build | `cmake --build build --target LanesUpconvertTest -j4` → `logs/build-1.log` | 0 |
-| RED test | `cd build/tests && ctest -R LanesUpconvertTest --output-on-failure` → `logs/test-1-red.log` | 8 (fixture assertion, see note) |
+| RED test | `cd build/tests && ctest -R LanesUpconvertTest --output-on-failure` → `logs/test-1-red.log` | 8 (first attempt: the fixture's own precondition, not the defect — see Self-check) |
 | RED build 2 | `cmake --build build --target LanesUpconvertTest -j4` → `logs/build-2.log` | 0 |
 | RED test 2 | `ctest -R LanesUpconvertTest --output-on-failure` → `logs/test-2-red.log` | 8 (the bug) |
 | GREEN build | `cmake --build build --target zene LanesUpconvertTest -j4` → `logs/build-3-green.log` | 0 |
@@ -82,36 +82,58 @@ line 259; claim 5 in the file header).
 | Patch in | `git apply /home/kruzzzzy/.config/kads/zene/state/runs/5390.r1/logs/fix.patch` | 0 |
 | Restored build | `cmake --build build --target zene LanesUpconvertTest -j4` → `logs/build-6-restored.log` | 0 |
 | Restored test | `ctest -R LanesUpconvertTest --output-on-failure` → `logs/test-7-green-restored.log` | 0 |
-| Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` → `logs/gates-1.log` | 0 (`RESULT: PASS`, 8/8 rows PASS) |
-| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 5390` → `logs/submit-1.log` | see `## Self-check` |
-
-Note on `logs/test-1-red.log`: that run failed on the fixture's own precondition
-(`good.count("<z:tracklanes ")` was 3, not 2) because the test inherited the previous test's
-lane-carrying track from the process-wide song. The fixture was made order-independent (it
-loads a lane-free document first) and the run repeated; `logs/test-2-red.log` is the RED
-evidence and fails on the defect itself.
+| Gates | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree>` → `logs/gates-1.log` (2 changed files, before the registration line) and `logs/gates-2.log` (4 changed files, the final state) | 0 both runs (`RESULT: PASS`, 8/8 rows PASS) |
+| Completion check | `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/submit_check.py <worktree> 5390` → `logs/submit-1.log` | 0 (`RESULT: PASS - submit`) |
 
 ## Self-check
 
 Answers to every item the completion check reports as `?`, with the evidence for each.
 
-- **Does the test fail without the fix?** Yes, twice, on the same assertion:
-  `logs/test-2-red.log` (never-fixed tree) and `logs/test-6-red-reversed.log` (fix removed by
-  `git apply -R`, EXIT=0). Both read
+- **The regression test FAILS with the product change reverted and PASSES with it (exit codes).**
+  Reverted: `git apply -R logs/fix.patch` EXIT=0, rebuild `logs/build-5-reversed.log`
+  BUILD_EXIT=0, `ctest -R LanesUpconvertTest` → `logs/test-6-red-reversed.log` **TEST_EXIT=8**,
   `'rejectedA->takeLanes().laneCount() == 0' returned FALSE … the model holds 2 lane(s), not 0`.
-- **Is the test deterministic?** Yes. It writes project files into a `QTemporaryDir`, drives
-  `Song::loadProject`/`saveProjectFile` synchronously, and asserts values only. No sleep, no
-  wall clock, no thread, no ordering assumption about other tests (it loads a one-track,
-  lane-free document before building its fixtures).
-- **Does the fix change behaviour outside the bug?** No: an in-shape section with every named
-  track present takes the same two calls in the same order. `LanesUpconvertTest` (5 slots) and
-  the three sibling tests in `logs/test-5-siblings.log` pass with the fix.
+  With the fix: `git apply logs/fix.patch` EXIT=0, rebuild `logs/build-6-restored.log`
+  BUILD_EXIT=0, `ctest -R LanesUpconvertTest` → `logs/test-7-green-restored.log`
+  **TEST_EXIT=0**. The same FAIL was measured on the never-fixed tree first (`logs/test-2-red.log`,
+  EXIT=8). A test that passed in both states would be the wrong test; this one does not.
+- **The test is deterministic: no wall-clock timing, sleeps or races (name the seam or injected
+  values it uses).** It drives the production entry points synchronously — `Song::saveProjectFile`
+  and `Song::loadProject` — and asserts values. Its only injected values are the ones it plants:
+  a `<z:tracklanes track="1000000">` group (a track id no fixture allocates) and files inside one
+  `QTemporaryDir`. The fixture loads a one-track, lane-free document before building its own
+  tracks, so it does not depend on the order of the other test slots in the same process — the
+  first attempt did and failed on that precondition (`logs/test-1-red.log`), which is why the
+  order-independent base document exists. No sleep, no timer, no thread, no network.
+- **The fix is at the cause and complete: every caller and sibling checked and kept consistent.**
+  `loadLanesSection` has one caller, `Song::restoreNamedSection`'s `z:lanes` branch
+  (`src/core/Song.cpp:2950`), unchanged — it still answers claim-or-preserve. The other lane
+  readers are single-track and cannot half-apply: `Track::restoreState`'s `<takelanes>` payload
+  (`src/core/Track.cpp:969`) and the journal checkpoint, which restores through the same
+  `Track::restoreState`. The matching document-section reader,
+  `SessionModel::restoreScenesSection` (`src/core/SessionModel.cpp:551`), already validates into
+  a candidate before committing; the fix follows that established convention. The writer's half of
+  the contract (`writeLanesSection`, `src/core/Song.cpp:2402`) is unchanged and is what the test
+  measures (one `<z:lanes>`, the preserved original).
+- **No collateral damage: old projects and saved data load as before, and no limit or check was
+  added that could hit a legitimate caller.** An in-shape section naming only tracks the file
+  contains takes the same two calls in the same order (validation adds no ceiling: the resolved
+  list is sized by the file's own groups). Existing documents whose section is already refused
+  today (a future `v`, a foreign child, an unknown track) loaded nothing before and load nothing
+  now. Verified by `LanesUpconvertTest` (5 slots: round trip with byte-identity, the additive pin,
+  the risk-1 negative control, the new case) and by `ScenesUpconvertTest`, `TakeLaneCompTest`,
+  `UnclaimedElementsTest` (`logs/test-5-siblings.log`, EXIT=0).
+- **ALREADY-FIXED / FALSE-POSITIVE evidence.** Not applicable: the verdict is FIXED, and the
+  defect was reproduced on this branch before any product change (`logs/test-2-red.log`).
 - **Registration.** No new product file, so `tests/fork-sources.txt` is untouched.
-  `src/core/Song.cpp` is an inherited file and is registered in
-  `tests/upstream-modifications.txt` (line 962 and following); the new reason line for this
-  change sits beside them in the same commit. No header changed.
-- **Control commands.** None added or touched — `ControlCommandsSnapshot` is not affected.
-- **Undo.** No undo step is created or changed: the loader is not a command path.
+  `src/core/Song.cpp` is an inherited file already listed in
+  `tests/upstream-modifications.txt`; one reason line for this change was appended there in the
+  same commit, and `logs/gates-2.log` shows the same 8/8 PASS with 4 changed files. No header
+  changed, so no additional target needed rebuilding beyond `zene` and the test.
+- **Control commands and undo.** None added or touched, so `ControlCommandsSnapshot` does not
+  move and no undo step changes: the loader is not a command path and the fix creates no
+  reversible operation.
+
 
 ## Other findings
 
