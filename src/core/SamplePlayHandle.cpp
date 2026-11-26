@@ -596,6 +596,28 @@ void SamplePlayHandle::play( std::span<SampleFrame> buffer )
 		frames -= offset();
 	}
 
+	/* cluster new-p12-222: this period may be longer than the frames the snapshotted
+	 * window has left, and none of the renderers below is told the window:
+	 * `Sample::play` (src/core/Sample.cpp:100) is given the buffer, the cursor and a
+	 * ratio. For a LOOPING clip that is audible - `snapshotAudioLoop` sets the loop
+	 * copy's end frame to the whole buffer and `Loop::On`
+	 * (src/core/ClipAudioLoop.cpp:204-209), so `Sample::render` WRAPS the cursor
+	 * instead of returning short (src/core/Sample.cpp:220-226) and the frames past
+	 * the window are source audio. A non-looping clip hides the same overrun only
+	 * because `render` stops at the clip's end frame and `Sample::play` zero-fills
+	 * the rest. Tell the truth here instead: render the window's remainder, silence
+	 * the rest of the period, and advance by what was rendered so `framesDone()`
+	 * never passes `totalFrames()`. Integer arithmetic and a fill of frames the
+	 * period already owned - no allocation, no lock (I8).
+	 */
+	const f_cnt_t remaining = totalFrames() > framesDone() ? totalFrames() - framesDone() : 0;
+	const f_cnt_t renderFrames = std::min<f_cnt_t>(frames, remaining);
+	if( renderFrames < frames )
+	{
+		zeroSampleFrames(workingBuffer + renderFrames, frames - renderFrames);
+	}
+	frames = renderFrames;
+
 	if( !( m_track && m_track->isMuted() && !m_ignoresTrackMute )
 				&& !(m_patternTrack && m_patternTrack->isMuted()))
 	{

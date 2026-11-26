@@ -4161,3 +4161,7 @@ docs/qwen-fixes-2026-10/cluster-ci-64efb7585b33898b.md
 # regression test through the plug-in's own note path, and its report, are fork-NEW.
 tests/src/plugins/XpressiveExpressionHandoffTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p9-530-port.md
+# cluster new-p12-222 (2026-11): a playback callback longer than the clip window's remainder
+# renders only the window - the plain, looping and first-period-offset paths (fork-NEW regression).
+tests/src/tracks/SampleClipWindowRemainderTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p12-222-port.md
