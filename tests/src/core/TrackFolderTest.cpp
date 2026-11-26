@@ -1100,6 +1100,129 @@ private slots:
 		}
 	}
 
+	//! A COPY of a routing folder must not claim the ORIGINAL's mixer channel.
+	//! The duplicate-track action is Track::clone() (what TrackOperationsWidget's
+	//! Clone Track runs): it saves the source's element into a <clonedtrack>
+	//! document and re-loads it as a NEW track, `mixch` included. Two live folders
+	//! naming one strip is two owners of it, and ~TrackFolder deletes the strip it
+	//! recorded - so deleting the copy took the original's channel and routing.
+	void aClonedRoutingFolderClaimsNoChannelOfTheOriginal()
+	{
+		const QString name = QStringLiteral("k-clone-routing");
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int channel = folder->mixerChannel();
+		QVERIFY(channel >= 0);
+		const mix_ch_t before = Engine::mixer()->numChannels();
+
+		Track* copy = folder->clone();
+		QVERIFY2(copy != nullptr, "cloning a folder must produce a track");
+		QVERIFY(copy->type() == Track::Type::Folder);
+		auto* copiedFolder = static_cast<TrackFolder*>(copy);
+		QVERIFY2(copiedFolder->mixerChannel() != channel,
+			"the copy claims the original folder's mixer channel");
+		QCOMPARE(copiedFolder->mixerChannel(), -1);
+		QVERIFY2(!copiedFolder->isRouting(),
+			"a copy with no channel of its own must not advertise a summing point");
+		QCOMPARE(Engine::mixer()->numChannels(), before);
+
+		// The finding's harm: deleting the copy took the original's channel with it.
+		control::removeTrack(copy);
+		QCOMPARE(Engine::mixer()->numChannels(), before);
+		QVERIFY2(folder->isRouting(), "deleting a copy turned the original folder's routing off");
+		QCOMPARE(folder->mixerChannel(), channel);
+		QVERIFY(Engine::mixer()->mixerChannel(channel) != nullptr);
+		QCOMPARE(Engine::mixer()->mixerChannel(channel)->m_name, name);
+		QCOMPARE(static_cast<int>(child->mixerChannelModel()->value()), channel);
+		removeAll(name);
+	}
+
+	//! The Ctrl-drag copy: TrackGrip writes the folder's element into a <dnddata>
+	//! payload and TrackContainerView's drop re-creates it with Track::create.
+	//! The copy is a track of its own, so it must not claim the source's channel.
+	void aCtrlDragCopyOfARoutingFolderClaimsNoChannelOfTheOriginal()
+	{
+		const QString name = QStringLiteral("k-drag-copy-routing");
+		TrackFolder* folder = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(folder);
+		QString error;
+		QVERIFY2(folder->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int channel = folder->mixerChannel();
+		QVERIFY(channel >= 0);
+		const mix_ch_t before = Engine::mixer()->numChannels();
+
+		// The payload the grip produces, read back the way the drop reads it.
+		DataFile payload(DataFile::Type::DragNDropData);
+		folder->saveState(payload, payload.content());
+		DataFile dropped(payload.toString().toUtf8());
+		const QDomElement element = dropped.content().firstChild().toElement();
+		QVERIFY2(!element.isNull(), "the drag payload carries the folder's element");
+
+		Track* copy = Track::create(element, Engine::getSong());
+		QVERIFY2(copy != nullptr, "the drop must create a track");
+		QVERIFY(copy->type() == Track::Type::Folder);
+		auto* copiedFolder = static_cast<TrackFolder*>(copy);
+		QVERIFY2(copiedFolder->mixerChannel() != channel,
+			"the dropped copy claims the original folder's mixer channel");
+		QCOMPARE(copiedFolder->mixerChannel(), -1);
+		QCOMPARE(Engine::mixer()->numChannels(), before);
+
+		control::removeTrack(copy);
+		QCOMPARE(Engine::mixer()->numChannels(), before);
+		QVERIFY(folder->isRouting());
+		QCOMPARE(folder->mixerChannel(), channel);
+		QCOMPARE(Engine::mixer()->mixerChannel(channel)->m_name, name);
+		removeAll(name);
+	}
+
+	//! The folder-to-folder drop this branch can reach: TrackGrip lets a folder's
+	//! grip be dragged, TrackView's dragEnter accepts a `track_7` payload on a
+	//! folder row, and TrackView::dropEvent restores it onto that row. The row it
+	//! lands on must not end up claiming the dragged folder's channel - its own
+	//! destructor would delete that strip out from under the folder still using it.
+	void aRoutingFolderDroppedOnAnotherRowClaimsNoChannelOfTheOriginal()
+	{
+		const QString name = QStringLiteral("k-drag-source");
+		TrackFolder* source = static_cast<TrackFolder*>(addTrack(Track::Type::Folder, name));
+		Track* child = addTrack(Track::Type::Instrument, name);
+		child->setParentFolder(source);
+		QString error;
+		QVERIFY2(source->setMode(TrackFolder::Mode::Routing, &error), qPrintable(error));
+		const int channel = source->mixerChannel();
+		QVERIFY(channel >= 0);
+		const mix_ch_t before = Engine::mixer()->numChannels();
+
+		TrackFolder* target = static_cast<TrackFolder*>(addTrack(Track::Type::Folder,
+			QStringLiteral("k-drag-target")));
+		QVERIFY(target != nullptr);
+		QVERIFY2(target->mixerChannel() < 0, "the target row starts without a channel");
+
+		DataFile payload(DataFile::Type::DragNDropData);
+		source->saveState(payload, payload.content());
+		DataFile dropped(payload.toString().toUtf8());
+		const QDomElement element = dropped.content().firstChild().toElement();
+		QVERIFY2(!element.isNull(), "the drag payload carries the folder's element");
+		target->restoreState(element);
+
+		QVERIFY2(target->mixerChannel() != channel,
+			"the row the folder was dropped on claims the dragged folder's channel");
+		QCOMPARE(Engine::mixer()->numChannels(), before);
+
+		// The finding's harm, on the row that took the payload.
+		control::removeTrack(target);
+		QCOMPARE(Engine::mixer()->numChannels(), before);
+		QVERIFY(source->isRouting());
+		QCOMPARE(source->mixerChannel(), channel);
+		QVERIFY(Engine::mixer()->mixerChannel(channel) != nullptr);
+		QCOMPARE(Engine::mixer()->mixerChannel(channel)->m_name, name);
+		QCOMPARE(static_cast<int>(child->mixerChannelModel()->value()), channel);
+		removeAll(name);
+	}
+
 	//! (i) A no-op unparent is a VALID ANSWER, never a crash: taking a track that
 	//! is already at the container root out of "no folder" must succeed, twice.
 	void unparentingARootTrackIsANoOpNotACrash()

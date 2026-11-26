@@ -31,6 +31,7 @@
 #include "Engine.h"
 #include "FolderSummaryLane.h"
 #include "Mixer.h"
+#include "ProjectIds.h"
 #include "Song.h"
 #include "TimePos.h"
 #include "TrackContainer.h"
@@ -632,6 +633,17 @@ void TrackFolder::saveTrackSpecificSettings( QDomDocument &, QDomElement & paren
  *  a journal checkpoint restore depends on: the checkpoint captures this XML
  *  BEFORE a write, so a field that survived its own absence could never be taken
  *  back off by one `control.undo`.
+ *
+ *  THE ROUTING HALF IS NOT READ OUT OF A COPY PAYLOAD. A copy - Track::clone()'s
+ *  <clonedtrack>, the Ctrl-drag grip's <dnddata> - carries ANOTHER folder's
+ *  element verbatim: `mixch` names the strip that folder still sums into, and
+ *  `prevch` names ITS children. Adopting them makes two live folders the owners
+ *  of one channel, and ~TrackFolder deletes the strip it recorded, so deleting
+ *  the copy took the original's channel and routing with it. A copy has none of
+ *  its own (the rule Track::loadTrack already applies to an instrument track's
+ *  `mixlink`), and a routing folder with no channel has nothing to sum into -
+ *  the state channelDeleted() leaves behind - so the copy lands in group mode
+ *  with no bindings.
  */
 void TrackFolder::loadTrackSpecificSettings( const QDomElement & element )
 {
@@ -644,6 +656,12 @@ void TrackFolder::loadTrackSpecificSettings( const QDomElement & element )
 	m_savedChildChannels = element.hasAttribute( QStringLiteral("prevch") )
 		? parseBindings( element.attribute( QStringLiteral("prevch") ) )
 		: std::vector<ChannelBinding>();
+	if( !ProjectIds::isDocumentElement( element ) )
+	{
+		m_mode = Mode::Group;
+		m_mixerChannel = -1;
+		m_savedChildChannels.clear();
+	}
 }
 
 } // namespace lmms
