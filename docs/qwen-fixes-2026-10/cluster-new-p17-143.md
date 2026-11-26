@@ -80,6 +80,8 @@ The allocation-plus-new-connection state the test drives is the state a reinitia
   EXIT=0, `RESULT: PASS` (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology,
   doc-figures, complexity, file-length - all PASS; complexity and file-length report "no new item in your files").
 - Registration: `src/core/RemotePlugin.cpp` entry added to `tests/upstream-modifications.txt` in the same commit.
+- shm-fifo compile check of the test file: `cmake --build build --target RemotePluginAudioPortsShmCompileCheck -j4 >
+  build-8-shm-compile-check.log 2>&1` EXIT=0.
 
 ## Test matrix
 
@@ -97,7 +99,9 @@ The allocation-plus-new-connection state the test drives is the state a reinitia
   `process()`, `processPeriod()` or any render path.
 - Platforms: the send is outside every `SYNC_WITH_SHM_FIFO` conditional, so both transports get it. The test is
   socket-only and sits inside the file's existing `#ifndef SYNC_WITH_SHM_FIFO` region; the file is also compiled with
-  `SYNC_WITH_SHM_FIFO` by the `RemotePluginAudioPortsShmCompileCheck` target, where the slot is compiled out.
+  `SYNC_WITH_SHM_FIFO` by the `RemotePluginAudioPortsShmCompileCheck` target, where the slot is compiled out -
+  `cmake --build build --target RemotePluginAudioPortsShmCompileCheck -j4 > build-8-shm-compile-check.log 2>&1`
+  EXIT=0 on this tree, after the test file's last edit (object timestamp 13:34, edit 13:22).
 
 ## Other findings
 
