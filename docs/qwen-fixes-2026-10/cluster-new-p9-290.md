@@ -32,3 +32,10 @@ Delegation: Haiku ran every build and ctest run (RED and GREEN) and reported exi
 
 ## Other findings
 None.
+
+## Self-check
+- RED/GREEN: with the fix reverted the test fails (ctest EXIT=8, test-red2.log, ConsoleStripTest.cpp(414) Actual 0.5 vs 0); with it applied it passes (ctest EXIT=0, 4/4, test-green2.log).
+- Deterministic: fixed buffers of constant 0.5 / 0.0, a direct call to `mixerstrip::applyChannelEq` with 8 frames and model values set by `setValue`; no clock, sleep, thread or random input.
+- Cause and completeness: the only stateful reader of `m_eqState` is `runBand` via `applyChannelEq` (MixerStrip.cpp:131); the only caller is `applyOutput` (MixerStrip.cpp:185). `eqResponseDb` is stateless. Every zero-gain band, including the all-flat case, now clears its memories.
+- Collateral: `m_eqState` is runtime-only (not saved; include/Mixer.h:147), so project load is unaffected. No limit or check added; output for non-zero bands is bit-identical. No control command added; no audio-thread allocation/lock/log (a `std::fill_n` on a fixed `std::array`).
+- Verdict is FIXED, so the ALREADY-FIXED/FALSE-POSITIVE item does not apply.
