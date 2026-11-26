@@ -158,15 +158,16 @@ private:
 	//! Set in run() when a write or the finalisation failed; read via hasWriteError() after finished().
 	std::atomic<bool> m_writeFailed{false};
 
-	/*! The selection that was in force before this renderer published its own
-	 *  (see ProjectRenderer.cpp): restored by ~ProjectRenderer(), so a render's
-	 *  dither/SRC choice never leaks into the next one - including when the
-	 *  render aborts or the file device could not be created. Declared after
-	 *  m_progress/m_abort so the initialiser order in the constructor matches
-	 *  the declaration order (-Werror=reorder).
+	/*! This render's publication of its dither/SRC choice (cluster 5239):
+	 *  retired by ~ProjectRenderer(), which puts the newest renderer that is
+	 *  still alive back in force - or, when this was the last one, the selection
+	 *  that was in force before the first renderer published. So a render's
+	 *  choice never leaks into the next one, and an older renderer's destruction
+	 *  cannot overwrite a newer one's. Declared after m_progress/m_abort so the
+	 *  initialiser order in the constructor matches the declaration order
+	 *  (-Werror=reorder).
 	 */
-	DitherMode m_previousDither;
-	SrcQuality m_previousSrcQuality;
+	ExportRenderSettings::RenderSelection m_renderSelection;
 
 	//! 0.5.0 F7 (MX-060): the surround export. Default-initialised, so the initialiser list is unchanged.
 	QString m_refusal;

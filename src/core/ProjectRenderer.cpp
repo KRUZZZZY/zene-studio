@@ -150,15 +150,15 @@ ProjectRenderer::ProjectRenderer(
 	, m_fileDev(nullptr)
 	, m_progress(0)
 	, m_abort(false)
-	// The export choices this render was handed are authoritative for its
-	// duration, and the previous selection is put back when the renderer is
-	// destroyed. Same reason as DeterministicRenderScope below: two renders of
-	// the same project must not differ because of what ran in between.
-	, m_previousDither(ExportRenderSettings::ditherMode())
-	, m_previousSrcQuality(ExportRenderSettings::srcQuality())
+	// The export choices this render was handed are authoritative for as long as
+	// it lives: retiring the publication on destruction re-applies the newest
+	// renderer that is still alive, or the pre-render selection when this was the
+	// last one. Same reason as DeterministicRenderScope below: two renders of the
+	// same project must not differ because of what ran in between.
+	, m_renderSelection(ExportRenderSettings::publishRenderSelection(
+		outputSettings.ditherMode(), outputSettings.srcQuality()))
 {
-	ExportRenderSettings::setDitherMode(outputSettings.ditherMode());
-	if (!ExportRenderSettings::setSrcQuality(outputSettings.srcQuality()))
+	if (!m_renderSelection.srcQualityApplied)
 	{
 		m_refusal = QStringLiteral("The requested SRC converter could not be created.");
 		return;
@@ -215,11 +215,12 @@ ProjectRenderer::ProjectRenderer(
 
 ProjectRenderer::~ProjectRenderer()
 {
-	// Put the process-wide selection back exactly as it was found, whatever
-	// route this renderer leaves by (finish, abort, or a file device that never
-	// opened).
-	ExportRenderSettings::setDitherMode(m_previousDither);
-	ExportRenderSettings::setSrcQuality(m_previousSrcQuality);
+	// Retire this render's publication whatever route it leaves by (finish,
+	// abort, or a file device that never opened). What is put back is the newest
+	// renderer that is STILL ALIVE - or, when this was the last one, the selection
+	// from before the first renderer published. Cluster 5239: this renderer's own
+	// snapshot must not land under a renderer that outlives it.
+	ExportRenderSettings::retireRenderSelection(m_renderSelection.token);
 	// The render thread has finished (or never started) by now: the tap can go.
 	if( !m_interleaved.empty() ) { surroundexport::disarm(); }
 }
