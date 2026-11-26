@@ -228,3 +228,23 @@ Reads that establish the evidence: `nl -ba plugins/WasmEffect/WasmEffect.cpp`, `
 * `tests/CMakeLists.txt:5512-5514` records that `WasmAbiConformanceTest` "HAS NOT BEEN EXECUTED"
   because builds on the reference box lack wasmtime. Same root cause as this block: WASM code has
   no executable lane in fix trees.
+
+6. **Pre-submit check (`submit_check.py <worktree> 5439`).** One FAIL, and it cannot be satisfied
+   in this lane: "tests added or changed". The checker's only alternative branch is a claim-only
+   ALREADY-FIXED/FALSE-POSITIVE report, and this finding is neither — the early return is present
+   in the code (`WasmEffect.cpp:202-205`). A test change would have to be an unrun test for a target
+   this tree cannot build, which is exactly what the evidence above rules out. The check's five ASK
+   items are answered at length in items 1-5 above; the run itself:
+
+   ```
+   PRE-SUBMIT CHECK for 5439
+     PASS  commits on the branch
+     PASS  working tree clean
+     PASS  report docs/qwen-fixes-2026-10/cluster-5439.md
+     FAIL  tests added or changed
+     PASS  gates (feature_check.py)
+   RESULT: FAIL - 1 item(s) to fix before submitting
+   EXIT=1
+   ```
+
+   Nothing was faked to clear it: the work tree has no product change and no unrun test.
