@@ -1062,6 +1062,7 @@ private slots:
 	void ladspaEffectProcessLockTakesNoExclusiveMutex();
 	void ladspaEffectRejectsZeroInputPlugin();
 	void ladspaEffectRejectsOutputChannelOverflow();
+	void ladspaEffectRejectsMoreInputsThanTheEffectBus();
 	void typedDecodeRejectsIncompleteElement();
 	void basicFiltersCannotBeCopied();
 	void xpressiveSelectionRejectsUnavailableGraphs();
@@ -2239,6 +2240,54 @@ void PluginPortsMigrationTest::ladspaEffectRejectsOutputChannelOverflow()
 		"a one-input/two-output LADSPA plugin needs four mixer channels per "
 		"period; the effect must refuse the layout instead of writing past "
 		"its two-channel view");
+	QVERIFY(effect->controls() == nullptr);
+}
+
+void PluginPortsMigrationTest::ladspaEffectRejectsMoreInputsThanTheEffectBus()
+{
+	if (!testHostCanLoadPluginModules())
+	{
+		QSKIP(PluginModuleHostSkipMessage);
+	}
+
+	// A valid LADSPA transfer with four audio inputs. The wrapper splits the
+	// two-channel effect bus across the plugin's inputs, so this layout makes
+	// DEFAULT_CHANNELS / 4 = 0 processors: neither the port loop nor the
+	// instantiate loop ever runs, and the effect used to load as an accepted
+	// plugin that processed nothing at all.
+	const QString fixturePath = QString::fromUtf8(PART_C_CHANNEL_LADSPA_MODULE);
+	auto* fixtureLib = new QLibrary{fixturePath};
+	fixtureLib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(fixtureLib->load(), qPrintable(fixtureLib->errorString()));
+	m_libraries.push_back(fixtureLib);
+
+	auto* hostLib = new QLibrary{QString::fromUtf8(PART_C_MIGRATED_ladspaeffect)};
+	hostLib->setLoadHints(QLibrary::PreventUnloadHint);
+	QVERIFY2(hostLib->load(), qPrintable(hostLib->errorString()));
+	m_libraries.push_back(hostLib);
+
+	auto entry = reinterpret_cast<MainFn>(hostLib->resolve("lmms_plugin_main"));
+	QVERIFY(entry != nullptr);
+	auto* descriptor = reinterpret_cast<const lmms::Plugin::Descriptor*>(
+		hostLib->resolve("ladspaeffect_plugin_descriptor"));
+	QVERIFY(descriptor != nullptr);
+
+	lmms::Plugin::Descriptor::SubPluginFeatures::Key key{descriptor,
+		QStringLiteral("ladspaeffect:quad_in_stereo_out")};
+	key.attributes["file"] = QFileInfo{fixturePath}.fileName();
+	key.attributes["plugin"] = QStringLiteral("quad_in_stereo_out");
+
+	auto effect = std::unique_ptr<lmms::LadspaEffect>{
+		static_cast<lmms::LadspaEffect*>(entry(nullptr, &key))};
+	QVERIFY(effect != nullptr);
+
+	QVERIFY2(effect->processorCount() != 0 || !effect->isOkay(),
+		"a four-input LADSPA plugin cannot be split across the two-channel "
+		"effect bus: the wrapper made zero processors and still accepted the "
+		"effect, which then processes nothing");
+	QVERIFY2(!effect->isOkay(),
+		"an effect layout that produces no processor must be refused, not "
+		"loaded as an inert plugin");
 	QVERIFY(effect->controls() == nullptr);
 }
 
