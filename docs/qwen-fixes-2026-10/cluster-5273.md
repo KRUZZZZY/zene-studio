@@ -175,11 +175,102 @@ python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py /home/k
 `.../logs/build-4.log` is a background build attempt that never started (0 bytes, stopped and rerun as
 build-5 in the foreground); no result is claimed from it.
 
+## Round 2 — the send-back: `cancel()` had grown to CCN 11
+
+The external check returned the first submission with one item:
+
+```
+RATCHET REGRESSION: new function over target: lmms::RenderQueue::cancel@490-512@src/core/RenderQueue.cpp
+(CCN 11) (tests/complexity-gate.sh). Split the function/file; never re-anchor the baseline in a fix.
+```
+
+The round-1 fix had added the reporting-window case to `cancel()`, which took it from the pre-fix CCN 10 —
+exactly at the target, so never listed in `tests/complexity-baseline.tsv` — to 11. The fix is a split with
+no behaviour change:
+
+* `src/core/RenderQueue.cpp:294-300` — `stopsCooperatively(job)`: whether cancelling stops the job's work
+  without waiting for it (a conversion's worker checks its token at stage boundaries; a job whose report is
+  being read has done all its work).
+* `src/core/RenderQueue.cpp:302-308` — `cancelledPhase(job, running)`: the phase the task area shows
+  (a bounce still has its process to stop and says "cancelling").
+* `src/core/RenderQueue.cpp:506-526` — `cancel()` reads `cooperative` before it rewrites the phase, then
+  takes the same branches as before: queued → `cancelQueued`; cooperative → release the slot now; otherwise
+  kill the process.
+
+Measured with the gate's own tool (lizard 1.26.1, installed into a scratch venv inside this round's log
+folder, because this box has none on `PATH`):
+
+| function | CCN |
+| --- | --- |
+| `lmms::RenderQueue::cancel@490-512` (round 1, as sent back) | 11 |
+| `lmms::RenderQueue::cancel@506-526` (now) | 8 |
+| `lmms::stopsCooperatively@297-300` / `lmms::cancelledPhase@304-308` (new helpers) | 2 / 3 |
+| the other functions this branch touched: `conclude` 4, `endJob` 7, `finish` 8, `beginReport` 1, `applyReport` 4, `endProcess` 3 | all ≤ 10 |
+
+Round-2 commands (log folder `.../5273.r2/logs`):
+
+```sh
+python3 ~/.local/share/zene-bunny-fix/qwen/kads_submit_extra.py --base 3436a808b6 --worktree <wt> > .../logs/extra-1.log 2>&1
+# EXTRA1_EXIT=0   "weakening, registration and ratchet checks pass" - and it passed on the SENT-BACK tree
+#                 too: this box has no `lizard`, so the gate inside it printed
+#                 "complexity-gate: lizard is not installed" (complexity-1.log, EXIT=0) and measured nothing.
+#                 That is why round 1's local gate table showed a green complexity row; the train measured.
+./venv/bin/pip install lizard > .../logs/venv-1.log 2>&1        # scratch venv in the log folder; lizard 1.26.1
+PATH=.../venv/bin:$PATH bash tests/complexity-gate.sh --check > .../logs/complexity-2.log 2>&1
+# COMPLEXITY2_EXIT=0   "PASS (check mode: no regressions; baseline not written)", 0 REGRESSION lines
+PATH=.../venv/bin:$PATH python3 ~/.local/share/zene-bunny-fix/qwen/feature_check.py <wt> > .../logs/gates-1.log 2>&1
+# GATES1_EXIT=0   all eight rows PASS, complexity "no new item in your files"
+cmake --build build --target zene RenderSourceGuardTest ProjectToolsTest ControlRenderJobTest \
+  RenderTaskLifecycleTest TaskCenterTest RenderMenuQueueTest -j4 > .../logs/build-3.log 2>&1
+# BUILD3_EXIT=0
+cd build/tests && ctest -R '^(RenderSourceGuardTest|ProjectToolsTest|ControlRenderJobTest|RenderTaskLifecycleTest|TaskCenterTest|RenderMenuQueueTest)$' --output-on-failure > .../logs/test-1.log 2>&1
+# EXIT=0   100% tests passed out of 6
+```
+
+Step 4b again, on the complete fix: the patch is taken from the seam commit `185388d3c1`, so the reversal
+removes the asynchronous report AND the split, and leaves the probe seam the tests need.
+
+```sh
+git diff 185388d3c1 -- src/core/RenderQueue.cpp include/RenderQueue.h > .../logs/fix.patch
+# DIFF_EXIT=0      (208 lines)
+git apply -R .../logs/fix.patch
+# REVERSE_APPLY_EXIT=0
+cmake --build build --target RenderSourceGuardTest ProjectToolsTest -j4 > .../logs/build-4.log 2>&1
+# BUILD4_EXIT=0
+cd build/tests && ctest -R '^(RenderSourceGuardTest|ProjectToolsTest)$' --output-on-failure > .../logs/test-2.log 2>&1
+# EXIT=8   RED: both slots fail -
+#   RenderSourceGuardTest::aRenderReportIsReadOffTheControlThread 'probe.thread() != std::this_thread::get_id()'
+#     returned FALSE. (the finished render's report was read on the control thread ...)
+#   ProjectToolsTest::aConversionReportIsReadOffTheControlThread ... (the same)
+git apply .../logs/fix.patch
+# APPLY_EXIT=0
+cmake --build build --target RenderSourceGuardTest ProjectToolsTest -j4 > .../logs/build-5.log 2>&1
+# BUILD5_EXIT=0
+cd build/tests && ctest -R '^(RenderSourceGuardTest|ProjectToolsTest)$' --output-on-failure > .../logs/test-3.log 2>&1
+# EXIT=0   100% tests passed out of 2
+cmake --build build --target zene RenderSourceGuardTest ProjectToolsTest ControlRenderJobTest \
+  RenderTaskLifecycleTest TaskCenterTest RenderMenuQueueTest -j4 > .../logs/build-8.log 2>&1
+# BUILD8_EXIT=0
+cd build/tests && ctest -R '^(RenderSourceGuardTest|ProjectToolsTest|ControlRenderJobTest|RenderTaskLifecycleTest|TaskCenterTest|RenderMenuQueueTest)$' --output-on-failure > .../logs/test-5.log 2>&1
+# EXIT=0   100% tests passed out of 6
+```
+
+One family run in this round failed on `RenderMenuQueueTest` (`shellRenderMenuQueuesEveryEntry`: two bounce
+jobs where it expects one, `test-4.log` EXIT=8). That is a pre-existing flake, not this fix: the same slot
+fails with the whole fix reverted (`without-fix-menu-1.log`, `-2.log`: 2 of 5 runs) and with it
+(`render-menu-2.log`, `-3.log`, `-5.log`: 3 of 5 runs), and the bounce path is untouched by this diff. The
+next full family run on the final binaries passed (`test-5.log` EXIT=0, 6/6). See Other findings.
+
 ## Self-check
 
-* **The regression test FAILS with the product change reverted and PASSES with it.** `test-5.log`
-  EXIT=8 (both slots fail on the thread assertion) and `test-6.log` EXIT=0 after
-  `git apply .../logs/fix.patch` — commands and exit codes above, copied from this session's logs.
+* **The ratchet that sent round 1 back is fixed, not re-anchored.** `cancel()` was split into
+  `src/core/RenderQueue.cpp:294-308, 506-526`; lizard 1.26.1 (the gate's own tool) measures it at CCN 8,
+  the full-file gate prints `PASS (check mode: no regressions)` with 0 REGRESSION lines, and
+  `tests/complexity-baseline.tsv` was not edited (it has no `RenderQueue` entry at all, before or after).
+* **The regression test FAILS with the product change reverted and PASSES with it.** Round 2:
+  `test-2.log` EXIT=8 (both slots fail on the thread assertion) and `test-3.log` EXIT=0 after
+  `git apply .../logs/fix.patch`; the round-1 pair is `test-5.log` EXIT=8 / `test-6.log` EXIT=0 in the
+  `5273.r1` log folder. Commands and exit codes above, copied from this session's logs.
 * **The test is deterministic.** It uses the `ReportProbe` seam (`include/RenderQueue.h:131-135`): the
   probe is called by the product on the thread that runs the scan and records
   `std::this_thread::get_id()` under a mutex; the test then compares it with its own thread id. There is
@@ -214,3 +305,14 @@ build-5 in the foreground); no result is claimed from it.
 * `reportOf()` still reads the destination path a second time after the file was committed. A user who
   moves or rewrites the output during the (now off-thread) scan gets a report of the file as it is then;
   the pre-fix window was narrower but non-zero. Not changed here — it is outside this finding.
+* `tests/src/gui/RenderMenuQueueTest.cpp` is flaky on this box, independent of this cluster:
+  `shellRenderMenuQueuesEveryEntry()` (`:217`) counted two `bounce` jobs where it expects one in 3 of 5
+  runs with this fix and in 2 of 5 runs with the whole fix reverted (`.../5273.r2/logs/render-menu-*.log`
+  and `without-fix-menu-*.log`). Mechanism, not changed here: a *cancelled* bounce job that the queue has
+  not finished releasing is still `m_current`, so `clearFinished()` (`src/core/RenderQueue.cpp:540-550`)
+  keeps it, and `cancelAndDrain()` (`tests/src/gui/RenderMenuQueueTest.cpp:146-164`) treats a cancelled
+  job as drained. The bounce path is untouched by this diff.
+* The local gate runner cannot measure complexity on this box: `tests/complexity-gate.sh` prints
+  "lizard is not installed" and exits 0, so `feature_check.py`'s complexity row is green without having
+  measured anything (`.../5273.r2/logs/complexity-1.log`). Round 2's numbers come from a run with lizard
+  1.26.1 installed in a scratch venv; whoever owns the gate runner may want it to fail closed there.

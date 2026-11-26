@@ -291,6 +291,22 @@ TaskState taskState(RenderJob::State state)
 	return state == RenderJob::State::Cancelled ? TaskState::Cancelled : TaskState::Failed;
 }
 
+//! Whether cancelling this job stops its work without waiting for it: a conversion's worker checks its
+//! cancellation token at stage and write-chunk boundaries, and a job whose report is being read has done all
+//! its work already. A render or a bounce still running is stopped by killing its process instead.
+bool stopsCooperatively(const RenderJob& job)
+{
+	return job.kind == RenderJob::Kind::Convert || job.phase == QLatin1String("reporting");
+}
+
+//! The phase the task area shows for a job being cancelled: a bounce still has its process to stop and says
+//! so; everything else is cancelled from here on.
+QString cancelledPhase(const RenderJob& job, bool running)
+{
+	if (running && job.kind == RenderJob::Kind::Bounce) { return QStringLiteral("cancelling"); }
+	return QStringLiteral("cancelled");
+}
+
 } // namespace
 
 RenderQueue& RenderQueue::instance()
@@ -492,16 +508,14 @@ bool RenderQueue::cancel(int id)
 	RenderJob* job = find(id);
 	if (job == nullptr || (job->state != RenderJob::State::Queued && job->state != RenderJob::State::Running)) { return false; }
 	const bool running = job->state == RenderJob::State::Running;
-	const bool reporting = job->phase == QLatin1String("reporting");  // its output is written, its report is being read
+	const bool cooperative = stopsCooperatively(*job);  // read before the phase below is rewritten
 	job->state = RenderJob::State::Cancelled;
 	job->finishedMs = now();
-	job->phase = running && job->kind == RenderJob::Kind::Bounce
-		? QStringLiteral("cancelling") : QStringLiteral("cancelled");
+	job->phase = cancelledPhase(*job, running);
 	if (!running) { cancelQueued(*job); return true; }
-	// A conversion's worker checks its token at stage boundaries and while writing; release the queue now
-	// so its next job can start while an in-progress decoder or resampler unwinds. A job whose report is
-	// being read has done its work already: its slot is released here and applyReport drops the report.
-	if (job->kind == RenderJob::Kind::Convert || reporting)
+	// A job whose work stops without waiting releases the queue now, so its next job can start while an
+	// in-progress decoder or resampler unwinds; a report already being read is dropped by applyReport.
+	if (cooperative)
 	{
 		if (job->conversionCancellation != nullptr) { job->conversionCancellation->store(true, std::memory_order_release); }
 		TaskCenter::instance().finish(job->taskToken, TaskState::Cancelled);
