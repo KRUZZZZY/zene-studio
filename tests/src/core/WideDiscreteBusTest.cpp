@@ -39,6 +39,7 @@
 #include <QJsonArray>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -250,6 +251,26 @@ private slots:
 	{
 		ControlRegistry::setReady(false);
 		Engine::destroy();
+	}
+
+	/*! The check that the running device carries a route reads start .. start + count - 1. Its own
+	 *  arithmetic must not add the two first: a start near INT_MAX made start + count wrap to a
+	 *  negative sum, which passed every upper bound (cluster new-p10-259). This device has exactly
+	 *  the bus's ceiling, so the bound it enforces here is its own count. */
+	void theDeviceBoundsCheckDoesNotOverflow()
+	{
+		constexpr int Max = std::numeric_limits<int>::max();
+		QCOMPARE(static_cast<int>(Engine::audioEngine()->audioDev()->outputChannels()), Outputs);
+		QVERIFY(surround::deviceCarries(0, 2));  // the first pair ...
+		QVERIFY(surround::deviceCarries(Outputs - 2, 2));  // ... and the last one the device has
+		QVERIFY(surround::deviceCarries(Outputs - 1, 1));
+		QVERIFY(!surround::deviceCarries(Outputs - 1, 2));  // one channel past the device
+		QVERIFY(!surround::deviceCarries(Outputs - 2, 3));
+		QVERIFY(!surround::deviceCarries(-1, 2));  // no route at all
+		QVERIFY(!surround::deviceCarries(Max - 1, 2));  // start + count would wrap to a negative sum
+		QVERIFY(!surround::deviceCarries(Max, 2));
+		QVERIFY(!surround::deviceCarries(0, 0));  // nothing to carry is not a route
+		QVERIFY(!surround::deviceCarries(0, -2));
 	}
 
 	void wideDiscreteFormatsReadBackAndUndoInOneStep()

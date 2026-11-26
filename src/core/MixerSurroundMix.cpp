@@ -434,9 +434,13 @@ void directOut(HardwareOutputBus& bus, MixerChannel& channel, int start, int wid
 
 bool deviceCarries(int start, int count)
 {
+	// The route is start .. start + count - 1, but the sum is never formed: a start near INT_MAX wraps
+	// to a negative number and passes every upper bound (cluster new-p10-259). A count of zero or less
+	// is no route at all, and no caller asks for one.
 	const AudioDevice* device = Engine::audioEngine()->audioDev();
-	return start >= 0 && device != nullptr && start + count <= static_cast<int>(device->outputChannels())
-		&& start + count <= HardwareOutputBus::MaxChannels;
+	if (device == nullptr || count <= 0) { return false; }
+	const int limit = std::min(static_cast<int>(device->outputChannels()), HardwareOutputBus::MaxChannels);
+	return start >= 0 && start <= limit - count;
 }
 
 } // namespace lmms::surround
