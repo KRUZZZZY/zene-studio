@@ -371,6 +371,7 @@ private slots:
 		song->setLoadOnLaunch(false);
 		song->loadProject(path);
 		QCOMPARE(ProjectMarkers::instance().markers().size(), ProjectMarkers::MaxMarkers);
+		QCOMPARE(ProjectMarkers::instance().droppedOnLoad(), 3);
 
 		// The loss is reported where a load reports what it could not carry out.
 		bool reported = false;
@@ -390,6 +391,7 @@ private slots:
 
 		// A project that fits saves again: the refusal is about this session's loss, not markers in general.
 		song->clearProject();
+		QCOMPARE(ProjectMarkers::instance().droppedOnLoad(), 0);
 		QVERIFY(ProjectMarkers::instance().add(96, QStringLiteral("Fits"), QString()) > 0);
 		QVERIFY2(song->saveProjectFile(target), qPrintable(song->saveRefusal()));
 		QVERIFY(song->saveRefusal().isEmpty());

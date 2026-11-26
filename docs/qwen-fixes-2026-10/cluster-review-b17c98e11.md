@@ -147,3 +147,43 @@ EXIT=0, 8/8 passed; with only the two QA hunks reverted the new slot fails at `:
 
 Gate note: `feature_check.py` could not run in the QA sandbox - its baseline checkout of `9913d36d53` is
 refused there (`bunny-guard: ... not allowed in a Bunny lane`), EXIT=1.
+
+## Round 4 (verification only, no new product code)
+
+The round-3 send-back repeats the round-2 [crash-or-data-loss] entry (project.save rotated the keep-3 revision
+set before the engine's refusal). It is **resolved in commit 33495a1610**, which is on this branch:
+`registerProjectSave` (src/core/ControlCommandsProjectFiles.cpp:268-277) asks `ProjectSection::firstSaveRefusal()`
+right after the `isPartialLoad()` gate and returns `ControlErrorKind::Refused` (`"<target>: <refusal>"`) before
+`control::rotateProjectRevision` (:288). The reviewer's undo-restore follow-up (46c76ba160,
+src/core/SongUndoSnapshot.cpp + `ProjectMarkers::holdDroppedOnLoad`) is also on the branch. The train merge
+dfa90f9532 did not touch any of the seven product files (`git diff --stat 46c76ba160 HEAD -- <files>` empty).
+This round adds no product code. Its only change is the optional test follow-up: `droppedOnLoad() == 3` after the
+over-cap load and `droppedOnLoad() == 0` after `clearProject()` in
+`aProjectOverTheCapLoadedThenSavedDoesNotLoseMarkersInSilence` (tests/src/core/ProjectMarkersTest.cpp:374, :394).
+Those two lines shift the revision-compare location from :456 to :458.
+
+Commands (`$L` = /home/kruzzzzy/.config/kads/zene/state/runs/review-b17c98e11.r4/logs; B = `cmake --build build -j4 --target zene ProjectMarkersTest PartialLoadTest ProjectSectionTest`; T = `cd build/tests && ctest -R '^(ProjectMarkersTest|PartialLoadTest|ProjectSectionTest)$' --output-on-failure`):
+- Patches: `git show --format= 33495a1610 -- src/core/ControlCommandsProjectFiles.cpp > $L/gate.patch`; `git show --format= 46c76ba160 -- include/ProjectMarkers.h src/core/SongUndoSnapshot.cpp > $L/undo.patch`; `git diff 319b074b96^ 46c76ba160 -- include/ProjectMarkers.h include/ProjectSection.h src/core/ProjectMarkers.cpp src/core/SongSections.cpp src/core/Song.cpp src/core/ControlCommandsProjectFiles.cpp src/core/SongUndoSnapshot.cpp > $L/fix.patch` (9032 bytes, every product hunk of the cluster); `git apply -R --check` EXIT=0 for all three
+- GREEN (with the new asserts): B > build-1-green.log EXIT=0; T > test-1-green.log EXIT=0 ("100% tests passed out of 3")
+- RED-A, only the project.save gate reverted: `git apply -R $L/gate.patch` EXIT=0; B > build-2-redA.log EXIT=0; T > test-2-redA.log **EXIT=8**: `FAIL! : ProjectMarkersTest::aRefusedOverCapSaveDoesNotRotateTheRevisionSet() Compared values are not the same`, Actual `"live\n"`, Expected `"rev0\n"`, `Loc: [../../tests/src/core/ProjectMarkersTest.cpp(458)]`, `Totals: 14 passed, 1 failed`; `git apply $L/gate.patch` EXIT=0
+- RED-C, only the undo-restore hold reverted: `git apply -R $L/undo.patch` EXIT=0; B > build-3-redC.log EXIT=0; T > test-3-redC.log **EXIT=8**: `FAIL! : ProjectMarkersTest::anUndoRestoreDoesNotLiftTheOverCapSaveRefusal() '!song->saveProjectFile(target)' returned FALSE`, `Loc: [../../tests/src/core/ProjectMarkersTest.cpp(509)]`, `Totals: 14 passed, 1 failed`; `git apply $L/undo.patch` EXIT=0
+- RED-B with the new asserts still in place: `git apply -R $L/fix.patch` EXIT=0; B > build-4-redB.log **EXIT=2** (`ProjectMarkersTest.cpp:374:53: error: 'class lmms::ProjectMarkers' has no member named 'droppedOnLoad'`: the asserts use the accessor the fix adds, so this revert does not compile). test-4-redB.log ran a stale binary and is **not** evidence. `git apply $L/fix.patch` EXIT=0
+- RED-B, redone on the committed test: `git diff -- tests/src/core/ProjectMarkersTest.cpp > $L/testedit.patch`; `git apply -R $L/testedit.patch` EXIT=0; `git apply -R $L/fix.patch` EXIT=0; B > build-6-redB.log EXIT=0; T > test-6-redB.log **EXIT=8**: `aProjectOverTheCapLoadedThenSavedDoesNotLoseMarkersInSilence() 'reported' returned FALSE` at `ProjectMarkersTest.cpp(381)`, `aRefusedOverCapSaveDoesNotRotateTheRevisionSet() '!saved.ok' returned FALSE` at `(447)`, `anUndoRestoreDoesNotLiftTheOverCapSaveRefusal() '!song->saveProjectFile(target)' returned FALSE` at `(507)`, `Totals: 12 passed, 3 failed`
+- Restore: `git apply $L/fix.patch` EXIT=0; `git apply $L/testedit.patch` EXIT=0; B > build-7-green.log EXIT=0; T > test-7-green.log EXIT=0 ("100% tests passed out of 3"); `git diff --stat` showed only tests/src/core/ProjectMarkersTest.cpp, 2 insertions
+- Gates: `python3 /home/kruzzzzy/.local/share/zene-bunny-fix/qwen/feature_check.py <worktree> > $L/gates-8.log 2>&1` **EXIT=0**, RESULT: PASS (fork-sources, all-sources-reproduce, no-upstream-regression, check-namespace, no-tautology, doc-figures PASS; complexity and file-length "no new item in your files"). This is the first feature_check run that includes 46c76ba160; the round-3 QA sandbox could not run it.
+
+Release note (not edited): the shipped notes are per-version files (docs/RELEASE-NOTES-v*.md) covered by
+tests/release-honesty-gate.sh, so I did not add to a released note in a bug-fix commit. Line for the next note's
+owner: "A project that loaded with more than 512 markers is read-only: autosave and Save refuse (Save returns
+without a dialog, as for a partially loaded project) until the project is cleared or a file that fits is opened."
+
+Delegation (round 4): Haiku (2 starts) ran every build and ctest above, including the three reverse-patch REDs and
+the restores. I wrote the two test asserts, made the patches, read the FAIL/Loc/Totals lines in test-2-redA,
+test-3-redC, test-6-redB and test-7-green myself, and ran feature_check myself (one command). No Sonnet or DeepSeek:
+the only code this round was two test lines.
+
+## Other findings (round 4)
+- `Song::restoreUndoSnapshot`'s own comment names a caller that puts back "a checkpoint's displaced session", i.e.
+  a document that may not be this session's. If such a caller restores a session that fits the cap over one that
+  dropped markers, `holdDroppedOnLoad` would keep the refusal. That errs toward refusing a save, not toward losing
+  data, and I did not trace the checkpoint callers to see whether it can happen (unverified).
