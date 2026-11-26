@@ -175,6 +175,11 @@ needed and none was added.
 - **Undo and commands.** No command, model write or undo step was added: the test drives the existing
   `mixer.crossfader` command, and `MixerToolsTest::settingCrossfaderPositionAndSideUsesOneUndoStep` still
   passes (step 15).
+- **If your verdict is ALREADY-FIXED or FALSE-POSITIVE: the code (file:line) or the intended contract that
+  shows it.** Not applicable - the verdict is FIXED (the finding is REAL). The evidence that it was real
+  before the change is under Decision above: `src/core/MixerStrip.cpp:167-182` (pre-fix, the pair only),
+  `src/core/MixerSurroundMix.cpp:337-365` (trim, VCA and pan, no crossfade) and the measured failure in
+  `test-1-red.log` / `test-4-reverted-red.log`.
 - **Sibling commands:** no command file changed, so the sibling set is empty.
 - **Portability.** C++20 standard library only (`std::min`, `<algorithm>` already included); no Qt API, no
   platform path, nothing Qt-6-only. Hosted Qt 5.15 builds of this file compile unchanged (the test file uses
