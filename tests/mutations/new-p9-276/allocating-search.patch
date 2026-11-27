@@ -1,0 +1,16 @@
+--- a/include/MidiWinMMOutput.h
++++ b/include/MidiWinMMOutput.h
+@@ -179,6 +179,13 @@
+ 		bool queued = false;
+ 		m_routing.forEachDevice( port, [&]( const MidiWinMMOutRoute& route )
+ 		{
++			// the original defect: a string list is built and searched for every event
++			QStringList seen;
++			seen.append( QString::number( route.device ) );
++			if( !seen.contains( QString::number( route.device ) ) )
++			{
++				return;
++			}
+ 			if( m_queue.push( Command{ route.device, message, generation } ) )
+ 			{
+ 				queued = true;
