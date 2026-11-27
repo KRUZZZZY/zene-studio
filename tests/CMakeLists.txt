@@ -782,6 +782,9 @@ set(LMMS_TESTS
 	# The system semaphore's timed acquire (the shared-memory transport's audio-thread waits use it).
 	src/core/SystemSemaphoreTest.cpp
 	src/core/RecordingRealtimeTest.cpp
+	# Cluster new-p15-177: clip destruction races record-handle claiming (~SampleClip must
+	# take the engine change lock before it frees its prepared record handles).
+	src/core/SampleClipRecordTeardownTest.cpp
 	src/core/RelativePathsTest.cpp
 	src/core/ReversibilityContractTest.cpp
 	src/core/ReversibilityUndoTest.cpp
@@ -4086,6 +4089,9 @@ set_target_properties(ArticulationPlaybackTest PROPERTIES ENABLE_EXPORTS ON)
 # RecordingRealtimeTest constructs a real Engine to measure the capture path
 # (D9a/D9b), which needs a Qt platform plugin even though the test is guiless.
 set_tests_properties(RecordingRealtimeTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Cluster new-p15-177: SampleClipRecordTeardownTest constructs a real Engine as well.
+set_tests_properties(SampleClipRecordTeardownTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(AutomationPrepassProofTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

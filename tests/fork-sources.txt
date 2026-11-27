@@ -3001,6 +3001,7 @@ tests/src/core/RevisionTimelineTest.cpp
 tests/src/core/RoutingGraphScheduleTest.cpp
 tests/src/core/SampleBufferNoEngineTest.cpp
 tests/src/core/SampleBufferResampleTest.cpp
+tests/src/core/SampleClipRecordTeardownTest.cpp
 tests/src/core/SaSpectrumViewTest.cpp
 tests/src/core/ScaleIntervalOverflowTest.cpp
 tests/src/core/ScriptClockTest.cpp
