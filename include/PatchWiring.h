@@ -15,14 +15,17 @@
  * input node, or effect <index> in chain order - rather than by a node id, so
  * it survives the rebuild that recreates the nodes.
  *
+ * The wiring itself IS project state (cluster new-p11-64): an AUTHORED wiring
+ * is written as a <patchwiring> child of <fxchain> and restored by
+ * EffectChain::loadSettings(). A chain on its DERIVED wiring writes no element,
+ * so its saved form is unchanged and every older project loads on the
+ * derivation.
+ *
  * What this does NOT do, stated here because it is the interesting bound:
  *   * the node SET stays derived. A patch re-wires the nodes the effect list
  *     produced; it cannot add a node of its own (a filter, a second source).
  *     A graph the agent builds from scratch needs the full Patcher's canvas
  *     and is not in this release.
- *   * the wiring is session state, like the pre-existing re-wired session
- *     (docs/ROUTING-GRAPH-LIVE.md section 7): no <routinggraph> element is
- *     written into <fxchain>, so a patch does not survive a save/load.
  *   * it is not the lock-free pending-change plan swap of
  *     mixer/SPEC-dynamic-routing.md section 5.4. A patch is built off the
  *     audio thread and published under the engine's model-change guard
@@ -58,6 +61,9 @@
 #include <QString>
 
 #include "lmms_export.h"
+
+class QDomDocument;
+class QDomElement;
 
 namespace lmms
 {
@@ -150,6 +156,21 @@ public:
 	 * field of the command's arguments (@see setOutput).
 	 */
 	static auto fromJson(const QJsonArray& array, PatchWiring* wiring, QString* error) -> bool;
+
+	/**
+	 * Appends this wiring to @a parent (a chain's <fxchain> element) as
+	 * <patchwiring output=".."><edge from=".." fromport=".." to=".." toport=".."/>..</patchwiring>.
+	 * An EMPTY wiring - the derivation - writes nothing, so an unpatched
+	 * chain saves exactly what it saved before wiring was persisted.
+	 */
+	void saveXml(QDomDocument& doc, QDomElement& parent) const;
+	/**
+	 * Reads saveXml()'s <patchwiring> child of @a parent into @a wiring. No
+	 * such child (every file written before wiring was persisted) yields the
+	 * empty, derived wiring. @returns false and sets @a error (if given) when
+	 * the element is malformed; @a wiring is then the derived (empty) wiring.
+	 */
+	static auto loadXml(const QDomElement& parent, PatchWiring* wiring, QString* error) -> bool;
 
 private:
 	std::vector<PatchEdge> m_edges;
