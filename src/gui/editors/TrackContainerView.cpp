@@ -47,6 +47,7 @@
 #include "Instrument.h"
 #include "InstrumentTrack.h"
 #include "PatternTrack.h"
+#include "PluginInstantiationFailure.h"
 #include "Song.h"
 #include "ArrangerFileDrop.h"
 #include "DeprecationHelper.h"
@@ -78,6 +79,13 @@ void InstrumentLoaderThread::run()
 {
 	Instrument *i = m_it->loadInstrument(m_name, nullptr,
 										 true /*always DnD*/);
+	// Q050-359: a module that declines answers null and the track keeps the instrument it had, so there is
+	// nothing to move. The reason is read HERE (the note is per thread) and handed to the GUI thread.
+	if( i == nullptr )
+	{
+		emit refused( m_name, pluginload::takeInstantiationFailure() );
+		return;
+	}
 	QObject *parent = i->parent();
 	i->setParent( 0 );
 	i->moveToThread( m_containerThread );
@@ -580,6 +588,11 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 		auto it = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, m_tc));
 		control::assignNewTrackChannel(it);
 		auto ilt = new InstrumentLoaderThread(this, it, value);
+		// Q050-359: a refused instrument says why on the GUI thread instead of leaving an empty track silently.
+		connect(ilt, &InstrumentLoaderThread::refused, this,
+			[](const QString& plugin, const QString& reason) {
+				arrangerdrop::reportRefusedInstrument(plugin, reason);
+			});
 		ilt->start();
 		//it->toggledInstrumentTrackButton( true );
 		_de->accept();
@@ -592,6 +605,15 @@ void TrackContainerView::dropEvent( QDropEvent * _de )
 		PluginFactory::PluginInfoAndKey piakn =
 			getPluginFactory()->pluginSupportingExtension(FileItem::extension(value));
 		Instrument * i = it->loadInstrument(piakn.info.name(), &piakn.key);
+		// Q050-359: the module declined (no host for it in this build, a missing plug-in binary) - the new track
+		// would be an empty placeholder holding no file, so it is taken back and the drop says why.
+		if( i == nullptr )
+		{
+			arrangerdrop::reportRefusedInstrument(piakn.info.name(), pluginload::takeInstantiationFailure());
+			m_tc->removeTrack(it);
+			_de->ignore();
+			return;
+		}
 		i->loadFile( value );
 		control::assignNewTrackChannel(it);  // after the load: the channel takes the name the file gave the track
 		//it->toggledInstrumentTrackButton( true );
