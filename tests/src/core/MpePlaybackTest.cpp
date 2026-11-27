@@ -289,8 +289,8 @@ private slots:
 
 	//! The live half: a channel-pressure message arriving on the sounding
 	//! note's own member channel moves the next block, through the real input
-	//! path (InstrumentTrack::processInEvent -> MpeExpression ->
-	//! loadMpeExpressionOntoChannelNotes).
+	//! path (InstrumentTrack::processInEvent -> MpeExpression -> published
+	//! per-channel expression -> NotePlayHandle::play).
 	void aLivePressureEventReachesTheSoundingNote()
 	{
 		QVERIFY2( !MpeExpression::isEnabled(), "MPE input was left on by another test" );
@@ -305,9 +305,12 @@ private slots:
 		const float before = renderBlock( note );
 
 		m_track->processInEvent( MidiEvent( MidiChannelPressure, 1, 64 ) );
-		QCOMPARE( note->mpePressure(), 64 );
 
+		// Cluster 3192: the capture is published by the input path and the note takes it on its own
+		// render period (the input thread no longer writes the handle), so the level is read from
+		// the block rendered after the event.
 		const float after = renderBlock( note );
+		QCOMPARE( note->mpePressure(), 64 );
 
 		std::fprintf( stdout, "MPE_EVIDENCE live pressure on channel 1: before=%.6f after=%.6f\n",
 			before, after );
@@ -433,6 +436,11 @@ private slots:
 		m_track->processInEvent( MidiEvent( MidiPitchBend, 1, 12288 ) );
 		m_track->processInEvent( MidiEvent( MidiChannelPressure, 1, 64 ) );
 		m_track->processInEvent( MidiEvent( MidiControlChange, 1, MpeTimbreController, 50 ) );
+
+		// Cluster 3192: each note takes the published expression on its own render period, on the
+		// owner track and on a layer track alike - the input thread writes neither handle.
+		renderBlock( ownerNote );
+		renderBlock( layerNote );
 
 		QCOMPARE( ownerNote->mpePitchCents(), 2400 );
 		QCOMPARE( ownerNote->mpePressure(), 64 );
