@@ -3631,13 +3631,19 @@ set_tests_properties(ImportFilterTest PROPERTIES
 
 # A source-contract check for the spectrum view's first-paint decay state. The
 # view needs GuiApplication to construct, so this test checks the initializer
-# directly without bringing up the full DAW GUI.
+# directly without bringing up the full DAW GUI. Cluster new-p9-411 adds the
+# analyzer's thread-communication flags: the test reads SaProcessor.h's
+# declarations, and the header needs FFTW's header directory to compile.
 add_executable(SaSpectrumViewTest src/core/SaSpectrumViewTest.cpp)
 add_test(NAME SaSpectrumView COMMAND SaSpectrumViewTest)
 target_link_libraries(SaSpectrumViewTest PRIVATE ${QT_LIBRARIES} ${QT_QTTEST_LIBRARY})
 target_compile_features(SaSpectrumViewTest PRIVATE cxx_std_20)
 target_compile_definitions(SaSpectrumViewTest PRIVATE
-	SA_SPECTRUM_VIEW_HEADER="${CMAKE_SOURCE_DIR}/plugins/SpectrumAnalyzer/SaSpectrumView.h")
+	SA_SPECTRUM_VIEW_HEADER="${CMAKE_SOURCE_DIR}/plugins/SpectrumAnalyzer/SaSpectrumView.h"
+	SA_PROCESSOR_HEADER="${CMAKE_SOURCE_DIR}/plugins/SpectrumAnalyzer/SaProcessor.h")
+if(FFTW3F_INCLUDE_DIRS)
+	target_include_directories(SaSpectrumViewTest PRIVATE ${FFTW3F_INCLUDE_DIRS})
+endif()
 
 # TapTempoTest exercises the real tool plugin's sync slot. Compile the plugin
 # sources into the test binary so the test can construct TapTempo directly.

@@ -1,7 +1,30 @@
-#include <QFile>
-#include <QFileInfo>
-#include <QRegularExpression>
+#include <atomic>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
+#include <fftw3.h>
+#include <QImage>
+#include <QMutex>
+#include <QRgb>
 #include <QtTest>
+
+// The analyzer's control flags are private state; open the access specifiers for
+// this translation unit only. That affects neither the layout nor the name
+// mangling, so the plugin's own translation units and the link are unaffected
+// (the CompressorVisualizerTest and SlicerTZoomTest precedent).
+#define private public
+#include SA_PROCESSOR_HEADER
+#undef private
+
+namespace
+{
+
+//! Whether a data member is published as an atomic flag.
+template <typename Member>
+constexpr bool isAtomicBool = std::is_same_v<std::remove_cvref_t<Member>, std::atomic<bool>>;
+
+} // namespace
 
 class SaSpectrumViewTest : public QObject
 {
@@ -61,6 +84,31 @@ private slots:
 			QRegularExpression::DotMatchesEverythingOption);
 		QVERIFY2(synchronizedScan.match(sourceText).hasMatch(),
 			"spectrumNotEmpty must scan both channels under reallocationAccess then m_dataAccess");
+	}
+
+	//! Cluster new-p9-411. The analyzer's control flags have two owners: the GUI
+	//! thread sets them (the spectrum and waterfall view timers call
+	//! setSpectrumActive()/setWaterfallActive() and the waterfall view calls
+	//! flipRequest(), the controls dialog's block-size combo calls
+	//! reallocateBuffers(), and ~Analyzer calls terminate()), while
+	//! SaProcessor::analyze() reads them on its own worker thread. Plain bool
+	//! members make that a data race, which is undefined behaviour. The
+	//! assertion is on the declared types, not on timing: no thread, no clock
+	//! and no sleep, so the result is the same on every run.
+	void controlFlagsAreAtomic()
+	{
+		using Processor = lmms::SaProcessor;
+
+		QVERIFY2(isAtomicBool<decltype(std::declval<Processor&>().m_terminate)>,
+			"m_terminate is stored by ~Analyzer on the GUI thread and read by analyze() on the analyzer thread");
+		QVERIFY2(isAtomicBool<decltype(std::declval<Processor&>().m_flipRequest)>,
+			"m_flipRequest is stored by the waterfall view on the GUI thread and cleared by analyze()");
+		QVERIFY2(isAtomicBool<decltype(std::declval<Processor&>().m_spectrumActive)>,
+			"m_spectrumActive is stored by the spectrum view timer and read by analyze()");
+		QVERIFY2(isAtomicBool<decltype(std::declval<Processor&>().m_waterfallActive)>,
+			"m_waterfallActive is stored by the waterfall view timer and read by analyze()");
+		QVERIFY2(isAtomicBool<decltype(std::declval<Processor&>().m_reallocating)>,
+			"m_reallocating is stored by reallocateBuffers() on the GUI thread and read by analyze()");
 	}
 };
 
