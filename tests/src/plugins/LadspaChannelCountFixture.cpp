@@ -114,6 +114,80 @@ const LADSPA_Descriptor monoInStereoOutDescriptor{
 	nullptr,
 	monoInStereoOutCleanup};
 
+// A valid four-in/two-out transfer. The wrapper splits the effect bus over the
+// plugin's audio inputs (DEFAULT_CHANNELS / inputChannels processors), so four
+// inputs make 2 / 4 = 0 processors: a layout that fits nowhere on the stereo bus.
+struct QuadInStereoOutInstance
+{
+	LADSPA_Data* inputs[4] = {nullptr, nullptr, nullptr, nullptr};
+	LADSPA_Data* left = nullptr;
+	LADSPA_Data* right = nullptr;
+};
+
+LADSPA_Handle quadInStereoOutInstantiate(const LADSPA_Descriptor*, unsigned long)
+{
+	return new QuadInStereoOutInstance;
+}
+
+void quadInStereoOutConnectPort(LADSPA_Handle handle, unsigned long port, LADSPA_Data* data)
+{
+	auto* instance = static_cast<QuadInStereoOutInstance*>(handle);
+	if (port < 4) { instance->inputs[port] = data; }
+	else if (port == 4) { instance->left = data; }
+	else if (port == 5) { instance->right = data; }
+}
+
+void quadInStereoOutRun(LADSPA_Handle handle, unsigned long sampleCount)
+{
+	auto* instance = static_cast<QuadInStereoOutInstance*>(handle);
+	for (unsigned long sample = 0; sample < sampleCount; ++sample)
+	{
+		LADSPA_Data sum = 0.0f;
+		for (LADSPA_Data* input : instance->inputs)
+		{
+			sum += input == nullptr ? 0.0f : input[sample];
+		}
+		instance->left[sample] = sum;
+		instance->right[sample] = sum;
+	}
+}
+
+void quadInStereoOutCleanup(LADSPA_Handle handle)
+{
+	delete static_cast<QuadInStereoOutInstance*>(handle);
+}
+
+const LADSPA_PortDescriptor quadInStereoOutPorts[]{
+	LADSPA_PORT_INPUT | LADSPA_PORT_AUDIO,
+	LADSPA_PORT_INPUT | LADSPA_PORT_AUDIO,
+	LADSPA_PORT_INPUT | LADSPA_PORT_AUDIO,
+	LADSPA_PORT_INPUT | LADSPA_PORT_AUDIO,
+	LADSPA_PORT_OUTPUT | LADSPA_PORT_AUDIO,
+	LADSPA_PORT_OUTPUT | LADSPA_PORT_AUDIO};
+const char* const quadInStereoOutPortNames[]{
+	"Input 1", "Input 2", "Input 3", "Input 4", "Output Left", "Output Right"};
+const LADSPA_PortRangeHint quadInStereoOutHints[6]{};
+const LADSPA_Descriptor quadInStereoOutDescriptor{
+	170024UL,
+	"quad_in_stereo_out",
+	LADSPA_PROPERTY_HARD_RT_CAPABLE,
+	"Quad In Stereo Out Fixture",
+	"Zene Studio tests",
+	"None",
+	6,
+	quadInStereoOutPorts,
+	quadInStereoOutPortNames,
+	quadInStereoOutHints,
+	nullptr,
+	quadInStereoOutInstantiate,
+	quadInStereoOutConnectPort,
+	nullptr,
+	quadInStereoOutRun,
+	nullptr,
+	nullptr,
+	nullptr,
+	quadInStereoOutCleanup};
+
 } // namespace
 
 extern "C" LADSPA_TEST_EXPORT const LADSPA_Descriptor* ladspa_descriptor(unsigned long index)
@@ -121,5 +195,6 @@ extern "C" LADSPA_TEST_EXPORT const LADSPA_Descriptor* ladspa_descriptor(unsigne
 	if (index == 0) { return &stereoDescriptor; }
 	if (index == 1) { return &asymmetricDescriptor; }
 	if (index == 2) { return &monoInStereoOutDescriptor; }
+	if (index == 3) { return &quadInStereoOutDescriptor; }
 	return nullptr;
 }

@@ -357,6 +357,30 @@ void LadspaEffect::pluginInstantiation()
 		setOkay( false );
 		return;
 	}
+	// The processor count splits the effect's channels across the plugin's audio
+	// inputs. A plugin with more inputs than the bus is wide leaves that count at
+	// zero, and an effect with no processor loads, accepts its key and processes
+	// nothing. Reject the layout here, before the division and before any port
+	// buffer exists.
+	if( effect_channels > static_cast<int>( DEFAULT_CHANNELS ) )
+	{
+		const QString reason = QStringLiteral( "LADSPA plugin %1 has %2 audio "
+				"inputs and cannot be split across the %3-channel effect bus" )
+			.arg( m_key.second )
+			.arg( effect_channels )
+			.arg( static_cast<int>( DEFAULT_CHANNELS ) );
+		if( lmms::isUnattendedRun() )
+		{
+			qWarning() << reason;
+		}
+		else
+		{
+			QMessageBox::warning( 0, "Effect", reason,
+				QMessageBox::Ok, QMessageBox::NoButton );
+		}
+		setOkay( false );
+		return;
+	}
 	m_processors = DEFAULT_CHANNELS / effect_channels;
 
 	// get inPlaceBroken property
