@@ -2880,6 +2880,7 @@ tests/src/core/BrowserCatalogQueryTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserCollectionStoreWriteTest.cpp
 tests/src/core/BrowserFeaturesWindowTest.cpp
+tests/src/core/BrowserIndexStoreWriteTest.cpp
 tests/src/core/BrowserTempoKeyTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/CapturePublisherTest.cpp

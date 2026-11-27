@@ -381,7 +381,16 @@ bool BrowserIndex::save(const std::vector<BrowserIndexEntry>& entries, const Sta
 	QDir().mkpath(QFileInfo(storePath()).absolutePath());
 	QSaveFile file(storePath());
 	if (!file.open(QIODevice::WriteOnly)) { return false; }
-	file.write(QJsonDocument(all).toJson(QJsonDocument::Compact));
+	const QByteArray document = QJsonDocument(all).toJson(QJsonDocument::Compact);
+	const qint64 written = file.write(document);
+	if (written != document.size())
+	{
+		// A write the kernel cuts short (a full disk, a quota) is not an error the device reports: it
+		// returns fewer bytes. Committing that would replace the index with a truncated document, so
+		// the store keeps the previous index and the scan reports the failure instead.
+		file.cancelWriting();
+		return false;
+	}
 	return file.commit();
 }
 
