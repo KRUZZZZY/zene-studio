@@ -129,7 +129,7 @@ void SessionGridView::previewDrop(int cell, const QString& file)
 	{
 		if (index >= 0 && index < m_tracks * m_scenes) { paintCell(index / m_scenes, index % m_scenes); }
 	}
-	m_status->setText(statusText(m_tracks, m_scenes));
+	m_status->setText(statusText(m_gridTracks, m_gridScenes));
 }
 
 
