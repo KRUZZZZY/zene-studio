@@ -53,12 +53,18 @@ public:
 	//! Connects RemotePlugin's buffers to the audio ports; Call after buffers are created
 	void connectBuffers(RemotePlugin* buffers)
 	{
+		// The render thread reads this pointer (buffers()) for the whole period; hold rendering off
+		// while it changes, as updateBuffers() does for the views.
+		const RemotePluginBufferChangeGuard guard;
 		m_buffers = buffers;
 	}
 
 	//! Disconnects RemotePlugin's buffers from the audio ports; Call before buffers are destroyed
 	void disconnectBuffers()
 	{
+		// Waits for a render period in flight, so the render thread never holds the buffers across
+		// their destruction; the next period sees no buffers.
+		const RemotePluginBufferChangeGuard guard;
 		m_buffers = nullptr;
 	}
 
