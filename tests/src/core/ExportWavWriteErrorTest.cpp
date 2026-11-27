@@ -577,6 +577,59 @@ private slots:
 		QVERIFY2(fileGone,
 			"a render whose WAV writes failed left its broken file behind");
 	}
+
+	/*! BUG new-p17-146: the OTHER half of the export verdict - the renderer never
+	 *  becomes ready at all. A destination with no room for even the file header
+	 *  (a full disk) opens the file and then fails to write it, so
+	 *  AudioFileWave's `successful` is false and ProjectRenderer::isReady() is
+	 *  false. RenderManager used to log that and go on, and the export then
+	 *  reported completion with no file written. The size cap is the seam: it is
+	 *  in place for the render, not the fixture, and it makes the very first
+	 *  write fail deterministically.
+	 */
+	void aRenderWhoseFileCannotBeCreatedFailsTheExport()
+	{
+		const QString fixtureError = buildOneSecondSong();
+		QVERIFY2(fixtureError.isEmpty(), qPrintable(fixtureError));
+
+		const QString path = QDir(m_dir.path()).filePath(QStringLiteral("render-no-room.wav"));
+		QFile::remove(path);
+
+		const OutputSettings settings(kSampleRate, 160, OutputSettings::BitDepth::Depth16Bit,
+			OutputSettings::StereoMode::Stereo);
+		bool reported = false;
+		{
+			RenderManager manager(settings, ProjectRenderer::ExportFileFormat::Wave, path);
+			QEventLoop loop;
+			bool ended = false;
+			QObject::connect(&manager, &RenderManager::finished, &loop,
+				[&ended, &loop]()
+				{
+					ended = true;
+					loop.quit();
+				});
+			{
+				// No byte may be written: the file cannot be created, so no
+				// renderer can acquire it. (The cap is process-wide; the
+				// fixture above is written before it is set.)
+				FileSizeLimit limit(0);
+				manager.renderProject();
+				// A render that never started quits synchronously, before the
+				// loop runs.
+				if (!ended) { loop.exec(); }
+				limit.restore();
+			}
+			QVERIFY(ended);
+			reported = reportedWriteError(manager);
+		}
+
+		std::fprintf(stderr, "WRITEERR_EVIDENCE NO_ROOM reported-failure=%d file-left=%d\n",
+			int(reported), int(QFile::exists(path)));
+		std::fflush(stderr);
+
+		QVERIFY2(reported,
+			"a render whose output file could not be created was reported as a finished export");
+	}
 #endif // Q_OS_UNIX
 
 private:
