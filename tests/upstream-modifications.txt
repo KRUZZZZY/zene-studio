@@ -6188,3 +6188,5 @@ plugins/Xpressive/Xpressive.cpp	cluster new-p9-530-port: playNoteImpl() builds e
 tests/CMakeLists.txt	cluster new-p9-530-port: builds XpressiveExpressionHandoffTest, compiles the Xpressive plug-in sources into it (the Vibed shape), registers it late for the negative control and puts it in the existing AddressSanitizer list, so a text recycled under a copying note is a heap-use-after-free report.
 tests/all-sources.txt	cluster new-p9-530-port: adds the XpressiveExpressionHandoffTest source to the whole-tree manifest.
 tests/fork-sources.txt	cluster new-p9-530-port: adds the XpressiveExpressionHandoffTest source and this cluster's report to the fork source manifest (fork-NEW).
+tests/CMakeLists.txt	cluster new-p12-222: register SampleClipWindowRemainderTest, the overrun regression that does not fit SampleClipWindowTest.cpp under Gate 7.
+src/core/SamplePlayHandle.cpp	cluster new-p12-222: play() clamps the period to the snapshotted window's remaining frames, zeroes the rest and advances by what it rendered, so a looping clip cannot render source frames past the window.

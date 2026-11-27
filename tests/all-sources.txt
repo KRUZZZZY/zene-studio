@@ -3741,6 +3741,7 @@ tests/src/tracks/SampleClipTransientRepeatSafetyTest.cpp
 tests/src/tracks/SampleClipTransientRepeatTest.cpp
 tests/src/tracks/SampleClipWarpModesTest.cpp
 tests/src/tracks/SampleClipWarpTest.cpp
+tests/src/tracks/SampleClipWindowRemainderTest.cpp
 tests/src/tracks/SampleClipWindowTest.cpp
 tests/src/tracks/SamplePatternPassWindowTest.cpp
 tests/src/tracks/TakeLaneCompPlaybackTest.cpp
