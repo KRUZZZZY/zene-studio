@@ -248,6 +248,10 @@ void LfoControllerDialog::contextMenuEvent( QContextMenuEvent * )
 void LfoControllerDialog::modelChanged()
 {
 	m_lfo = castModel<LfoController>();
+	// ModelView::setModel() calls this for whatever model it is handed: nullptr, the
+	// default-constructed Model that unsetModel() installs, or a model of another type.
+	// None of those is an LfoController, so there is nothing to bind the controls to.
+	if (m_lfo == nullptr) { return; }
 
 	m_baseKnob->setModel( &m_lfo->m_baseModel );
 	m_speedKnob->setModel( &m_lfo->m_speedModel );
