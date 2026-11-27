@@ -4186,3 +4186,5 @@ tests/src/plugins/DeEsserBypassTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p14-85.md
 # cluster 2099 (2026-11): a refused subproject placement deletes the render it made (fork-NEW regression).
 docs/qwen-fixes-2026-10/cluster-2099.md
+# cluster new-p10-333: the retro audio/MIDI rings and the audio capture machine-check that their producer-path atomics are lock-free, and the report.
+docs/qwen-fixes-2026-10/cluster-new-p10-333.md
