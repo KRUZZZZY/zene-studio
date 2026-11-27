@@ -4151,3 +4151,8 @@ tests/src/plugins/SamplerStutterContinuationTest.cpp
 tests/qt5-clang-test-portability-check.py
 # cluster ci-64efb7585b33898b: report
 docs/qwen-fixes-2026-10/cluster-ci-64efb7585b33898b.md
+# cluster new-p9-530-port (2026-10): editing an Xpressive output expression raced note
+# initialization - the note path parsed the QByteArray the editor was freeing. The hand-off
+# regression test through the plug-in's own note path, and its report, are fork-NEW.
+tests/src/plugins/XpressiveExpressionHandoffTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p9-530-port.md
