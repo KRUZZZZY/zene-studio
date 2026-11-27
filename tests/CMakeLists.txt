@@ -4496,6 +4496,16 @@ target_compile_definitions(ThemeContrastTest PRIVATE
 # 0.5.0 L10: DeviceCopyTest builds a drum rack from the shipped drum samples.
 target_compile_definitions(DeviceCopyTest PRIVATE
 	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
+# Cluster 5743: the tests that load the amplifier / bassbooster fixtures get them built with a targeted build
+# (without a module the effect tests skip or hard-fail and prove nothing).
+foreach(zene_fixture_test DeviceCopyTest DeviceMovesUndoTest)
+if(TARGET ${zene_fixture_test} AND TARGET amplifier)
+add_dependencies(${zene_fixture_test} amplifier)
+endif()
+endforeach()
+if(TARGET DeviceMovesUndoTest AND TARGET bassbooster)
+add_dependencies(DeviceMovesUndoTest bassbooster)
+endif()
 target_compile_definitions(DrumRackPadsTest PRIVATE
 	ZENE_DRUM_SAMPLES_DIR="${CMAKE_SOURCE_DIR}/data/samples/drums")
 target_compile_definitions(DrumRackPanelTest PRIVATE

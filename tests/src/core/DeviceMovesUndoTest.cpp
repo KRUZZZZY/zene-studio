@@ -37,6 +37,7 @@
 #include "InstrumentTrack.h"
 #include "Mixer.h"
 #include "ProjectJournal.h"
+#include "Rack.h"
 #include "Song.h"
 
 using namespace lmms;
@@ -157,6 +158,28 @@ private slots:
 		QVERIFY(chain(target) == nullptr);
 		QVERIFY(run(QStringLiteral("control.redo")).ok);
 		QVERIFY(chain(target) == nullptr);
+	}
+
+	//! Cluster 5743: rack.wrap keeps the devices in the order of their source chain, whatever order 'plugins'
+	//! names them in (the description promises "in order"). The two devices differ by name.
+	void wrappingKeepsTheSourceChainOrder()
+	{
+		const int index = Engine::mixer()->createChannel();
+		const QString target = control::channelIdOf(Engine::mixer()->mixerChannel(index));
+		const QString first = load(target, QStringLiteral("amplifier"));
+		QVERIFY2(!first.isEmpty(), "the amplifier fixture must be built");
+		const QString second = load(target, QStringLiteral("bassbooster"));
+		QVERIFY2(!second.isEmpty(), "the bassbooster fixture must be built");
+		const ControlResult wrapped = run(QStringLiteral("rack.wrap"), {{QStringLiteral("channel"), target},
+			{QStringLiteral("plugins"), QJsonArray{second, first}}});  // named in reverse
+		QVERIFY2(wrapped.ok, qPrintable(wrapped.errorMessage));
+		Rack& rack = Engine::mixer()->mixerChannel(index)->m_rack;
+		QStringList wrappedNames;
+		for (const Effect* effect : rack.chain(wrapped.result.value(QStringLiteral("chain")).toInt())->effects())
+		{
+			wrappedNames << QString::fromUtf8(effect->descriptor()->name);
+		}
+		QCOMPARE(wrappedNames, (QStringList{QStringLiteral("amplifier"), QStringLiteral("bassbooster")}));
 	}
 
 	//! A chain that cannot be found (the finder answers nullptr, as for a deleted chain) removes nothing and
