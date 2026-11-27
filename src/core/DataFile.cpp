@@ -342,6 +342,26 @@ bool decompressesAsRecoverableDocument( const QByteArray & bytes, QString * reas
 	return parsesAsRecoverableDocument( uncompressed, typeName );
 }
 
+//! The qUncompress step of DataFile::loadData. The leading 4 bytes of a qCompress
+//! stream are a size the FILE declares, and qUncompress allocates that much
+//! before it finds out whether the stream is real, so a few bytes claiming
+//! gigabytes could exhaust memory. A declared size over the document limit is
+//! refused here, before qUncompress: an empty result, with \a errorMsg set and
+//! \a line / \a col zeroed so loadData's existing parse-error branch warns and
+//! returns instead of carrying on with an empty document.
+QByteArray inflateProjectPayload( const QByteArray & data, QString & errorMsg, int & line, int & col )
+{
+	const quint32 declared = declaredUncompressedSize( data );
+	if( declared > maxRecoveredDocumentBytes() )
+	{
+		errorMsg = QStringLiteral( "compressed data declares %1 bytes, over the %2 byte limit" )
+			.arg( declared ).arg( maxRecoveredDocumentBytes() );
+		line = col = 0;
+		return QByteArray();
+	}
+	return qUncompress( data );
+}
+
 inline bool isCompleteDocument( const QString & path, QString * reason,
 	QString * typeName = nullptr )
 {
@@ -2895,7 +2915,7 @@ void DataFile::loadData( const QByteArray & _data, const QString & _sourceFile,
 	if (!reduceAndParse(*this, _data, skipSections, skippedNames, errorMsg, line, col))
 	{
 		// parsing failed? then try to uncompress data
-		QByteArray uncompressed = qUncompress( _data );
+		QByteArray uncompressed = inflateProjectPayload( _data, errorMsg, line, col );
 		if( !uncompressed.isEmpty() )
 		{
 			// A second attempt on the decompressed bytes, with its own report:
