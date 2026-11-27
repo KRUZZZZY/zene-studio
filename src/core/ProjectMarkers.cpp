@@ -31,11 +31,31 @@
 #include <QDomElement>
 #include <QSet>
 
+#include "Engine.h"
+#include "ProjectJournal.h"
+#include "Song.h"
+
 namespace lmms
 {
 
 namespace
 {
+
+//! The attribute an UNDO SNAPSHOT's <markers> carries for a session that dropped markers on load. Written only
+//! while a snapshot is built (ProjectJournal::snapshotIds) and read only while one is restored, so a project
+//! file never carries it - such a session's save is refused anyway - and one that claims it is not believed.
+const QString DroppedOnLoadAttribute = QStringLiteral("droppedOnLoad");
+
+//! The dropped count the snapshot being restored carries for its own session, clamped to [0, maxMarkers];
+//! 0 outside a snapshot restore, so a project file cannot make its session read-only.
+int carriedDroppedCount(const QDomElement& element, int maxMarkers)
+{
+	const Song* song = Engine::getSong();
+	if (song == nullptr || !song->isRestoringUndoSnapshot()) { return 0; }
+	bool ok = false;
+	const int carried = element.attribute(DroppedOnLoadAttribute).toInt(&ok);
+	return ok ? std::clamp(carried, 0, maxMarkers) : 0;
+}
 
 //! A <marker>'s id, or -1 when it has none a marker can carry (absent, unreadable or negative).
 int savedId(const QDomElement& element)
@@ -160,6 +180,11 @@ void ProjectMarkers::restore(const QVector<Marker>& markers)
 	sortAndNotify();
 }
 
+bool ProjectMarkers::shouldPersist() const
+{
+	return !m_markers.isEmpty() || (ProjectJournal::snapshotIds() && m_droppedOnLoad > 0);
+}
+
 QString ProjectMarkers::elementName() const
 {
 	return QStringLiteral("markers");
@@ -179,7 +204,17 @@ void ProjectMarkers::save(QDomDocument& doc, QDomElement& parent) const
 		if (!marker.args.isEmpty()) { element.setAttribute(QStringLiteral("args"), marker.args); }
 		list.appendChild(element);
 	}
+	// Inside an undo snapshot only: the restore of this document gives the session its own count back.
+	if (ProjectJournal::snapshotIds() && m_droppedOnLoad > 0) { list.setAttribute(DroppedOnLoadAttribute, m_droppedOnLoad); }
 	parent.appendChild(list);
+}
+
+QString ProjectMarkers::saveRefusal() const
+{
+	if (m_droppedOnLoad <= 0) { return {}; }
+	return tr("the project file held %1 more markers than the %2 this build can carry, so saving would "
+		"discard them; the original file was left untouched. Remove markers from the file to open it whole.")
+		.arg(m_droppedOnLoad).arg(MaxMarkers);
 }
 
 void ProjectMarkers::load(const QDomElement& element)
@@ -203,24 +238,37 @@ void ProjectMarkers::load(const QDomElement& element)
 			child.attribute(QStringLiteral("name")), child.attribute(QStringLiteral("color")), child.attribute(QStringLiteral("action")),
 			child.attribute(QStringLiteral("args"))});
 	}
-	if (offered < element.elementsByTagName(QStringLiteral("marker")).count())
+	const int total = element.elementsByTagName(QStringLiteral("marker")).count();
+	const int dropped = std::max(0, total - offered);
+	if (dropped > 0)
 	{
 		// The ones that did not fit are gone from the next save, so the loss is
-		// said out loud here instead of showing up as a smaller saved project.
+		// said out loud here - and Song::saveProjectFile refuses to write it back.
 		qWarning("ProjectMarkers: the project holds more than the %d markers this "
 			"project can carry; %d of them were left out of this load and will not "
-			"be saved again.",
-			MaxMarkers, element.elementsByTagName(QStringLiteral("marker")).count() - offered);
+			"be saved again.", MaxMarkers, dropped);
+		// The same report a load makes for a sample or plugin it could not load,
+		// which project.open hands back as its typed `errors`.
+		if (Song* song = Engine::getSong())
+		{
+			song->collectError(QObject::tr("the project holds %1 more markers than the %2 this build can "
+				"carry; they were not loaded, and saving is refused so the original file keeps them")
+				.arg(dropped).arg(MaxMarkers));
+		}
 	}
 	makeIdsUnique(loaded, MaxMarkers);
 	m_nextId = 1;
 	restore(loaded);
+	// A restored snapshot's session may have dropped markers when IT was loaded from its file; that loss was
+	// reported then, so the carried count only keeps the refusal and is not reported again.
+	m_droppedOnLoad = std::max(dropped, carriedDroppedCount(element, MaxMarkers));
 }
 
 void ProjectMarkers::clear()
 {
 	m_markers.clear();
 	m_nextId = 1;
+	m_droppedOnLoad = 0;
 	emit changed();
 }
 

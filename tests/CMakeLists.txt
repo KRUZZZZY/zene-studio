@@ -1009,6 +1009,8 @@ set(LMMS_TESTS
 	# 0.5.0 L13 WF-126: the Mackie Control protocol and a surface driving real tracks.
 	src/core/McuSurfaceTest.cpp
 	src/core/McuSurfaceFeedbackTest.cpp
+	# review-b17c98e11: an undo snapshot carries its own session's dropped-marker count.
+	src/core/ProjectMarkersSnapshotTest.cpp
 	# 0.5.0 L04 ED-048: markers - commands, undo, jump, and the project file.
 	src/core/ProjectMarkersTest.cpp
 	# 0.5.0 L04 ED-011/012: the time range and the edits over it.

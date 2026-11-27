@@ -38,6 +38,7 @@
 #include <QTemporaryDir>
 
 #include "ControlRegistry.h"
+#include "DataFile.h"
 #include "Engine.h"
 #include "ProjectMarkers.h"
 #include "Song.h"
@@ -336,6 +337,189 @@ private slots:
 			"a marker past the cap was dropped with nothing said about it");
 		QVERIFY2(said.first().contains(QString::number(ProjectMarkers::MaxMarkers)),
 			qPrintable(QStringLiteral("the warning does not name the cap: %1").arg(said.first())));
+	}
+
+	//! The warning alone left the loss open: the session came back with 512 of 513
+	//! markers and the next save wrote the smaller list over the only file that had
+	//! the rest. A session that holds less than its file refuses to save (the
+	//! partial-load contract, Song::saveRefusal), says so in the load's errors, and
+	//! leaves the original file as it was.
+	void aProjectOverTheCapLoadedThenSavedDoesNotLoseMarkersInSilence()
+	{
+		DataFile version(DataFile::Type::SongProject);
+		QString text = QStringLiteral("<?xml version=\"1.0\"?>\n<lmms-project version=\"%1\" type=\"song\" creator=\"Zene Studio\">\n"
+			"<head/><song><trackcontainer type=\"song\"><track type=\"0\" name=\"t\" muted=\"0\"><instrumenttrack/></track></trackcontainer>\n<markers>\n")
+			.arg(version.documentElement().attribute(QStringLiteral("version")));
+		for (int i = 0; i < ProjectMarkers::MaxMarkers + 3; ++i)
+		{
+			text += QStringLiteral("<marker id=\"%1\" tick=\"%2\" name=\"M%1\"/>\n").arg(i + 1).arg(i * 192);
+		}
+		text += QStringLiteral("</markers></song></lmms-project>\n");
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("over-cap.mmp"));
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(text.toUtf8()) == text.toUtf8().size());
+		}
+		const QString before = fileText(path);
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->setLoadOnLaunch(false);
+		song->loadProject(path);
+		QCOMPARE(ProjectMarkers::instance().markers().size(), ProjectMarkers::MaxMarkers);
+		QCOMPARE(ProjectMarkers::instance().droppedOnLoad(), 3);
+
+		// The loss is reported where a load reports what it could not carry out.
+		bool reported = false;
+		for (auto it = song->errors().constBegin(); it != song->errors().constEnd(); ++it)
+		{
+			reported = reported || it.key().contains(QStringLiteral("marker"), Qt::CaseInsensitive);
+		}
+		QVERIFY2(reported, "the load's error report says nothing about the markers it dropped");
+
+		// Saving would write the smaller list: it is refused, with a reason, and writes nothing.
+		const QString target = dir.filePath(QStringLiteral("out.mmp"));
+		QVERIFY2(!song->saveProjectFile(target), "a session that dropped markers on load was saved");
+		QVERIFY2(song->saveRefusal().contains(QStringLiteral("marker"), Qt::CaseInsensitive),
+			qPrintable(QStringLiteral("the refusal does not name the markers: %1").arg(song->saveRefusal())));
+		QVERIFY2(!QFile::exists(target), "the refused save left a file behind");
+		QCOMPARE(fileText(path), before);
+
+		// A project that fits saves again: the refusal is about this session's loss, not markers in general.
+		song->clearProject();
+		QCOMPARE(ProjectMarkers::instance().droppedOnLoad(), 0);
+		QVERIFY(ProjectMarkers::instance().add(96, QStringLiteral("Fits"), QString()) > 0);
+		QVERIFY2(song->saveProjectFile(target), qPrintable(song->saveRefusal()));
+		QVERIFY(song->saveRefusal().isEmpty());
+		QVERIFY(QFile::exists(target));
+	}
+
+	//! The refusal is answered BEFORE project.save rotates the keep-3 revision
+	//! set: a save that writes nothing must not shift rev0 -> rev1 -> rev2 and
+	//! drop the oldest retained revision, which is the same rule
+	//! PartialLoadTest::aRefusedProjectSaveDoesNotRotateTheRevisionSet states
+	//! for the partial-load refusal.
+	void aRefusedOverCapSaveDoesNotRotateTheRevisionSet()
+	{
+		DataFile version(DataFile::Type::SongProject);
+		QString text = QStringLiteral("<?xml version=\"1.0\"?>\n<lmms-project version=\"%1\" type=\"song\" creator=\"Zene Studio\">\n"
+			"<head/><song><trackcontainer type=\"song\"><track type=\"0\" name=\"t\" muted=\"0\"><instrumenttrack/></track></trackcontainer>\n<markers>\n")
+			.arg(version.documentElement().attribute(QStringLiteral("version")));
+		for (int i = 0; i < ProjectMarkers::MaxMarkers + 1; ++i)
+		{
+			text += QStringLiteral("<marker id=\"%1\" tick=\"%2\" name=\"M%1\"/>\n").arg(i + 1).arg(i * 192);
+		}
+		text += QStringLiteral("</markers></song></lmms-project>\n");
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("over-cap.mmp"));
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(text.toUtf8()) == text.toUtf8().size());
+		}
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->setLoadOnLaunch(false);
+		song->loadProject(path);
+		QCOMPARE(ProjectMarkers::instance().markers().size(), ProjectMarkers::MaxMarkers);
+
+		// A target with a FULL revision set, so a rotation is observable: keep-3
+		// means the oldest of the three is shifted out by one.
+		const QString target = dir.filePath(QStringLiteral("existing.mmp"));
+		{
+			QFile file(target);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write("live\n") >= 0);
+		}
+		for (int revision = 0; revision < 3; ++revision)
+		{
+			QFile file(dir.filePath(QStringLiteral("existing.mmp.rev%1").arg(revision)));
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(QStringLiteral("rev%1\n").arg(revision).toUtf8()) >= 0);
+		}
+
+		const ControlResult saved = run(QStringLiteral("project.save"), {{QStringLiteral("path"), target}});
+		QVERIFY2(!saved.ok, "a session that dropped markers on load was saved by project.save");
+		QVERIFY2(saved.errorMessage.contains(QStringLiteral("marker"), Qt::CaseInsensitive),
+			qPrintable(QStringLiteral("the refusal does not name the markers: %1").arg(saved.errorMessage)));
+
+		// The refusal changed NOTHING on disk: the live file and every retained
+		// revision still hold the bytes they held before the refused save.
+		QCOMPARE(fileText(target), QStringLiteral("live\n"));
+		for (int revision = 0; revision < 3; ++revision)
+		{
+			QCOMPARE(fileText(dir.filePath(QStringLiteral("existing.mmp.rev%1").arg(revision))),
+				QStringLiteral("rev%1\n").arg(revision));
+		}
+
+		song->clearProject();
+	}
+
+	//! The refusal is a fact about THIS session - it came from a file holding
+	//! more markers than the cap - so an in-place restore of the session's own
+	//! document must not forget it. The snapshot holds the REDUCED list: a plain
+	//! load lifts the refusal, and the next save then writes the 512-marker list
+	//! over the file that still has the rest, in silence - the loss this whole
+	//! test file is about. The count must travel with the snapshot document,
+	//! because a restore may put back another session's document (a session
+	//! checkpoint restores the DISPLACED session), not the one being replaced.
+	//! Measured without the fix: the save below succeeds after the restore.
+	void anUndoRestoreDoesNotLiftTheOverCapSaveRefusal()
+	{
+		DataFile version(DataFile::Type::SongProject);
+		QString text = QStringLiteral("<?xml version=\"1.0\"?>\n<lmms-project version=\"%1\" type=\"song\" creator=\"Zene Studio\">\n"
+			"<head/><song><trackcontainer type=\"song\"><track type=\"0\" name=\"t\" muted=\"0\"><instrumenttrack/></track></trackcontainer>\n<markers>\n")
+			.arg(version.documentElement().attribute(QStringLiteral("version")));
+		for (int i = 0; i < ProjectMarkers::MaxMarkers + 3; ++i)
+		{
+			text += QStringLiteral("<marker id=\"%1\" tick=\"%2\" name=\"M%1\"/>\n").arg(i + 1).arg(i * 192);
+		}
+		text += QStringLiteral("</markers></song></lmms-project>\n");
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const QString path = dir.filePath(QStringLiteral("over-cap.mmp"));
+		{
+			QFile file(path);
+			QVERIFY(file.open(QIODevice::WriteOnly));
+			QVERIFY(file.write(text.toUtf8()) == text.toUtf8().size());
+		}
+		const QString before = fileText(path);
+
+		Song* song = Engine::getSong();
+		song->clearProject();
+		song->setLoadOnLaunch(false);
+		song->loadProject(path);
+		QCOMPARE(ProjectMarkers::instance().markers().size(), ProjectMarkers::MaxMarkers);
+
+		// The restore an undo step performs: the session's own document back, in place.
+		const std::shared_ptr<const QByteArray> snapshot = song->captureUndoSnapshot();
+		QVERIFY(snapshot && !snapshot->isEmpty());
+		QVERIFY2(song->restoreUndoSnapshot(*snapshot), "the session's own snapshot did not restore");
+		QCOMPARE(ProjectMarkers::instance().markers().size(), ProjectMarkers::MaxMarkers);
+
+		const QString target = dir.filePath(QStringLiteral("out.mmp"));
+		QVERIFY2(!song->saveProjectFile(target),
+			"an undo restore lifted the refusal, so the next save writes the reduced marker list");
+		QVERIFY2(song->saveRefusal().contains(QStringLiteral("marker"), Qt::CaseInsensitive),
+			qPrintable(QStringLiteral("the refusal does not name the markers: %1").arg(song->saveRefusal())));
+		QVERIFY2(!QFile::exists(target), "the refused save left a file behind");
+		QCOMPARE(fileText(path), before);
+
+		// Cleared, the same session saves again: the refusal is about the loss it
+		// carries, not about markers or snapshots in general.
+		song->clearProject();
+		QVERIFY(ProjectMarkers::instance().add(96, QStringLiteral("Fits"), QString()) > 0);
+		QVERIFY2(song->saveProjectFile(target), qPrintable(song->saveRefusal()));
+		QVERIFY(song->saveRefusal().isEmpty());
+		QVERIFY(QFile::exists(target));
 	}
 
 	//! A marker action is stored so that the CROSSING can run it, so its

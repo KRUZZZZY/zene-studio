@@ -78,10 +78,19 @@ public:
 	void restore(const QVector<Marker>& markers);
 
 	QString elementName() const override;
-	bool shouldPersist() const override { return !m_markers.isEmpty(); }
+	//! Also true inside an undo snapshot of a session that dropped markers on load, even with none left:
+	//! the snapshot carries droppedOnLoad() in its own document (save()), so a restore gives back the count
+	//! of the session it restores, not of the one it replaces.
+	bool shouldPersist() const override;
 	void save(QDomDocument& doc, QDomElement& parent) const override;
 	void load(const QDomElement& element) override;
 	void clear() override;
+
+	//! How many markers the last load() left out because the file held more than MaxMarkers (0 when none).
+	//! Reset by clear() and by every load().
+	int droppedOnLoad() const { return m_droppedOnLoad; }
+	//! A session that dropped markers on load must not write that loss back over the file that still has them.
+	QString saveRefusal() const override;
 
 signals:
 	void changed();
@@ -92,6 +101,7 @@ private:
 
 	QVector<Marker> m_markers;
 	int m_nextId = 1;
+	int m_droppedOnLoad = 0;
 };
 
 } // namespace lmms

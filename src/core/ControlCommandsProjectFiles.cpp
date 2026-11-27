@@ -36,6 +36,7 @@
 #include "MissingDevices.h"
 #include "ProjectIds.h"
 #include "ProjectRevisions.h"
+#include "ProjectSection.h"
 #include "Song.h"
 #include "UndoHistory.h"
 
@@ -262,6 +263,17 @@ void registerProjectSave(ControlRegistry& registry)
 					.arg(target)
 					.arg(song->notLoadedSections().size())
 					.arg(song->notLoadedSections().join(QStringLiteral(", "))));
+		}
+
+		// The engine's OTHER stated preconditions, asked of the same sections
+		// Song::saveProjectFile asks (a section that dropped part of its file on
+		// load - markers past the cap - makes the session read-only). Answered
+		// here for the reason above: the save is refused, so it must not cost
+		// the caller a revision either.
+		if (const QString sectionRefusal = ProjectSection::firstSaveRefusal(); !sectionRefusal.isEmpty())
+		{
+			return ControlResult::failure(ControlErrorKind::Refused,
+				QStringLiteral("%1: %2").arg(target, sectionRefusal));
 		}
 
 		Song::SaveFormat format = Song::SaveFormat::Legacy;
