@@ -28,6 +28,7 @@
 
 #include <QList>
 #include <QPair>
+#include <cstddef>
 #include <memory>
 
 #include "AudioDevice.h"
@@ -45,7 +46,19 @@ public:
 	~AudioSampleRecorder() override;
 
 	f_cnt_t framesRecorded() const;
+	/*! The recorded take as one buffer, or nullptr when its frame total cannot be
+	 *  represented by the destination (nothing is allocated in that case). */
 	std::shared_ptr<const SampleBuffer> createSampleBuffer();
+
+	/*! Whether the @a n frame counts at @a counts lay out end to end inside a destination of
+	 *  @a capacity frames, and their sum when they do. The sum is checked, never wrapped: a
+	 *  total the destination cannot hold is refused instead of overflowing the offset the copy
+	 *  indexes with (cluster new-p10-505). On refusal @a total is left untouched, so a caller
+	 *  cannot size or index a buffer with a partial sum. Static and allocation-free - the
+	 *  boundaries (two INT_MAX blocks, a count at SIZE_MAX) are reachable by a unit test without
+	 *  allocating the recording. */
+	static bool totalFramesWithin( const f_cnt_t* counts, std::size_t n,
+					std::size_t capacity, std::size_t& total ) noexcept;
 
 private:
 	void writeBuffer(const SampleFrame* _ab, const f_cnt_t _frames);
