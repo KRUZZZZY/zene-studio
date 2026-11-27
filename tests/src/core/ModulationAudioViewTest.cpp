@@ -127,6 +127,17 @@ std::uint32_t g_probeToken = 0;
 bool g_probeToreDown = false;
 bool g_probeGateWasClosed = false;
 
+//! The retire-wait seam: retireTarget() announces, on the destroying thread, that it is waiting
+//! for a pinned audio write.
+testsupport::BinarySemaphore* g_destroyerProgress = nullptr;
+std::atomic<bool> g_retireWaited{false};
+
+void onRetireWait()
+{
+	g_retireWaited.store(true, std::memory_order_release);
+	if (g_destroyerProgress != nullptr) { g_destroyerProgress->release(); }
+}
+
 /*! An instrument a test can watch from its own destructor: it reports whether the modulation target
  *  that pointed at it was ALREADY closed when the teardown began.
  *
@@ -227,9 +238,26 @@ private slots:
 		const ModulationAudioView view = publisher.snapshot();
 		testsupport::BinarySemaphore writeEntered{0};
 		testsupport::BinarySemaphore resumeWrite{0};
+		testsupport::BinarySemaphore destroyerProgress{0};
+		std::atomic<bool> writeResumed{false};
+		std::atomic<bool> retireReturned{false};
+		std::atomic<bool> writeResumedAtRetire{false};
+		std::atomic<bool> destructionFinished{false};
+		g_retireWaited.store(false, std::memory_order_release);
+		g_destroyerProgress = &destroyerProgress;
+		ModulationLayerPublisher::s_retireWaitHook.store(&onRetireWait, std::memory_order_release);
+
 		QObject::connect(model, &Model::dataChanged, this, [&] {
 			writeEntered.release();
 			resumeWrite.acquire();
+			writeResumed.store(true, std::memory_order_release);
+		}, Qt::DirectConnection);
+		// Connected after the publisher's own aboutToBeDestroyed slot, so Qt runs it once
+		// retireTarget() has returned. On a build that waits, the audio write has ended by then.
+		QObject::connect(model, &AutomatableModel::aboutToBeDestroyed, this, [&] {
+			writeResumedAtRetire.store(writeResumed.load(std::memory_order_acquire), std::memory_order_release);
+			retireReturned.store(true, std::memory_order_release);
+			if (!g_retireWaited.load(std::memory_order_acquire)) { destroyerProgress.release(); }
 		}, Qt::DirectConnection);
 
 		std::thread audio([&]
@@ -242,31 +270,35 @@ private slots:
 		{
 			resumeWrite.release();
 			audio.join();
+			ModulationLayerPublisher::s_retireWaitHook.store(nullptr, std::memory_order_release);
+			g_destroyerProgress = nullptr;
 			delete model;
 			QVERIFY2(writeReachedModel, "the modulation write did not reach the target");
 		}
 
-		std::atomic<bool> destructionFinished{false};
 		std::thread destroyer([&] {
 			delete model;
 			destructionFinished.store(true, std::memory_order_release);
 		});
-		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-		while (publisher.targetAlive(0, view.entries[0].token)
-			&& std::chrono::steady_clock::now() < deadline)
-		{
-			std::this_thread::yield();
-		}
-		const bool teardownEntered = !publisher.targetAlive(0, view.entries[0].token);
-		const bool waitedForWriter = teardownEntered
-			&& !destructionFinished.load(std::memory_order_acquire);
+		// Progress is either the wait announcement (a build that waits) or retireTarget() returning
+		// while the write is still parked (a build that does not). The bound only keeps a hang
+		// finite: the write is pinned and parked, so on a correct build the announcement is certain.
+		const bool destroyerProgressed = destroyerProgress.try_acquire_for(std::chrono::seconds(5));
+		const bool waitedForWriter = g_retireWaited.load(std::memory_order_acquire);
+		const bool retireReturnedWhileParked = retireReturned.load(std::memory_order_acquire);
 		resumeWrite.release();
 		audio.join();
 		destroyer.join();
+		ModulationLayerPublisher::s_retireWaitHook.store(nullptr, std::memory_order_release);
+		g_destroyerProgress = nullptr;
 
-		QVERIFY2(teardownEntered, "the destroyer did not close the target gate before teardown");
-		QVERIFY2(waitedForWriter,
-			"the target was destroyed while the audio thread still held its raw pointer");
+		QVERIFY2(destroyerProgressed,
+			"the destroyer neither waited for the parked write nor finished retiring the target");
+		QVERIFY2(waitedForWriter && !retireReturnedWhileParked,
+			"the target was retired while the audio thread still held its raw pointer");
+		QVERIFY2(writeResumedAtRetire.load(std::memory_order_acquire),
+			"retireTarget returned before the pinned audio write ended");
+		QVERIFY(destructionFinished.load(std::memory_order_acquire));
 		QVERIFY(!publisher.targetAlive(0, view.entries[0].token));
 	}
 

@@ -127,6 +127,13 @@ void ModulationLayerPublisher::noteStarted(int trackId) noexcept
 	}
 }
 
+std::atomic<ModulationLayerPublisher::RetireWaitHook> ModulationLayerPublisher::s_retireWaitHook{nullptr};
+
+void ModulationLayerPublisher::announceRetireWait() noexcept
+{
+	if (const RetireWaitHook hook = s_retireWaitHook.load(std::memory_order_acquire)) { hook(); }
+}
+
 void ModulationLayerPublisher::retireTarget(std::atomic<std::uint32_t>& alive,
 	std::atomic<std::uint64_t>& writers, std::uint32_t token)
 {
@@ -144,9 +151,11 @@ void ModulationLayerPublisher::retireTarget(std::atomic<std::uint32_t>& alive,
 			state = closed;
 		}
 
+		bool announcedWait = false;
 		while (targetGeneration(state) == token
 			&& (targetWriterState(state) & targetWriterCountMask) != 0)
 		{
+			if (!announcedWait) { announceRetireWait(); announcedWait = true; }
 			std::this_thread::yield();
 			state = writers.load(std::memory_order_acquire);
 		}
