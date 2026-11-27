@@ -98,14 +98,22 @@ public:
 	/// none was requested.
 	QString loudnessReportError() const { return m_loudnessReportError; }
 
-	/*! True when a render this manager ran ended with an output file that could not be written
-	 *  completely (a write or the close failed) - the file was then removed. Read after finished();
-	 *  sticky across the queued renders of one export, so one broken stem is not lost to the next.
+	/*! True when a render this manager ran did not produce its output file: the file
+	 *  could not be acquired at all (an unwritable destination, a full disk, a refused
+	 *  render), or it could not be written completely (a write or the close failed, and
+	 *  the incomplete file was removed). Read after finished(); sticky across the queued
+	 *  renders of one export, so one failed stem is not lost to the next, and a partial
+	 *  export still reports failure. The first failure's reason is in renderError().
 	 *  A renderer still running (or waiting to be reaped after an abort) answers for itself. */
 	bool hasWriteError() const
 	{
 		return m_writeFailed || (m_activeRenderer && m_activeRenderer->hasWriteError());
 	}
+
+	/// Why this export failed - the reason of its first failed render, in words: the
+	/// renderer's own refusal when the settings were refused, otherwise what the failure
+	/// was. Empty when every render wrote its file.
+	QString renderError() const { return m_renderError; }
 
 signals:
 	void progressChanged( int );
@@ -135,8 +143,11 @@ private:
 	QString m_loudnessReportError;
 
 	std::unique_ptr<ProjectRenderer> m_activeRenderer;
-	//! Set in renderNextTrack() when a finished renderer reports hasWriteError().
+	//! Set in renderNextTrack() for a finished renderer that reports hasWriteError(),
+	//! and in render() for a renderer that could not acquire its output file at all.
 	bool m_writeFailed = false;
+	//! Why this export failed, in words; the first failure's reason wins.
+	QString m_renderError;
 
 	std::vector<Track*> m_tracksToRender;
 	std::vector<Track*> m_unmuted;
