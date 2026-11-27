@@ -33,6 +33,7 @@
 #include <cerrno>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -75,6 +76,20 @@ std::atomic<int> readiCalls{0};
 //! Set by the fake read that injects the overrun: the recovery's prepare
 //! then fails, which is the failure the capture thread used to log.
 std::atomic<bool> prepareShouldFail{false};
+
+//! cluster new-p12-321: how many of the NEXT hardware-/software-parameter
+//! allocations must fail with -ENOMEM. A test arms one of them immediately
+//! before the call it wants to see fail, so the injection is deterministic -
+//! no memory pressure and no clock involved.
+std::atomic<int> hwParamsMallocFailures{0};
+std::atomic<int> swParamsMallocFailures{0};
+
+bool takeArmedFailure(std::atomic<int>& counter)
+{
+	if (counter.load(std::memory_order_acquire) <= 0) { return false; }
+	counter.fetch_sub(1, std::memory_order_acq_rel);
+	return true;
+}
 
 bool printedByCaptureThread(const QString& needle)
 {
@@ -131,6 +146,10 @@ extern "C" int printf(const char* format, ...)
 extern "C" snd_pcm_sframes_t snd_pcm_readi(snd_pcm_t*, void*, snd_pcm_uframes_t)
 {
 	const int call = ++readiCalls;
+	// A capture opened by another test of this file arms neither of the two
+	// hand-over points: its read is simply satisfied, so such a test can start
+	// and stop a capture without the machinery below.
+	if (errorPathReached == nullptr || releaseCapture == nullptr) { return 0; }
 	if (call == 1)
 	{
 		captureThread = std::this_thread::get_id();
@@ -162,9 +181,38 @@ extern "C" int snd_pcm_prepare(snd_pcm_t*)
 extern "C" int snd_pcm_drop(snd_pcm_t*)
 {
 	// closeCapture() drops the PCM before it joins the capture thread: that
-	// is what unblocks the parked read.
-	releaseCapture->release();
+	// is what unblocks the parked read. A capture opened by another test of
+	// this file has no parked read, and nothing to release.
+	if (releaseCapture != nullptr) { releaseCapture->release(); }
 	return 0;
+}
+
+//! cluster new-p12-321: the parameter allocations, with a fault the test can
+//! arm. alsa-lib's own snd_pcm_hw_params_malloc() IS
+//! `calloc(1, snd_pcm_hw_params_sizeof())`, so the success path stays
+//! behaviour-identical and the failure path is exactly what a failed
+//! allocation returns: -ENOMEM with the pointer untouched (NULL, since the
+//! caller starts from NULL).
+extern "C" int snd_pcm_hw_params_malloc(snd_pcm_hw_params_t** ptr)
+{
+	if (takeArmedFailure(hwParamsMallocFailures))
+	{
+		*ptr = nullptr;
+		return -ENOMEM;
+	}
+	*ptr = static_cast<snd_pcm_hw_params_t*>(calloc(1, snd_pcm_hw_params_sizeof()));
+	return *ptr == nullptr ? -ENOMEM : 0;
+}
+
+extern "C" int snd_pcm_sw_params_malloc(snd_pcm_sw_params_t** ptr)
+{
+	if (takeArmedFailure(swParamsMallocFailures))
+	{
+		*ptr = nullptr;
+		return -ENOMEM;
+	}
+	*ptr = static_cast<snd_pcm_sw_params_t*>(calloc(1, snd_pcm_sw_params_sizeof()));
+	return *ptr == nullptr ? -ENOMEM : 0;
 }
 
 class AudioAlsaCaptureErrorTest : public QObject
@@ -226,6 +274,83 @@ private slots:
 		QVERIFY2(reportedElsewhere,
 			qPrintable("the parked capture failure was never reported: "
 				+ printedText("Can't recover capture")));
+	}
+
+	//! cluster new-p12-321: a capture HARDWARE-parameter allocation that fails
+	//! must not hand the NULL pointer it leaves behind to the
+	//! snd_pcm_hw_params_*() setup calls, which dereference it. The capture is
+	//! published unavailable instead, and a later start still opens it.
+	void captureHwParamsAllocationFailureIsPublished()
+	{
+		resetInjection();
+		bool successful = false;
+		AudioAlsa device(successful, Engine::audioEngine());
+		QVERIFY(successful);
+
+		// The constructor's own allocations are behind us: the next hardware
+		// allocation is the capture one.
+		hwParamsMallocFailures.store(1, std::memory_order_release);
+		device.startProcessing();
+
+		const AudioInputPath::Live failed = AudioInputPath::live();
+		device.stopProcessing();
+
+		QVERIFY2(hwParamsMallocFailures.load(std::memory_order_acquire) == 0,
+			"the capture never allocated its hardware parameters");
+		QVERIFY2(!failed.open,
+			"the capture opened although its hardware parameters could not be allocated");
+		QVERIFY2(failed.captureCapable,
+			"the backend stopped reporting its capture path when the allocation failed");
+		QVERIFY2(failed.reason.contains("capture hardware parameters"),
+			qPrintable("the allocation failure was not published: " + failed.reason));
+
+		// Exhaustion and reconfiguration: the failure left nothing behind, so a
+		// fault-free start opens the capture on the same device.
+		device.startProcessing();
+		const AudioInputPath::Live recovered = AudioInputPath::live();
+		device.stopProcessing();
+		QVERIFY2(recovered.open,
+			qPrintable("the capture did not open after a failed allocation: " + recovered.reason));
+	}
+
+	//! cluster new-p12-321: the capture SOFTWARE-parameter allocation, the
+	//! second site the finding names. Same contract: check the result, publish
+	//! the capture unavailable, never call snd_pcm_sw_params_current() with a
+	//! NULL parameter block.
+	void captureSwParamsAllocationFailureIsPublished()
+	{
+		resetInjection();
+		bool successful = false;
+		AudioAlsa device(successful, Engine::audioEngine());
+		QVERIFY(successful);
+
+		// Everything up to the software parameters must run for real, so the
+		// failure is the software allocation and nothing earlier.
+		swParamsMallocFailures.store(1, std::memory_order_release);
+		device.startProcessing();
+
+		const AudioInputPath::Live failed = AudioInputPath::live();
+		device.stopProcessing();
+
+		QVERIFY2(swParamsMallocFailures.load(std::memory_order_acquire) == 0,
+			"the capture never allocated its software parameters");
+		QVERIFY2(!failed.open,
+			"the capture opened although its software parameters could not be allocated");
+		QVERIFY2(failed.reason.contains("capture software parameters"),
+			qPrintable("the allocation failure was not published: " + failed.reason));
+	}
+
+private:
+	//! Each of the tests below starts from the same, unarmed state: no fault
+	//! armed, no parked read and no counter carried over from an earlier slot.
+	static void resetInjection()
+	{
+		hwParamsMallocFailures.store(0, std::memory_order_release);
+		swParamsMallocFailures.store(0, std::memory_order_release);
+		readiCalls.store(0, std::memory_order_release);
+		prepareShouldFail.store(false, std::memory_order_release);
+		errorPathReached = nullptr;
+		releaseCapture = nullptr;
 	}
 };
 

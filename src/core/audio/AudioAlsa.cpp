@@ -393,7 +393,20 @@ bool AudioAlsa::openCapture()
 		return false;
 	}
 
-	snd_pcm_hw_params_malloc( &m_captureHwParams );
+	// CLUSTER new-p12-321: the allocation RESULT is checked. A failed allocation leaves
+	// m_captureHwParams NULL, and every snd_pcm_hw_params_*() call below writes through
+	// that pointer - so the failure is published as "capture unavailable" here, like
+	// every other failure on this path, instead of crashing inside alsa-lib.
+	if( int allocErr = snd_pcm_hw_params_malloc( &m_captureHwParams ); allocErr < 0 )
+	{
+		printf( "Capture hwparams allocation failed on %s: %s\n",
+			deviceName.constData(), snd_strerror( allocErr ) );
+		closeCapture();
+		AudioInputPath::publishUnavailable( device,
+			QStringLiteral( "cannot allocate the capture hardware parameters: " )
+				+ QString::fromUtf8( snd_strerror( allocErr ) ) );
+		return false;
+	}
 	snd_pcm_hw_params_any( m_captureHandle, m_captureHwParams );
 	snd_pcm_hw_params_set_access( m_captureHandle, m_captureHwParams,
 		SND_PCM_ACCESS_RW_INTERLEAVED );
@@ -459,7 +472,7 @@ bool AudioAlsa::openCapture()
 	snd_pcm_hw_params_get_channels( m_captureHwParams, &grantedChannels );
 	snd_pcm_hw_params_get_rate( m_captureHwParams, &grantedRate, nullptr );
 	snd_pcm_hw_params_get_period_size( m_captureHwParams, &m_capturePeriodSize, nullptr );
-	if( grantedChannels == 0 ) { grantedChannels = 1; }
+	grantedChannels = std::max( grantedChannels, 1u );
 
 	m_captureChannels = static_cast<int>( grantedChannels );
 	m_captureGrantedRate = grantedRate;
@@ -478,7 +491,18 @@ bool AudioAlsa::openCapture()
 	// Software parameters, the read-side mirror of setSWParams(): start when a
 	// period is full, wake at a period's availability.
 	snd_pcm_sw_params_t* swParams = nullptr;
-	snd_pcm_sw_params_malloc( &swParams );
+	// CLUSTER new-p12-321: the same check as the hardware parameters above - a failed
+	// allocation leaves swParams NULL, and snd_pcm_sw_params_current() writes through it.
+	if( int allocErr = snd_pcm_sw_params_malloc( &swParams ); allocErr < 0 )
+	{
+		printf( "Capture swparams allocation failed on %s: %s\n",
+			deviceName.constData(), snd_strerror( allocErr ) );
+		closeCapture();
+		AudioInputPath::publishUnavailable( device,
+			QStringLiteral( "cannot allocate the capture software parameters: " )
+				+ QString::fromUtf8( snd_strerror( allocErr ) ) );
+		return false;
+	}
 	snd_pcm_sw_params_current( m_captureHandle, swParams );
 	snd_pcm_sw_params_set_start_threshold( m_captureHandle, swParams, m_capturePeriodSize );
 	snd_pcm_sw_params_set_avail_min( m_captureHandle, swParams, m_capturePeriodSize );
@@ -500,12 +524,13 @@ bool AudioAlsa::openCapture()
 		return false;
 	}
 
+	const QString sampleFormat = m_captureFloat ? QStringLiteral( "float" ) : QStringLiteral( "s16_le" );
 	printf( "ALSA capture: %s, %u channels at %u Hz (%s), period %lu\n",
 		deviceName.constData(), grantedChannels, grantedRate,
-		m_captureFloat ? "float" : "s16_le",
+		qPrintable( sampleFormat ),
 		static_cast<unsigned long>( m_capturePeriodSize ) );
 	AudioInputPath::publishOpen( plan, m_captureChannels, static_cast<int>( grantedRate ),
-		m_captureFloat ? QStringLiteral("float") : QStringLiteral("s16_le") );
+		sampleFormat );
 	return true;
 }
 
