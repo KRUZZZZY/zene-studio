@@ -63,6 +63,7 @@
 #include "SampleClip.h"
 #include "SampleTrack.h"
 #include "Song.h"
+#include "SurroundExport.h"
 #include "Track.h"
 
 using namespace lmms;
@@ -205,6 +206,69 @@ private slots:
 		track->setName(originalName);
 		for (std::size_t i = 0; i < tracks.size(); ++i) { tracks[i]->setMuted(muted[i]); }
 		QVERIFY2(sanitizedFileExists, "per-track export did not remove forbidden filename characters");
+	}
+
+	//! BUG new-p17-146: a stem whose renderer never became ready - no output file
+	//! was opened at all, the case an unwritable destination or a full disk
+	//! produces - used to be logged and skipped, and the export then emitted
+	//! finished() exactly as if every stem had been written. It is a FAILED
+	//! export: the verdict says so, the Song's render settings are put back, and
+	//! no stem is claimed.
+	//!
+	//! The not-ready renderer is entered through a refused render (a surround
+	//! export while the master bus is stereo): ProjectRenderer refuses before it
+	//! opens a file, so isReady() is false and nothing is written - the same
+	//! branch a destination that cannot be opened takes in the GUI. The device
+	//! path itself cannot be used here: AudioFileDevice's constructor calls
+	//! exit(EXIT_FAILURE) for a file it cannot open when no GUI is present, so a
+	//! headless test can only reach the branch through the refusal.
+	void unreadyRendererFailsTheExport()
+	{
+		QVERIFY(Engine::audioEngine() != nullptr);
+		QCOMPARE(surroundexport::masterFormat(), lmms::surround::Format::Stereo);
+
+		lmms::OutputSettings surround = settings();
+		surround.setChannelMode(lmms::OutputSettings::ChannelMode::Surround);
+
+		const QString dir = QDir(m_dir.path()).filePath("stems-unready");
+		QVERIFY(QDir().mkpath(dir));
+
+		bool failed = false;
+		{
+			RenderManager manager(surround, ProjectRenderer::ExportFileFormat::Wave, dir);
+			QEventLoop loop;
+			bool ended = false;
+			QObject::connect(&manager, &RenderManager::finished, &loop,
+				[&ended, &loop]()
+				{
+					ended = true;
+					loop.quit();
+				});
+			manager.exportStems(StemExportOptions{});
+			// No renderer ever starts, so the whole queue drains inside
+			// exportStems() and finished() may already have been emitted: never
+			// wait for an event that has happened. The timer is only the guard
+			// against a hang, not part of the measurement.
+			if (!ended)
+			{
+				QTimer::singleShot(120000, &loop, &QEventLoop::quit);
+				loop.exec();
+			}
+			QVERIFY(ended);
+			// Read after finished(): the verdict outlives the renderers.
+			failed = manager.hasWriteError();
+		}
+		stopHeadlessDevice();
+
+		std::fprintf(stderr, "STEM_EVIDENCE UNREADY rendered=%d reported-failure=%d\n",
+			int(stemPaths(dir).size()), int(failed));
+		std::fflush(stderr);
+
+		QVERIFY2(failed, "an export that wrote no stem at all reported completion");
+		QCOMPARE(int(stemPaths(dir).size()), 0);
+		// The failed export still puts the Song's render settings back.
+		QCOMPARE(Engine::getSong()->exportLengthOverrideBars(), 0);
+		QCOMPARE(Engine::getSong()->exportTailBars(), 1);
 	}
 
 	//! 1, plus the naming as it lands on disk: one file per track, named in track
