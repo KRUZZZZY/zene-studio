@@ -4169,3 +4169,5 @@ docs/qwen-fixes-2026-10/cluster-new-p12-222-port.md
 tests/src/gui/CarlaRackNoRuntimeTest.cpp
 docs/050-features/Q050-359.md
 docs/qwen-fixes-2026-10/cluster-Q050-359.md
+tests/src/plugins/OpulenZLifetimeTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p9-329-port.md
