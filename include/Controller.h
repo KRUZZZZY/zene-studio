@@ -135,6 +135,13 @@ public:
 	static void triggerFrameCounter();
 	static void resetFrameCounter();
 
+	/*! The control thread's half of triggerFrameCounter(): when the render thread has published
+	 *  a period since the last call, notify every live controller (Controller::valueChanged()).
+	 *  Called by the control thread's timer, which starts with the first controller. It does
+	 *  nothing at all on a realtime thread - a queued Qt signal emitted there is an allocation
+	 *  on the audio thread. */
+	static void dispatchFrameNotifications();
+
 	//Accepts a ControllerConnection * as it may be used in the future.
 	void addConnection( ControllerConnection * );
 	void removeConnection( ControllerConnection * );
@@ -176,6 +183,10 @@ protected:
 	//! Atomic: triggerFrameCounter() advances it on the audio thread while constructors, the
 	//! GUI and runningFrames() read it elsewhere (BUGS_FOUND 10.9c).
 	static std::atomic<f_cnt_t> s_periods;
+
+	//! The period dispatchFrameNotifications() last notified at: written by the control thread
+	//! only, so the render thread compares nothing against it (cluster new-p12-56).
+	static std::atomic<f_cnt_t> s_notifiedPeriod;
 
 
 signals:

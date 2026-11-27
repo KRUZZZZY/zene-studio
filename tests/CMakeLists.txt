@@ -2173,6 +2173,13 @@ endif()
 # the mechanical negative control (qwen/negctl.py) can see its name in `ctest -N`.
 list(APPEND LMMS_TESTS src/plugins/CompressorVisualizerTest.cpp)
 
+# cluster new-p12-56: Controller::triggerFrameCounter() ran on the render thread and emitted a
+# Qt signal there, which posted an allocated queued event per controller per period into the GUI
+# thread's queue. The regression drives the control thread's replacement timer through its
+# object name (no clock, no wait). Registered here with the other late appends so the mechanical
+# negative control (qwen/negctl.py) can read its name out of `ctest -N`.
+list(APPEND LMMS_TESTS src/core/ControllerFrameNotificationTest.cpp)
+
 # cluster new-p21-187: sfizz's circular power-history buffer must track resize capacity.
 list(APPEND LMMS_TESTS src/plugins/HistoricalBufferResizeTest.cpp)
 # cluster new-p21-188: an empty sfizz power-history buffer has an average of zero.
