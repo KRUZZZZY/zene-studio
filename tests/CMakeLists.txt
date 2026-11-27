@@ -2188,6 +2188,14 @@ list(APPEND LMMS_TESTS src/core/SurroundDevicePathTest.cpp)
 # death by SIGSEGV. The other three launch sites are covered by the source gate
 # tests/worker-altstack-registration-check.py.
 list(APPEND LMMS_TESTS src/core/WorkerAltStackTest.cpp)
+# Q050-224.2: the crash report's RAW context - a real fault's report carries the
+# thread id, the faulting address, the PC and a bounded sequence of frame
+# addresses in its own binary (CrashReporterTest.cpp is an inherited file and
+# adding them there broke its 500-code-line ratchet). CrashReporterTest stays the
+# owner of the report/offer lifecycle; this is the frame sequence: present and
+# starting at the crash site, capped exactly at kMaxCrashFrames on a 200-deep
+# stack, and still written when the fault lands while the loader's lock is held.
+list(APPEND LMMS_TESTS src/core/CrashReporterFramesTest.cpp)
 
 # Q050-054.1: MIDI takes recorded on armed instrument tracks by transport.record - the capture queue,
 # plain and loop passes, undo/redo, the active-take model and save/load (core); the Record menu entry
@@ -2231,6 +2239,24 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 	get_filename_component(LMMS_TEST_NAME ${LMMS_TEST_SRC} NAME_WE)
 
 	add_executable(${LMMS_TEST_NAME} ${LMMS_TEST_SRC})
+	# Q050-224.2: the crash report's raw walk reads saved frame pointers, so the
+	# test's recursive crash chain must actually emit them. The product's walk
+	# is in lmmsobjs and needs no option; only the crashing test frames do. This
+	# makes the "200-deep stack is capped at kMaxCrashFrames" proof measure real
+	# frames rather than a single PC.
+	if(LMMS_TEST_NAME STREQUAL "CrashReporterFramesTest")
+		if(MSVC)
+			target_compile_options(${LMMS_TEST_NAME} PRIVATE /Oy-)
+		else()
+			target_compile_options(${LMMS_TEST_NAME} PRIVATE -fno-omit-frame-pointer)
+		endif()
+		# The signal-entry probe defines allocator/loader/unwinder interposers;
+		# they only preempt calls from shared libraries (libgcc_s, libc) when
+		# they are in the executable's dynamic symbol table.
+		if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+			target_link_options(${LMMS_TEST_NAME} PRIVATE -rdynamic)
+		endif()
+	endif()
 	if(LMMS_TEST_NAME STREQUAL "SfizzLeakDetectorTest")
 		target_include_directories(${LMMS_TEST_NAME} PRIVATE
 			${CMAKE_SOURCE_DIR}/plugins/SfzPlayer/sfizz/src/sfizz)

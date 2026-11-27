@@ -952,6 +952,18 @@ appears after opening (agents read the same lines in <code>project.open</code>'s
 simply absent, as in projects saved before the device stored it, loads silently as before. Saving the project writes
 the waveform the device now holds.</p>
 
+<p><b>If Zene crashes.</b> Zene writes one report and then dies exactly as it would have without the
+report. The next start offers it once - <b>Keep report</b> (the default), <b>Open folder</b> or
+<b>Discard</b> - and an unattended run (a render, a script, a control session) prints its path on stderr
+instead. The file is <code>crash-reports/zene-crash-report.txt</code> in your working folder, and it says
+which signal killed the process, the address the fault touched when the signal carries one, the
+instruction pointer, the thread and process ids, the time, this build's version, platform and compiler,
+the project that was open, and a short list of raw stack addresses - the faulting instruction first, then
+its callers, at most 24 of them. Those addresses are not translated into function names: they are the raw
+context a maintainer resolves against this build's debug symbols, and nothing about them is looked up
+while the process is dying. Nothing is sent anywhere, the report is never uploaded, and no report is
+written by a run that exits normally.
+
 <h2 id="agents">Scripts, agents and controllers</h2>
 <p>Every command is reachable over the control socket (JSON-RPC) and from the MCP bridge; Lua scripts
 (<code>zene.command</code>) reach all of them except those that change your own configuration or start other scripts
