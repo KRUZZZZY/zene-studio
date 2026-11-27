@@ -30,6 +30,7 @@
 #include <QSaveFile>
 #include <QSet>
 
+#include "BounceInPlace.h"
 #include "VideoDecoder.h"
 #include "VideoFfmpeg.h"
 
@@ -255,6 +256,10 @@ QString decodeFailureText(const WavSink& sink, const QString& wav)
 //! Write @a video's audio to @a wav; the error text, or empty on success.
 QString extract(const QString& video, const QString& wav, VideoAudio* out, VideoExtractControl* control)
 {
+	// cluster new-p8-66: an 'out' that names the video itself replaces the file being read when the WAV commits -
+	// a symlink, a hard link or a "./" spelling all name the same file. Refused before a sink is opened, so the
+	// source is untouched; every caller (the direct run and the background worker) comes through here.
+	if (BounceInPlace::namesTheSameFile(video, wav)) { return QObject::tr("'%1' would overwrite its own source").arg(wav); }
 	const DecodeBuffers buffers;  // before the file is opened, so a failed allocation leaves nothing behind
 	if (!buffers.ok()) { return QObject::tr("the video's audio cannot be decoded: out of memory"); }
 	video::MediaStream media;
