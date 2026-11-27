@@ -371,13 +371,22 @@ void MidiAlsaSeq::enqueueOutEvent( const MidiEvent& event, const TimePos& time, 
 	// calls and the mutex; enqueueing is bounded, lock-free, and allocation-free.
 	// Cluster 5129: the sequencer thread sleeps in poll() for up to EventPollTimeOut, so the first
 	// push after each drain writes one byte to the wake pipe. One non-blocking write per drain, not per event.
-	if( m_outQueue.pushAndRequestWake( event, time, port, dueNs ) && m_pipe[1] >= 0 )
+	if( m_outQueue.pushAndRequestWake( event, time, port, dueNs ) )
 	{
-		const char wake = 0;
-		// A full pipe already holds a pending wake, so a short or refused write loses nothing.
-		const ssize_t written = ::write( m_pipe[1], &wake, 1 );
-		static_cast<void>( written );
+		if( m_pipe[1] >= 0 )
+		{
+			const char wake = 0;
+			// A full pipe already holds a pending wake, so a short or refused write loses nothing.
+			const ssize_t written = ::write( m_pipe[1], &wake, 1 );
+			static_cast<void>( written );
+		}
+		return;
 	}
+	// Q3244: refused. That is the only failure the queue has, and it counts it for
+	// outputQueueOverflowCount(). A note-off no longer lands here for a full queue: the queue keeps
+	// its last Capacity slots for note-offs, so only Capacity pending note-offs can still refuse one.
+	// Nothing here may wait for room or call ALSA (this is the audio thread), so the refusal is left
+	// to that counter - and nothing is left for the sequencer thread to drain, hence no wake.
 }
 
 
