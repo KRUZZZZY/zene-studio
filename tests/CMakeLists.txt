@@ -596,6 +596,8 @@ set(LMMS_TESTS
 	src/core/MixerBusFreezeTest.cpp
 	src/core/AudioBusPlayHandleQueueTest.cpp
 	src/core/AutomationRenderAllocationTest.cpp
+	# new-p16-295: the scratch builds its clip and value lists in O(N log N) relocations, not O(N^2).
+	src/core/AutomationScratchWorkTest.cpp
 	src/core/SlicerTPlayheadTest.cpp
 	# Q050-156: recording a bounded input take straight into AudioFileProcessor / SlicerT, through the agent surface.
 	src/core/SamplerTakeTest.cpp
