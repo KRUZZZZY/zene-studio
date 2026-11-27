@@ -47,11 +47,22 @@ const QString SavedKey = QStringLiteral("savedUTC");
 
 //! A path as it is compared for "same project": absolute, cleaned, with symlinks
 //! NOT resolved (the file may not exist, and a recovery must never be refused
-//! because of a link).
+//! because of a link). The case rule is applied on top of it, by sameUnderRule().
 QString comparablePath(const QString& path)
 {
 	if (path.isEmpty()) { return QString(); }
 	return QFileInfo(path).absoluteFilePath();
+}
+
+//! True when the two already-comparable paths name the same file under \a rule.
+//! A file system that compares names case-insensitively has ONE file behind
+//! `C:\Music\Song.mmp` and `c:\music\song.mmp`, so comparing the strings
+//! case-sensitively invents two projects where the file system sees one.
+bool sameUnderRule(const QString& left, const QString& right, PathCase rule)
+{
+	return rule == PathCase::Insensitive
+			? QString::compare(left, right, Qt::CaseInsensitive) == 0
+			: left == right;
 }
 
 //! One non-blank, non-comment `key=value` line of an identity sidecar.
@@ -102,11 +113,14 @@ bool applyIdentityField(const IdentityField& field, int& version, bool& sawVersi
 	return true;
 }
 
-//! True when the recovery names a project other than the one being opened.
-bool namesAnotherProject(const RecoveryInfo& recovery, const QString& projectBeingOpened)
+//! True when the recovery names a project other than the one being opened,
+//! compared under the file system's case rule.
+bool namesAnotherProject(const RecoveryInfo& recovery, const QString& projectBeingOpened,
+						 PathCase rule)
 {
 	const QString wanted = comparablePath(projectBeingOpened);
-	return !wanted.isEmpty() && wanted != comparablePath(recovery.sourceProject);
+	return !wanted.isEmpty()
+			&& !sameUnderRule(wanted, comparablePath(recovery.sourceProject), rule);
 }
 
 //! True when both files carry a comparable modification time and the recovery
@@ -258,6 +272,39 @@ bool removeRecovery(const QString& recoveryFile)
 	return !QFileInfo::exists(recoveryFile);
 }
 
+PathCase platformPathCase()
+{
+	const QString overridden = qEnvironmentVariable("ZENE_PATH_CASE").trimmed();
+	if (overridden.compare(QLatin1String("insensitive"), Qt::CaseInsensitive) == 0)
+	{
+		return PathCase::Insensitive;
+	}
+	if (overridden.compare(QLatin1String("sensitive"), Qt::CaseInsensitive) == 0)
+	{
+		return PathCase::Sensitive;
+	}
+#ifdef Q_OS_WIN
+	// NTFS, FAT and exFAT compare names case-insensitively: `C:\Music\Song.mmp`
+	// and `c:\music\song.mmp` are ONE file, so the recovery of one is the recovery
+	// of the other.
+	return PathCase::Insensitive;
+#else
+	// POSIX: `Song.mmp` and `song.mmp` are two directory entries. Folding case here
+	// would offer ANOTHER project's unsaved work as this one's - the one thing the
+	// identity check exists to prevent - so a case-insensitive volume (fat, cifs, a
+	// macOS volume) names itself through ZENE_PATH_CASE instead.
+	return PathCase::Sensitive;
+#endif
+}
+
+bool sameProjectPath(const QString& left, const QString& right, PathCase rule)
+{
+	const QString leftPath = comparablePath(left);
+	const QString rightPath = comparablePath(right);
+	if (leftPath.isEmpty() || rightPath.isEmpty()) { return false; }
+	return sameUnderRule(leftPath, rightPath, rule);
+}
+
 RecoveryDecision decideRecovery(const RecoveryInfo& recovery, const QString& projectBeingOpened)
 {
 	RecoveryDecision decision;
@@ -281,8 +328,11 @@ RecoveryDecision decideRecovery(const RecoveryInfo& recovery, const QString& pro
 		decision.projectLabel = QFileInfo(recovery.sourceProject).fileName();
 
 		// 1. A recovery of a DIFFERENT project must never be offered as the
-		//    recovery of the project this launch asked to open.
-		if (namesAnotherProject(recovery, projectBeingOpened))
+		//    recovery of the project this launch asked to open. The file system's
+		//    case rule decides whether two spellings name that one file: on a
+		//    case-insensitive file system they do, and refusing there throws the
+		//    crashed session's unsaved work away for a spelling difference.
+		if (namesAnotherProject(recovery, projectBeingOpened, platformPathCase()))
 		{
 			decision.verdict = RecoveryVerdict::OtherProject;
 			decision.detail = QStringLiteral("recovery belongs to '%1', not to '%2'")

@@ -225,7 +225,10 @@ bool applyAutosaveIdentity(const QString& projectPath, RevisionEntry* entry)
 	if (savedAt.isValid()) { entry->timestamp = savedAt.toUTC(); }
 	entry->note = QStringLiteral("autosave of %1").arg(from);
 	if (from.isEmpty()) { return true; }
-	return QFileInfo(from).absoluteFilePath() == QFileInfo(projectPath).absoluteFilePath();
+	// The same path rule decideRecovery() applies, decided by the file system's
+	// case rule: two spellings of one file are one project, and reading them as
+	// two hides this project's own autosave from its timeline.
+	return ProjectRecovery::sameProjectPath(from, projectPath, ProjectRecovery::platformPathCase());
 }
 
 //! Newest first; ties keep the artefact order the list was built in, so the
