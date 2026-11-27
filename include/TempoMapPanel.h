@@ -64,6 +64,14 @@ public:
 	QString exportTo(const QString& path);
 	QString importFrom(const QString& path);
 
+#ifdef LMMS_TESTING
+	//! TEST SEAM (cluster new-p12-260): the bar steps one refresh's bar walk took, so a test can
+	//! require a row to be reached without visiting every bar on the way. A metre of 1/32 makes a bar
+	//! six ticks and a project event may sit at any tick, so one step per bar is hundreds of millions
+	//! of steps for a row near the end of such a map.
+	static qint64 barWalkStepsForTest();
+#endif
+
 private:
 	QCheckBox* m_active = nullptr;
 	QComboBox* m_format = nullptr;
