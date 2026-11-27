@@ -137,6 +137,21 @@ double sampleTrackVolume( const DataFile & doc )
 	return doc.elementsByTagName( "sampletrack" ).item( 0 ).toElement().attribute( "vol" ).toDouble();
 }
 
+// The process's peak virtual size in bytes (Linux VmPeak), or 0 where unreadable.
+qint64 peakVirtualBytes()
+{
+	QFile f( QStringLiteral( "/proc/self/status" ) );
+	if( !f.open( QIODevice::ReadOnly ) ) { return 0; }
+	for( const QByteArray & line : f.readAll().split( '\n' ) )
+	{
+		if( line.startsWith( "VmPeak:" ) )
+		{
+			return line.mid( 7 ).trimmed().split( ' ' ).value( 0 ).toLongLong() * 1024;
+		}
+	}
+	return 0;
+}
+
 } // namespace
 
 class DataFileFormatTest : public QObject
@@ -250,7 +265,54 @@ private slots:
 		QVERIFY( document.document().validate( "wav" ) );
 	}
 
-	// The legacy `multimedia-project` root (pre-LMMS ZynAddSubFX era) is a
+	// cluster new-p8-107. A compressed payload whose 4-byte big-endian header declares
+// ~3.75 GB must be refused BEFORE qUncompress allocates that much: the load ends
+// on an empty document, qUncompress is never reached (it warns "qUncompress: ..."
+// on every stream it cannot inflate), and the process's peak virtual size does not
+// grow by the declared amount. The garbage after the header is not a zlib stream.
+void oversizedCompressedHeaderIsRefusedBeforeInflating()
+{
+	QByteArray hostile( 4, '\0' );
+	hostile[0] = static_cast<char>( 0xF0 ); // 0xF0000000 = 4026531840 bytes
+	hostile.append( QByteArray( 64, 'Z' ) );
+
+	QStringList seen;
+	static QStringList * sink = nullptr;
+	sink = &seen;
+	const QtMessageHandler previous = qInstallMessageHandler(
+		[]( QtMsgType, const QMessageLogContext &, const QString & msg ) { sink->append( msg ); } );
+	const qint64 peakBefore = peakVirtualBytes();
+	SeededDataFile document( hostile );
+	const qint64 peakAfter = peakVirtualBytes();
+	qInstallMessageHandler( previous );
+	sink = nullptr;
+
+	QVERIFY( document.document().documentElement().isNull() );
+	QCOMPARE( static_cast<int>( document.document().type() ),
+		static_cast<int>( DataFile::Type::Unknown ) );
+	for( const QString & msg : seen )
+	{
+		QVERIFY2( !msg.startsWith( QLatin1String( "qUncompress" ) ), qPrintable( msg ) );
+	}
+	if( peakBefore > 0 && peakAfter > 0 )
+	{
+		QVERIFY2( peakAfter - peakBefore < 1024LL * 1024 * 1024,
+			qPrintable( QString::number( peakAfter - peakBefore ) ) );
+	}
+}
+
+// The guard must not turn away a real compressed project: a qCompress round trip
+// loads as the song it was.
+void validCompressedProjectStillLoads()
+{
+	SeededDataFile document( qCompress( QByteArray( NEW_PROJECT ) ) );
+	QCOMPARE( static_cast<int>( document.document().type() ),
+		static_cast<int>( DataFile::Type::SongProject ) );
+	QVERIFY( !document.document().documentElement().isNull() );
+	QCOMPARE( document.document().documentElement().tagName(), QString( "zene-project" ) );
+}
+
+// The legacy `multimedia-project` root (pre-LMMS ZynAddSubFX era) is a
 	// different format's identifier and must keep loading untouched.
 	void legacyMultimediaRootStillLoads()
 	{
