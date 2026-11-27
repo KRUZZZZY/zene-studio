@@ -552,6 +552,38 @@ private slots:
 		QCOMPARE(run(QStringLiteral("project.subprojects")).result.value(QStringLiteral("count")).toInt(), 1);
 	}
 
+	//! Cluster 2951: undoing a refresh puts EACH clip back on the file it had, not every clip on the entry's one render.
+	void undoingARefreshRestoresEachClipsOwnSample()
+	{
+		Song* song = Engine::getSong();
+		trackWithClip(QStringLiteral("Inner"));
+		const QString inner = out(QStringLiteral("inner-2951.mmp"));
+		QVERIFY(song->saveProjectFile(inner));
+		song->clearProject();
+		QVERIFY(song->guiSaveProjectAs(out(QStringLiteral("main-2951.mmp"))));
+
+		const ControlResult added = run(QStringLiteral("project.subproject_add"), {{QStringLiteral("path"), inner}});
+		QVERIFY2(added.ok, qPrintable(added.errorMessage));
+		const QString audio = added.result.value(QStringLiteral("audio")).toString();
+		Track* track = resolved(added.result.value(QStringLiteral("track")).toString());
+		QVERIFY(track != nullptr);
+
+		// A second clip on the track, playing a different file of the user's own.
+		const QString custom = out(QStringLiteral("custom-2951.wav"));
+		QVERIFY(QFile::copy(audio, custom));
+		auto* extra = dynamic_cast<SampleClip*>(track->createClip(TimePos(960)));
+		QVERIFY(extra != nullptr);
+		extra->setSampleFile(custom);
+		QCOMPARE(track->getClips().size(), size_t{2});
+
+		const ControlResult refreshed = run(QStringLiteral("project.subproject_refresh"), {{QStringLiteral("track"), control::trackIdOf(track)}});
+		QVERIFY2(refreshed.ok, qPrintable(refreshed.errorMessage));
+		QVERIFY(run(QStringLiteral("control.undo")).ok);
+
+		QCOMPARE(PathUtil::toAbsolute(dynamic_cast<SampleClip*>(track->getClips().front())->sampleFile()), audio);
+		QCOMPARE(PathUtil::toAbsolute(dynamic_cast<SampleClip*>(track->getClips().back())->sampleFile()), custom);
+	}
+
 	void subprojectRefusalsAreTypedAndLeaveNothingBehind()
 	{
 		Song* song = Engine::getSong();
