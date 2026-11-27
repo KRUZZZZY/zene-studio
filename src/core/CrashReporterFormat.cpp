@@ -33,6 +33,12 @@
 #if defined(__APPLE__) && !defined(_XOPEN_SOURCE)
 	#define _XOPEN_SOURCE 700
 #endif
+// _XOPEN_SOURCE alone hides Darwin's BSD declarations (the Mach thread-port
+// calls below), exactly as it hid O_NOFOLLOW in src/core/CrashReporter.cpp;
+// _DARWIN_C_SOURCE brings them back.
+#if defined(__APPLE__) && !defined(_DARWIN_C_SOURCE)
+	#define _DARWIN_C_SOURCE
+#endif
 
 #include "CrashReporterFormat.h"
 
@@ -45,12 +51,16 @@
 #include <csignal>
 #include <ctime>
 
+#include <pthread.h>
 #include <signal.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <ucontext.h>
 #include <unistd.h>
+#if defined(__APPLE__)
+#include <mach/mach.h>
 #endif
+#endif // LMMS_BUILD_WIN32
 
 namespace lmms::crashreporter
 {
@@ -169,24 +179,285 @@ unsigned long long programCounterFrom(void* context)
 // allocation, no lock, no errno other than a thread-local write.  This is the
 // same call Breakpad and Crashpad make from their handlers.
 //
-// Darwin is the exception, and it is a deliberate one: it has no gettid and no
-// declared syscall() to reach one through, so the report carries 0 rather than
-// calling into pthread from a signal handler -- macos-arm64 and macos-x86_64
-// both failed this file with
-//   CrashReporter.cpp:204:43: error: no member named 'syscall' in the global
-//   namespace; did you mean 'sysconf'?
-// A tid from pthread_mach_thread_np(pthread_self()) is the obvious candidate and
-// is what Breakpad uses, but this box cannot compile Darwin code, so the release
-// does not depend on an API choice nobody here can test. The pc, the signal and
-// the backtrace are the report's payload; on macOS the tid field reads 0.
+// Darwin has no gettid and no declared syscall() to reach one through (the
+// first release failed macos-arm64 with "no member named 'syscall'").  The
+// portable-looking pthread_mach_thread_np(pthread_self()) is what Breakpad
+// uses, but it is NOT async-signal-safe on Darwin: it can take the pthread
+// lock and deadlock the handler (OpenJDK bug JDK-8235962).  The Mach port of
+// the current thread is the same value, obtained through two direct Mach traps
+// with no lock and no allocation: mach_thread_self() returns a send right and
+// mach_port_deallocate() releases the reference we just took immediately, so
+// the handler leaks nothing.  This is the fix OpenJDK shipped for exactly this
+// hazard.
 unsigned long long currentThreadId()
 {
 #if defined(__APPLE__)
-	return 0;
+	const mach_port_t port = ::mach_thread_self();
+	::mach_port_deallocate(::mach_task_self(), port);
+	return static_cast<unsigned long long>(port);
 #else
 	return static_cast<unsigned long long>(::syscall(SYS_gettid));
 #endif
 }
+
+// ---- raw frames (Q050-224.2) -------------------------------------------------
+//
+// The walk is a RAW FRAME-POINTER WALK, not an unwinder.  The first version
+// called _Unwind_Backtrace() here, and that was wrong for a signal handler:
+// the general-purpose unwinder finds the FDE for every PC through the dynamic
+// loader (object lookup under a loader lock) and can enter the allocator.  Its
+// frame-count budget bounded the number of STEPS, not that work, so the
+// handler was neither bounded nor async-signal-safe.  This version dereferences
+// only the stack's own saved frame pointers: no unwinder, no loader, no
+// unwind-table lookup, no allocation, no lock, no I/O.
+//
+// Bounds: (1) every dereference is inside [the interrupted SP, the stack
+// ceiling recorded by recordThreadStackBounds()].  The ceiling is the address
+// of a local in the recording frame: it is inside the same stack mapping, and
+// every address below it that the crashing thread has used is mapped too, so
+// the walk never touches an unmapped page; (2) each saved frame pointer must be
+// 16-byte aligned and strictly greater than the previous one (the stack grows
+// down, so a valid chain increases), which stops a corrupt or cyclic chain;
+// (3) the frame budget.  Repeated return addresses are KEPT: a recursive chain
+// reaches the same call site at every depth, and folding those would hide
+// depth.
+//
+// Known limit, stated rather than hidden: a build compiled with frame pointers
+// omitted yields fewer callers (the PC is still frame 0); a thread that never
+// registered a stack, or whose crash is above the recorded ceiling (a very
+// shallow frame reached after registration returned), yields the PC but no
+// walk.  The reporter's own threads register through
+// installAlternateStackForCurrentThread().
+
+namespace
+{
+
+#if !defined(__APPLE__)
+thread_local uintptr_t s_stackLow = 0;
+thread_local uintptr_t s_stackCeiling = 0;
+#endif
+
+// A plausible single thread stack is never wider than this.  It is a guard
+// against a registration on one stack and a fault on another (a fiber or a
+// plug-in's own stack): the recorded ceiling would then be far away and the
+// range check below must reject it rather than read across unmapped memory.
+constexpr uintptr_t kMaxStackSpan = 32 * 1024 * 1024;
+
+// The frame and stack pointers out of a signal ucontext, where the architecture
+// lays them out.  Returns false where this build has no accessor.
+bool contextStackPointers(void* context, uintptr_t& framePointer, uintptr_t& stackPointer)
+{
+	if (context == nullptr) { return false; }
+	const auto* uc = static_cast<const ucontext_t*>(context);
+#if defined(__APPLE__)
+	// Darwin's ucontext_t holds a POINTER to the machine context, and names the
+	// thread state __ss on both architectures.
+#if defined(__aarch64__)
+	framePointer = static_cast<uintptr_t>(uc->uc_mcontext->__ss.__fp);
+	stackPointer = static_cast<uintptr_t>(uc->uc_mcontext->__ss.__sp);
+	return true;
+#else
+	framePointer = static_cast<uintptr_t>(uc->uc_mcontext->__ss.__rbp);
+	stackPointer = static_cast<uintptr_t>(uc->uc_mcontext->__ss.__rsp);
+	return true;
+#endif
+#elif defined(__aarch64__)
+	framePointer = static_cast<uintptr_t>(uc->uc_mcontext.regs[29]);
+	stackPointer = static_cast<uintptr_t>(uc->uc_mcontext.sp);
+	return true;
+#elif defined(__x86_64__) && defined(REG_RBP) && defined(REG_RSP)
+	framePointer = static_cast<uintptr_t>(uc->uc_mcontext.gregs[REG_RBP]);
+	stackPointer = static_cast<uintptr_t>(uc->uc_mcontext.gregs[REG_RSP]);
+	return true;
+#else
+	(void)uc;
+	return false;
+#endif
+}
+
+// The crashing thread's stack ceiling (and exact floor, when known), read in
+// the handler.  On Darwin a thread_local is NOT a plain load: dyld allocates a
+// thread's TLV block lazily, through malloc, on that thread's first access, so
+// reading s_stackCeiling from a thread that never registered would enter the
+// allocator inside the signal.  Darwin therefore reads the stack top from the
+// current thread's own pthread struct: libpthread's pthread_get_stackaddr_np()
+// returns t->stackaddr directly for pthread_self() (no list lock, no
+// allocation), and pthread_self() is a thread-register read.  Linux keeps the
+// recorded thread_locals: the core is linked into executables, where the TLS
+// access is relaxed to a direct offset from the thread pointer.
+void stackCeilingForHandler(uintptr_t& high, uintptr_t& stackLow)
+{
+#if defined(__APPLE__)
+	high = reinterpret_cast<uintptr_t>(::pthread_get_stackaddr_np(::pthread_self()));
+	stackLow = 0;
+#else
+	high = s_stackCeiling;
+	stackLow = s_stackLow;
+#endif
+}
+
+// ---- the walk's pieces (split out of captureFrames() for the complexity
+// ratchet; same checks, same order, same stopping frame).  Each is raw loads
+// or arithmetic only: no allocation, no lock, no I/O.
+
+constexpr uintptr_t kWord = sizeof(uintptr_t);
+constexpr uintptr_t kFrameAlignMask = (2 * kWord) - 1;
+
+// Outside a signal there is no ucontext to read the frame pointer from, and
+// __builtin_frame_address() is not trustworthy in a build that omits frame
+// pointers. __builtin_return_address(0), read by captureFrames() itself, is
+// always a real return address, so it is the one honest caller we can add.
+int appendCallerOutsideSignal(uintptr_t caller, unsigned long long* out, int count, int capacity)
+{
+	if (caller != 0 && count < capacity) { out[count++] = static_cast<unsigned long long>(caller); }
+	return count;
+}
+
+// Whether the recorded bounds admit a walk at all.  No recorded ceiling means
+// no dereference at all: a wrong read would fault inside the handler and lose
+// the report (the PC is already captured).  With exact bounds (install-time),
+// the interrupted SP must be on that same stack; a marker-only thread
+// (render/JACK) has no recorded low, so the interrupted SP is its own lower
+// bound.  Finally the first frame pointer must lie inside [low, high - 2 words].
+bool walkBoundsAdmit(uintptr_t low, uintptr_t high, uintptr_t stackLow, uintptr_t framePointer)
+{
+	if (high == 0 || high <= low + 2 * kWord) { return false; }
+	if (high - low > kMaxStackSpan) { return false; }
+	if (stackLow != 0 && low < stackLow) { return false; }
+	if (framePointer < low || framePointer > high - 2 * kWord) { return false; }
+	return true;
+}
+
+// A frame pointer may be dereferenced (two words) only when it is 16-byte
+// aligned and inside [low, high - 2 words].
+bool frameReadable(uintptr_t framePointer, uintptr_t low, uintptr_t high)
+{
+	return (framePointer & kFrameAlignMask) == 0
+		&& framePointer >= low && framePointer <= high - 2 * kWord;
+}
+
+// The saved frame pointer continues the chain only if it strictly increases
+// (the stack grows down), stays below the ceiling and is aligned; this is what
+// stops a corrupt or cyclic chain.
+bool savedFrameAdvances(uintptr_t savedFrame, uintptr_t framePointer, uintptr_t high)
+{
+	return savedFrame > framePointer && savedFrame <= high - 2 * kWord
+		&& (savedFrame & kFrameAlignMask) == 0;
+}
+
+// The raw walk itself, bounded by the frame budget.  Repeated return addresses
+// are kept (a recursive chain reaches one call site at every depth).
+int walkFramePointerChain(uintptr_t framePointer, uintptr_t low, uintptr_t high,
+	unsigned long long* out, int count, int capacity)
+{
+	while (count < capacity)
+	{
+		if (!frameReadable(framePointer, low, high)) { break; }
+		const uintptr_t savedFrame = *reinterpret_cast<const uintptr_t*>(framePointer);
+		const uintptr_t returnAddress = *reinterpret_cast<const uintptr_t*>(framePointer + kWord);
+		if (returnAddress != 0) { out[count++] = returnAddress; }
+		if (!savedFrameAdvances(savedFrame, framePointer, high)) { break; }
+		framePointer = savedFrame;
+	}
+	return count;
+}
+
+} // namespace
+
+void recordThreadStackBounds()
+{
+	// The exact bounds, from the thread's own metadata.  This runs only from
+	// install() (the main thread at startup, or a test thread), never from the
+	// render/JACK callbacks: pthread_getattr_np allocates (its CPU-set buffer)
+	// and is not real-time safe.  The cheap marker below covers those callers.
+	// Darwin records nothing: its handler reads the stack top itself (see
+	// stackCeilingForHandler()), so no thread_local is touched there at all.
+#if defined(__linux__)
+	pthread_attr_t attr;
+	if (::pthread_getattr_np(::pthread_self(), &attr) != 0) { return; }
+	void* base = nullptr;
+	size_t size = 0;
+	if (::pthread_attr_getstack(&attr, &base, &size) == 0 && base != nullptr && size > 0)
+	{
+		s_stackLow = reinterpret_cast<uintptr_t>(base);
+		s_stackCeiling = s_stackLow + size;
+	}
+	::pthread_attr_destroy(&attr);
+#endif
+}
+
+void noteThreadStackMarker()
+{
+	// The whole real-time-safe half is taking one local's address: no allocation,
+	// no lock, no I/O.  The first registration on a thread is its shallowest
+	// call, so keeping the maximum gives a ceiling above every later frame (and
+	// never lowers the exact ceiling install() recorded on the main thread).
+#if !defined(__APPLE__)
+	const uintptr_t marker = reinterpret_cast<uintptr_t>(&marker);
+	if (marker > s_stackCeiling) { s_stackCeiling = marker; }
+#endif
+}
+
+int captureFrames(void* context, unsigned long long* out, int capacity)
+{
+	if (out == nullptr || capacity <= 0) { return 0; }
+
+	// The faulting instruction first: it is the crash site, and the one address
+	// that must never be missing from the sequence.
+	int count = 0;
+	const unsigned long long pc = programCounterFrom(context);
+	if (pc != 0) { out[count++] = pc; }
+	if (count >= capacity) { return count; }
+
+	// Read HERE, not in the helper: __builtin_return_address(0) names the
+	// caller of the function it is written in, so moving it into
+	// appendCallerOutsideSignal() would record captureFrames() itself.
+#if defined(__GNUC__) && !defined(_WIN32)
+	const uintptr_t caller = reinterpret_cast<uintptr_t>(__builtin_return_address(0));
+#else
+	const uintptr_t caller = 0;
+#endif
+	if (context == nullptr) { return appendCallerOutsideSignal(caller, out, count, capacity); }
+
+	uintptr_t framePointer = 0;
+	uintptr_t stackPointer = 0;
+	if (!contextStackPointers(context, framePointer, stackPointer)) { return count; }
+
+	const uintptr_t low = stackPointer;
+	uintptr_t high = 0;
+	uintptr_t stackLow = 0;
+	stackCeilingForHandler(high, stackLow);
+	if (!walkBoundsAdmit(low, high, stackLow, framePointer)) { return count; }
+	return walkFramePointerChain(framePointer, low, high, out, count, capacity);
+}
+
+unsigned long appendFrames(char* buf, unsigned long cap, unsigned long pos,
+	const unsigned long long* frames, int count)
+{
+	pos = appendStr(buf, cap, pos, "frames=");
+	pos = appendUInt(buf, cap, pos,
+		static_cast<unsigned long long>(count > 0 ? count : 0));
+	pos = appendStr(buf, cap, pos, "\n");
+	for (int i = 0; i < count && frames != nullptr; ++i)
+	{
+		pos = appendStr(buf, cap, pos, "frame[");
+		pos = appendUInt(buf, cap, pos, static_cast<unsigned long long>(i));
+		pos = appendStr(buf, cap, pos, "]=");
+		pos = appendHex(buf, cap, pos, frames[i]);
+		pos = appendStr(buf, cap, pos, "\n");
+	}
+	return pos;
+}
+
+#else // LMMS_BUILD_WIN32
+
+// Windows installs no handler (see include/CrashReporter.h), so nothing captures
+// or formats frames there; these stubs exist so the module links wherever it is
+// compiled, exactly like the rest of the Windows half.
+int captureFrames(void*, unsigned long long*, int) { return 0; }
+
+unsigned long appendFrames(char* buf, unsigned long, unsigned long pos,
+	const unsigned long long*, int) { return pos; }
 
 #endif // LMMS_BUILD_WIN32
 
