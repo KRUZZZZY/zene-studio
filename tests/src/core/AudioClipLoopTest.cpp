@@ -216,6 +216,35 @@ private slots:
 		delete instrument;
 	}
 
+	//! Pins the contract that answers cluster new-p14-275: the stretcher path (SamplePlayHandle) has no loop wrapping
+	//! because a clip that renders through the pitch-preserving stretcher never has its audio loop engaged - the loop
+	//! stays in ClipEdits (an old project file may store one), but audioloop::engaged() is false for it.
+	void aClipThatRendersThroughTheStretcherNeverEngagesItsLoop()
+	{
+		SampleClip* subject = buildSong(160);
+		QVERIFY(run(QStringLiteral("clip.set_loop"), {{QStringLiteral("clip"), control::clipIdOf(subject)}, {QStringLiteral("length"), 32}}).ok);
+		QVERIFY(audioloop::engaged(*subject));
+
+		// A: warped (tempo-leading) with a pitch-keeping WSOLA mode - the rate varies, so the stretcher renders it.
+		subject->setWarpTempoMode(WarpTempoMode::SourceTempo);
+		subject->setSourceTempo(120.f);
+		subject->setWarpStretchMode(WarpStretchMode::PreservePitch);
+		QVERIFY(!subject->rendersLinearly());
+		QVERIFY(subject->clipEdits().hasAudioLoop());
+		QVERIFY(!audioloop::engaged(*subject));
+		subject->setWarpTempoMode(WarpTempoMode::FollowProject);
+		subject->setWarpStretchMode(WarpStretchMode::Resample);
+		QVERIFY(audioloop::engaged(*subject));
+
+		// B: transposed with a Rubber Band-backed mode - the pitch scale is rendered by the stretcher at a linear rate.
+		ClipEdits edits = subject->clipEdits();
+		edits.transpose = 2;
+		subject->setClipEdits(edits);
+		subject->setWarpStretchMode(WarpStretchMode::Beats);
+		QVERIFY(subject->clipEdits().hasAudioLoop());
+		QVERIFY(!audioloop::engaged(*subject));
+	}
+
 	//! I8: the looped render allocates nothing per period, across many wraps. The handle is built outside the probe
 	//! (what allocates on this path is the handle, not the render loop), over a pass four times the audio's length.
 	void theLoopedRenderAllocatesNothing()
