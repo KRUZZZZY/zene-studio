@@ -150,3 +150,88 @@ void VideoTrackTest::audioExtractPacketAllocationFailureIsReportedNotDereference
 	QSKIP("this build has no FFmpeg");
 #endif
 }
+//! cluster new-p8-66: extraction over the video it reads would replace that file when the WAV commits. Refused for
+//! every spelling of one file - the same path, a "./" segment, a symlink, a hard link - and on the worker as well.
+void VideoTrackTest::refuseExtractionOverItsOwnSource(const QString& copy, const QString& out, bool background) {
+	Song* song = Engine::getSong();
+	song->clearProject();
+	QVERIFY(run(QStringLiteral("video.attach"), {{QStringLiteral("path"), copy}}).ok);
+	const auto tracksBefore = song->tracks().size();
+	QFile source(copy);
+	QVERIFY(source.open(QIODevice::ReadOnly));
+	const QByteArray bytes = source.readAll();
+	source.close();
+
+	const ControlResult answered = run(QStringLiteral("video.extract_audio"),
+		{{QStringLiteral("out"), out}, {QStringLiteral("background"), background}});
+	if (!background)
+	{
+		QCOMPARE(answered.errorKind, ControlErrorKind::Refused);
+		QVERIFY2(answered.errorMessage.contains(QStringLiteral("its own source")), qPrintable(answered.errorMessage));
+	}
+	else
+	{
+		QVERIFY2(answered.ok, qPrintable(answered.errorMessage));  // 'background' acknowledges; the task reports
+		const int task = answered.result.value(QStringLiteral("task")).toInt(-1);
+		QVERIFY(task > 0);
+		const auto stateOf = [task] { return taskState(task); };
+		QTRY_COMPARE_WITH_TIMEOUT(stateOf(), TaskState::Failed, 20000);
+		QVERIFY2(taskStatus(task).contains(QStringLiteral("its own source")), qPrintable(taskStatus(task)));
+	}
+
+	QFile kept(copy);
+	QVERIFY(kept.open(QIODevice::ReadOnly));
+	QVERIFY2(kept.readAll() == bytes, "the extraction overwrote the video it was reading");
+	QCOMPARE(song->tracks().size(), tracksBefore);  // and no track landed from the command path
+	QVERIFY2(run(QStringLiteral("video.attach"), {{QStringLiteral("path"), copy}}).ok,
+		"the source is no longer a readable video");
+	song->clearProject();
+}
+void VideoTrackTest::extractAudioRefusesItsOwnSource() {
+	if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+	const QString copy = m_dir.filePath(QStringLiteral("alias-same.mkv"));
+	QFile::remove(copy);
+	QVERIFY(QFile::copy(m_clip, copy));  // a run without the fix damages this copy, never the shared test clip
+	refuseExtractionOverItsOwnSource(copy, copy, false);
+	refuseExtractionOverItsOwnSource(copy, copy, true);
+}
+void VideoTrackTest::extractAudioRefusesADotSegmentSpellingOfItsOwnSource() {
+	if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+	const QString copy = m_dir.filePath(QStringLiteral("alias-dot.mkv"));
+	QFile::remove(copy);
+	QVERIFY(QFile::copy(m_clip, copy));
+	const QString spelled = m_dir.path() + QStringLiteral("/./alias-dot.mkv");
+	refuseExtractionOverItsOwnSource(copy, spelled, false);
+	refuseExtractionOverItsOwnSource(copy, spelled, true);
+}
+void VideoTrackTest::extractAudioRefusesASymlinkToItsOwnSource() {
+	if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+#if defined(Q_OS_UNIX)
+	const QString copy = m_dir.filePath(QStringLiteral("alias-symlink.mkv"));
+	const QString link = m_dir.filePath(QStringLiteral("alias-symlink-link.mkv"));
+	QFile::remove(copy);
+	QFile::remove(link);
+	QVERIFY(QFile::copy(m_clip, copy));
+	QVERIFY2(QFile::link(copy, link), "could not make a symbolic link on this platform");
+	refuseExtractionOverItsOwnSource(copy, link, false);
+	refuseExtractionOverItsOwnSource(copy, link, true);
+#else
+	QSKIP("a symbolic link needs a POSIX file system");
+#endif
+}
+void VideoTrackTest::extractAudioRefusesAHardLinkToItsOwnSource() {
+	if (!needClip()) { QSKIP("no FFmpeg in this build, or the test clip could not be made"); }
+#if defined(Q_OS_UNIX)
+	const QString copy = m_dir.filePath(QStringLiteral("alias-hard.mkv"));
+	const QString hard = m_dir.filePath(QStringLiteral("alias-hard-link.mkv"));
+	QFile::remove(copy);
+	QFile::remove(hard);
+	QVERIFY(QFile::copy(m_clip, copy));
+	QVERIFY2(::link(QFile::encodeName(copy).constData(), QFile::encodeName(hard).constData()) == 0,
+		"could not make a hard link on this file system");
+	refuseExtractionOverItsOwnSource(copy, hard, false);
+	refuseExtractionOverItsOwnSource(copy, hard, true);
+#else
+	QSKIP("a hard link needs a POSIX file system");
+#endif
+}
