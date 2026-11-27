@@ -96,6 +96,16 @@ QString sliceAttributeName(std::size_t control, std::size_t slice)
 	return QString::fromLatin1(prefixes[control]) + QString::number(slice);
 }
 
+//! The slice of \a points that contains \a point (both fractions of the sample), or -1.
+int sliceContainingPoint(const std::vector<float>& points, float point) noexcept
+{
+	for (std::size_t i = 0; i + 1 < points.size(); ++i)
+	{
+		if (point >= points[i] && point < points[i + 1]) { return static_cast<int>(i); }
+	}
+	return -1;
+}
+
 } // namespace
 
 // ################################# SlicerT ####################################
@@ -119,6 +129,10 @@ SlicerT::SlicerT(InstrumentTrack* instrumentTrack)
 	m_sliceSnap.addItem("1/32");
 	m_sliceSnap.setValue(0);
 	resetSliceControls();
+	// The render path's own view starts empty (an empty sample); every change of the sample or of the
+	// slice map publishes a new one: updateFile, updateSlices, loadSettings, the waveform's slice edits
+	// and SlicerTView::clearSlices.
+	publishPlaybackSnapshot();
 }
 
 void SlicerT::applyConverterMode(AudioResampler::Mode mode)
@@ -173,9 +187,29 @@ SlicerT::PlaybackSlot* SlicerT::acquirePlaybackSlot(int startFrame) noexcept
 
 void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 {
-	if (m_originalSample.sampleSize() <= 1) { return; }
-
 	int noteIndex = handle->key() - m_parentTrack->baseNote();
+
+	if (handle->m_pluginData == &m_noPlaybackSlotTag)
+	{
+		publishPlayhead(-1, 0, 0);
+		return;
+	}
+
+	// The publication this note renders: its own, pinned on the note's first period, or on that first
+	// period the one current now. renderNextPeriod() holds the engine's change lock for the whole
+	// period and publishPlaybackSnapshot() takes the same lock, so this read cannot see a control
+	// thread half way through publishing a replacement.
+	auto* playbackSlot = static_cast<PlaybackSlot*>(handle->m_pluginData);
+	const PlaybackSnapshot* const snapshot
+		= playbackSlot != nullptr ? playbackSlot->snapshot.get() : m_playbackSnapshot.get();
+	if (snapshot == nullptr || snapshot->sample.sampleSize() <= 1)
+	{
+		publishPlayhead(-1, 0, 0);
+		return;
+	}
+	const Sample& sample = snapshot->sample;
+	const std::vector<float>& slicePoints = snapshot->slicePoints;
+
 	const f_cnt_t frames = handle->framesLeftForCurrentPeriod();
 	const f_cnt_t offset = handle->noteOffset();
 	const int bpm = Engine::getSong()->getTempo();
@@ -186,18 +220,18 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 	speedRatio *= pitchRatio;
 
 	float sliceStart, sliceEnd;
-	int sliceIndex = -1; // the base note plays the whole sample: no per-slice controls
+	bool sliceNote = false; // the base note plays the whole sample: no per-slice controls
 	if (noteIndex == 0) // full sample at base note
 	{
 		sliceStart = 0;
 		sliceEnd = 1;
 	}
-	else if (noteIndex > 0 && static_cast<std::size_t>(noteIndex) < m_slicePoints.size())
+	else if (noteIndex > 0 && static_cast<std::size_t>(noteIndex) < slicePoints.size())
 	{
 		noteIndex -= 1;
-		sliceIndex = noteIndex;
-		sliceStart = m_slicePoints[noteIndex];
-		sliceEnd = m_slicePoints[noteIndex + 1];
+		sliceNote = true;
+		sliceStart = slicePoints[noteIndex];
+		sliceEnd = slicePoints[noteIndex + 1];
 	}
 	else
 	{
@@ -205,32 +239,28 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 		return;
 	}
 
-	const auto startFrame = static_cast<int>(sliceStart * m_originalSample.sampleSize());
-	if (handle->m_pluginData == &m_noPlaybackSlotTag)
+	const auto startFrame = static_cast<int>(sliceStart * sample.sampleSize());
+	if (playbackSlot == nullptr)
 	{
-		publishPlayhead(-1, 0, 0);
-		return;
-	}
-	if (handle->m_pluginData == nullptr)
-	{
-		auto* slot = acquirePlaybackSlot(startFrame);
-		if (slot == nullptr)
+		playbackSlot = acquirePlaybackSlot(startFrame);
+		if (playbackSlot == nullptr)
 		{
 			handle->m_pluginData = &m_noPlaybackSlotTag;
 			Engine::audioEngine()->recordSlicerTStateOverflow();
 			publishPlayhead(-1, 0, 0);
 			return;
 		}
-		handle->m_pluginData = slot;
+		// Pin it: a replacement published from now on is for later notes, not for this one.
+		playbackSlot->snapshot = m_playbackSnapshot;
+		handle->m_pluginData = playbackSlot;
 	}
 
-	auto* playbackSlot = static_cast<PlaybackSlot*>(handle->m_pluginData);
 	auto* playbackState = &playbackSlot->state;
-	const auto endFrame = sliceEnd * m_originalSample.sampleSize();
+	const auto endFrame = sliceEnd * sample.sampleSize();
 	const auto framesLeft = endFrame - playbackState->frameIndex();
 
 	if (framesLeft > 0
-		&& m_originalSample.play(out.data() + offset, playbackState, frames, Sample::Loop::Off, speedRatio))
+		&& sample.play(out.data() + offset, playbackState, frames, Sample::Loop::Off, speedRatio))
 	{
 		// exponential fade out, applyRelease() not used since it extends the note length
 		// At least one frame: a FadeOut of 0 divided 0 by 0 on the slice's last frame, a NaN in the output.
@@ -246,12 +276,18 @@ void SlicerT::playNoteImpl(NotePlayHandle* handle, std::span<SampleFrame> out)
 			out[i + offset][1] *= fadeValue;
 		}
 
-		if (sliceIndex >= 0 && static_cast<std::size_t>(sliceIndex) < slicer::MaxSlices)
+		// The per-slice controls stay LIVE but must belong to the interval this note renders: a merge or
+		// a split shifts the control banks with the map (sliceMerged/sliceSplit), so the controls are
+		// those of the live slice that contains the note's own start - not those of whichever slice now
+		// sits at the index the map had for it. The live map is the current publication, which the
+		// render period's own lock keeps from being replaced under this read.
+		const int controlSlice = sliceNote ? liveSliceFor(sliceStart) : -1;
+		if (controlSlice >= 0 && static_cast<std::size_t>(controlSlice) < slicer::MaxSlices)
 		{
-			applySliceControls(playbackSlot->voice, sliceIndex, out.data() + offset, frames);
+			applySliceControls(playbackSlot->voice, controlSlice, out.data() + offset, frames);
 		}
 
-		const auto currentNote = static_cast<float>(playbackState->frameIndex()) / m_originalSample.sampleSize();
+		const auto currentNote = static_cast<float>(playbackState->frameIndex()) / sample.sampleSize();
 		publishPlayhead(currentNote, sliceStart, sliceEnd);
 	}
 	else { publishPlayhead(-1, 0, 0); }
@@ -268,10 +304,43 @@ void SlicerT::deleteNotePluginData(NotePlayHandle* handle)
 	{
 		auto* slot = static_cast<PlaybackSlot*>(handle->m_pluginData);
 		slot->state.reset();
+		// The note's publication goes with it. The plugin still holds the same object - as the current
+		// publication or in m_retiredSnapshots, which drops a retired one only while no note pins it -
+		// so this release is never the last one and the buffer is not freed here, on the audio thread.
+		slot->snapshot.reset();
 		slot->inUse.store(false, std::memory_order_release);
 		handle->m_pluginData = nullptr;
 	}
 	publishPlayhead(-1, 0, 0);
+}
+
+// Control thread: publish the current sample and slice map as one immutable object for the notes that
+// start from now (see PlaybackSnapshot). The engine's change guard excludes the whole render period, so
+// a note that pins a publication on the render thread cannot read this assignment half done. The
+// replaced publication is retained while a sounding note still pins it and destroyed here, on this
+// thread, once no note holds it - never on the audio thread.
+void SlicerT::publishPlaybackSnapshot()
+{
+	auto next = std::make_shared<PlaybackSnapshot>();
+	next->sample = m_originalSample;
+	next->slicePoints = m_slicePoints;
+
+	AudioEngine* const engine = Engine::audioEngine();
+	const auto guard = engine ? engine->requestChangesGuard() : AudioEngine::RequestChangesGuard{};
+
+	m_retiredSnapshots.push_back(std::move(m_playbackSnapshot));
+	m_playbackSnapshot = std::move(next);
+	m_retiredSnapshots.erase(std::remove_if(m_retiredSnapshots.begin(), m_retiredSnapshots.end(),
+		[](const std::shared_ptr<const PlaybackSnapshot>& retired) {
+			return retired == nullptr || retired.use_count() == 1;
+		}),
+		m_retiredSnapshots.end());
+}
+
+int SlicerT::liveSliceFor(float point) const noexcept
+{
+	const PlaybackSnapshot* const live = m_playbackSnapshot.get();
+	return live != nullptr ? sliceContainingPoint(live->slicePoints, point) : -1;
 }
 
 void SlicerT::applySliceControls(SliceVoice& voice, int slice, SampleFrame* block, f_cnt_t frames) noexcept
@@ -588,6 +657,7 @@ void SlicerT::updateFile(QString file)
 
 	findBPM();
 	findSlices();
+	publishPlaybackSnapshot();
 
 	emit dataChanged();
 }
@@ -600,6 +670,7 @@ void SlicerT::loadFile(const QString& file)
 void SlicerT::updateSlices()
 {
 	findSlices();
+	publishPlaybackSnapshot();
 }
 
 void SlicerT::saveSettings(QDomDocument& document, QDomElement& element)
@@ -691,6 +762,7 @@ void SlicerT::loadSettings(const QDomElement& element)
 	m_originalBPM.loadSettings(element, "origBPM");
 	m_enableSync.loadSettings(element, "syncEnable");
 
+	publishPlaybackSnapshot();
 	emit dataChanged();
 }
 
