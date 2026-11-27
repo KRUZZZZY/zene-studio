@@ -3242,6 +3242,7 @@ tests/src/core/RenderTaskLifecycleTest.cpp
 tests/src/core/RetroAudioCaptureTest.cpp
 tests/src/core/RetroMidiCaptureCommandsTest.cpp
 tests/src/core/RetroMidiRingTest.cpp
+tests/src/core/RetroTakeDefaultPathTest.cpp
 tests/src/core/ReversibilityContractTest.cpp
 tests/src/core/ReversibilityTestSupport.h
 tests/src/core/ReversibilityUndoDeviceTest.cpp
