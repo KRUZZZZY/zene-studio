@@ -95,13 +95,26 @@ void push(int route, const float* samples, int stride, f_cnt_t frames) noexcept
 	if (route < recorder.trackCount()) { recorder.track(route).processInputInterleaved(samples, stride, frames); }
 }
 
+//! Whether mixer channel @a channelId still exists. With no mixer there is nothing to check against: true.
+bool channelExists(int channelId)
+{
+	Mixer* mixer = Engine::mixer();
+	if (mixer == nullptr) { return true; }
+	for (int i = 0; i < static_cast<int>(mixer->numChannels()); ++i)
+	{
+		if (mixer->mixerChannel(i)->id() == channelId) { return true; }
+	}
+	return false;
+}
+
 } // namespace
 
 void set(int route, const Tap& tap)
 {
 	if (route < 0 || route >= MultiTrackRecorder::MaxRoutes) { return; }
+	const Tap stored = tap.source == Source::Channel && !channelExists(tap.channelId) ? Tap{} : tap;
 	// Only the pending table: beginPeriod() publishes it at the next period boundary.
-	pendingTable()[static_cast<std::size_t>(route)].store(pack(tap), std::memory_order_release);
+	pendingTable()[static_cast<std::size_t>(route)].store(pack(stored), std::memory_order_release);
 }
 
 Tap get(int route)
@@ -113,6 +126,19 @@ Tap get(int route)
 bool tapped(int route) noexcept
 {
 	return route >= 0 && route < MultiTrackRecorder::MaxRoutes && pendingTapOf(static_cast<std::size_t>(route)).source != Source::Input;
+}
+
+int channelDeleted(int channelId)
+{
+	int reset = 0;
+	for (auto& entry : pendingTable())
+	{
+		const Tap tap = unpack(entry.load(std::memory_order_acquire));
+		if (tap.source != Source::Channel || tap.channelId != channelId) { continue; }
+		entry.store(pack(Tap{}), std::memory_order_release);
+		++reset;
+	}
+	return reset;
 }
 
 void beginPeriod() noexcept
