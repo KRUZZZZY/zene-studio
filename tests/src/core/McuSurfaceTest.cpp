@@ -29,11 +29,18 @@
 
 #include <QtTest>
 
+#include <QScopeGuard>
+#include <QTemporaryDir>
+
+#include "AudioEngine.h"
 #include "AutomatableModel.h"
+#include "ConfigManager.h"
 #include "ControlRegistry.h"
+#include "ControlVocabulary.h"
 #include "Engine.h"
 #include "McuProtocol.h"
 #include "McuSurface.h"
+#include "MultiTrackRecorder.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackMixModels.h"
@@ -235,6 +242,67 @@ private slots:
 		QCOMPARE(afterBankRight, mcu::Strips);
 		QCOMPARE(afterBankLeft, 0);
 		QCOMPARE(afterChannelRight, 9);
+	}
+
+	/*! Cluster 4736: the surface's REC button follows the TRACK, not the row it stands on. A track
+	 *  that moved onto another track's armed row must not claim (and therefore stop, un-arm or
+	 *  re-arm) that capture, and the track whose row moved must still stop its OWN capture. The
+	 *  surface asks the same query the window's arm button does. */
+	void recFollowsTheTrackWhenAnotherTrackMovesOntoItsRow()
+	{
+		QTemporaryDir takes;
+		QVERIFY(takes.isValid());
+		const auto restoreDir = qScopeGuard([previous = ConfigManager::inst()->workingDir()] { ConfigManager::inst()->setWorkingDir(previous); });
+		ConfigManager::inst()->setWorkingDir(takes.path());
+		Song* song = Engine::getSong();
+		QList<Track*> made;
+		for (int i = 0; i < 2; ++i) { made.append(Track::create(Track::Type::Instrument, song)); }
+		const auto dropTracks = qScopeGuard([&made] { qDeleteAll(made); made.clear(); });
+		McuSurface* surface = McuSurface::connect(QString(), QString());
+		QVERIFY(surface != nullptr);
+		const auto disconnect = qScopeGuard([] { McuSurface::disconnect(); });
+		MultiTrackRecorder& recorder = Engine::audioEngine()->recorder();
+		const auto stopCaptures = qScopeGuard([&recorder] { recorder.disarmAll(); });
+
+		Track* mover = made.at(0);
+		Track* owner = made.at(1);
+		const auto rowOf = [song](const Track* track) {
+			const TrackContainer::TrackList& list = song->tracks();
+			return static_cast<int>(std::find(list.begin(), list.end(), track) - list.begin());
+		};
+		QCOMPARE(rowOf(owner), rowOf(mover) + 1);
+		const ControlResult armed = ControlRegistry::instance()->invoke(QStringLiteral("track.set_arm"),
+			{{QStringLiteral("track"), control::trackIdOf(owner)}, {QStringLiteral("armed"), true}});
+		QVERIFY2(armed.ok, qPrintable(armed.errorMessage));
+		const int route = armed.result.value(QStringLiteral("route")).toInt();
+		QVERIFY(route >= 0 && route < recorder.trackCount());
+		QVERIFY(recorder.track(route).isArmed());
+
+		// The track above moves onto the armed row; the armed track sits one row lower.
+		const ControlResult moved = ControlRegistry::instance()->invoke(QStringLiteral("track.move"),
+			{{QStringLiteral("track"), control::trackIdOf(mover)}, {QStringLiteral("index"), route}});
+		QVERIFY2(moved.ok, qPrintable(moved.errorMessage));
+		QCOMPARE(rowOf(mover), route);
+		QCOMPARE(rowOf(owner), route - 1);
+		QVERIFY(recorder.track(route).isArmed());
+
+		int moverStrip = -1;
+		int ownerStrip = -1;
+		for (int strip = 0; strip < mcu::Strips; ++strip)
+		{
+			if (surface->stripTrack(strip) == mover) { moverStrip = strip; }
+			if (surface->stripTrack(strip) == owner) { ownerStrip = strip; }
+		}
+		QVERIFY(moverStrip >= 0 && ownerStrip >= 0);
+
+		// The row is not the mover's capture: its REC press must neither stop nor re-arm it.
+		surface->apply({mcu::Kind::Rec, moverStrip, 0, true});
+		QVERIFY2(recorder.track(route).isArmed(), "the mover's REC press stopped another track's capture");
+
+		// The owner's row moved, but the capture is still its own: REC stops it.
+		surface->apply({mcu::Kind::Rec, ownerStrip, 0, true});
+		QVERIFY2(!recorder.track(route).isArmed(),
+			"the surface read the owner's new row and never stopped its capture");
 	}
 };
 

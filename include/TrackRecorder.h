@@ -145,6 +145,17 @@ public:
 
 	std::string filePath() const { return m_filePath; }
 
+	//! The stable id (Track::id()) of the song track that armed this route through track.set_arm,
+	//! or -1 when the route was armed by number (record.arm_track) or is not armed.
+	//!
+	//! The track -> route mapping is a POSITION in the song, and positions move when tracks are
+	//! inserted, removed or reordered. This is what keeps a running capture bound to the track that
+	//! started it: with it, `track.set_arm {armed: false}` on that track stops ITS route instead of
+	//! whatever route now sits where the track used to be. Written by arm()/disarm() and the
+	//! control command that arms a track; never read or written by the audio thread.
+	void setArmedTrackId(int id) noexcept { m_armedTrackId.store(id, std::memory_order_relaxed); }
+	int armedTrackId() const noexcept { return m_armedTrackId.load(std::memory_order_relaxed); }
+
 	//! The take journal's path while this capture is journalled, or empty when
 	//! it is not (0.3.0). arm() writes the journal beside the take and disarm()
 	//! removes it - a CLEAN stop leaves no journal, which is what makes "there is
@@ -197,6 +208,11 @@ private:
 	std::atomic<std::uint64_t> m_writeErrors{0};
 
 	std::string m_filePath;
+
+	// The song track this route's capture belongs to, by stable id: -1 unless track.set_arm armed
+	// it, and reset by arm() and disarm() so a route armed by number never carries a stale owner.
+	// Relaxed because only the control thread reads it; the audio thread's atomics are above.
+	std::atomic<int> m_armedTrackId{-1};
 
 	// The take journal (0.3.0). m_journalPath is set in arm() before the writer
 	// thread starts and cleared in disarm() after it is joined, so the writer

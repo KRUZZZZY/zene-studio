@@ -31,12 +31,12 @@
 
 #include "AudioEngine.h"
 #include "AutomatableModel.h"
+#include "ControlEdit.h"
 #include "ControlRegistry.h"
 #include "ControlVocabulary.h"
 #include "Engine.h"
 #include "MidiClient.h"
 #include "MidiPort.h"
-#include "MultiTrackRecorder.h"
 #include "Song.h"
 #include "Track.h"
 #include "TrackMixModels.h"
@@ -67,15 +67,14 @@ ControlResult run(const QString& id, const QJsonObject& args = {})
 	return ControlRegistry::instance()->invoke(id, args);
 }
 
-//! Whether the record route @a track maps to (its place in the song, as track.set_arm maps it) is
-//! armed - however it was armed: from the surface, by a command or in the window.
+//! Whether @a track has an armed record route - however it was armed: from the surface, by a command
+//! or in the window. The route follows the TRACK by its stable id (cluster 4736), so a track whose
+//! row moved keeps toggling the capture it started instead of whatever route now sits on its old row,
+//! and a track that moved onto an armed row does not take that capture for its own. This is the same
+//! query the window's arm button uses, so the surface and the window cannot disagree.
 bool routeArmed(const Track* track)
 {
-	const TrackContainer::TrackList& tracks = Engine::getSong()->tracks();
-	const auto found = std::find(tracks.begin(), tracks.end(), track);
-	const auto route = static_cast<int>(found - tracks.begin());
-	const MultiTrackRecorder& recorder = Engine::audioEngine()->recorder();
-	return found != tracks.end() && route < recorder.trackCount() && recorder.track(route).isArmed();
+	return control::trackRecordArmed(track);
 }
 
 //! How far a transport input moves the play position: a bar for rewind / forward, a beat per jog detent.
