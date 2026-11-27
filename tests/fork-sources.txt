@@ -4136,3 +4136,6 @@ plugins/VstEffect/VstWetDryMix.h
 # Cluster ci-d3e29f18fa53a626: the Qt 5 QStringList fill-constructor build regression and its port report.
 tests/ci-d3e29f18-mixer-faders-portability-check.py
 docs/qwen-fixes-2026-10/cluster-ci-d3e29f18fa53a626-port.md
+# cluster new-p10-505: the wide, checked frame total AudioSampleRecorder::createSampleBuffer()
+# sizes its destination with, and its INT_MAX / SIZE_MAX boundaries (fork-NEW test).
+tests/src/core/AudioSampleRecorderTest.cpp
