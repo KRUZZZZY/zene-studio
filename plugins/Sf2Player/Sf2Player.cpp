@@ -552,6 +552,11 @@ void Sf2Instrument::openFile( const QString & _sf2File, bool updateTrackName )
 
 	const QString absolutePath = PathUtil::toAbsolute( _sf2File );
 	const QByteArray nativePath = QFile::encodeName( absolutePath );
+	// The bytes the player is playing now. loadFont() replaces them before the
+	// candidate synth is built, so a load that fails after that point has to put
+	// them back: the instrument must keep playing, and reloading, the font it
+	// still names.
+	const auto previousFontData = m_fontData;
 
 	// The soundfont is read into the instrument's own copy, which keeps it
 	// alive: a synth that plays it can be replaced without reading the file
@@ -597,6 +602,7 @@ void Sf2Instrument::openFile( const QString & _sf2File, bool updateTrackName )
 		else
 		{
 			destroySynth( candidate.synth );
+			m_fontData = previousFontData;
 			collectErrorForUI( Sf2Instrument::tr( "A soundfont %1 could not be loaded." )
 				.arg( QFileInfo( _sf2File ).baseName() ) );
 		}
@@ -604,6 +610,7 @@ void Sf2Instrument::openFile( const QString & _sf2File, bool updateTrackName )
 	else
 	{
 		destroySynth( candidate.synth );
+		m_fontData = previousFontData;
 		collectErrorForUI( Sf2Instrument::tr( "A soundfont %1 could not be loaded." )
 			.arg( QFileInfo( _sf2File ).baseName() ) );
 	}
