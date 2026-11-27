@@ -23,6 +23,7 @@
 
 #include <cmath>
 #include <memory>
+#include <utility>
 
 #include "ControlVocabulary.h"
 #include "InstrumentView.h"
@@ -139,6 +140,32 @@ private slots:
 		const float half = p.left[static_cast<std::size_t>(static_cast<long>(m_fpp) * 2 + release / 2)];
 		QVERIFY2(std::abs(half - 0.5f * full) < 0.05f * full, qPrintable(QStringLiteral("%1 vs %2").arg(half).arg(full)));
 		NotePlayHandleManager::release(p.nph);
+	}
+
+	//! Stutter still chains notes: a note started after another one begins where the previous note stopped. This is
+	//! the behaviour the shared continuation exists for, and the coherent-snapshot fix must leave it exactly as it was.
+	void stutterContinuesWhereThePreviousNoteStopped()
+	{
+		freshSampler(writeWav(m_dir.filePath(QStringLiteral("ramp.wav")), true));
+		setValue(QStringLiteral("Stutter"), 1.f);
+		setValue(QStringLiteral("Loop mode"), 0.f);
+
+		Played a = start();
+		renderPeriods({&a}, 2);
+		// Key 69 plays the sample at its own pitch: two periods advanced the sample by two periods' frames, and the
+		// ramp sample makes the first frame of the next note show where it started.
+		const f_cnt_t stopped = 2 * m_fpp;
+		const float rampAtStop = 0.9f * static_cast<float>(stopped) / static_cast<float>(2 * m_rate);
+		QVERIFY(rampAtStop > 0.f);
+
+		Played b = start();
+		renderPeriod(b);
+		QVERIFY2(b.left.size() == static_cast<std::size_t>(m_fpp), "the note rendered a period");
+		QVERIFY2(std::abs(b.left[0] - rampAtStop) < 0.15f * rampAtStop + 1e-4f,
+			qPrintable(QStringLiteral("the stutter note started at the ramp value %1 instead of %2")
+				.arg(b.left[0]).arg(rampAtStop)));
+		NotePlayHandleManager::release(a.nph);
+		NotePlayHandleManager::release(b.nph);
 	}
 
 	//! The envelope values and the voice limit save, load, and leave the loop controls as they were.
