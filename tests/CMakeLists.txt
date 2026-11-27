@@ -362,6 +362,11 @@ set(LMMS_TESTS
 	# record.arm_track writes a take outside the project journal: feed a real
 	# interleaved block, then prove control.undo refuses and names the retained file.
 	src/core/ControlRecordingRoutesTest.cpp
+	# cluster new-p12-63-port: record.retro_capture_to_take's default path names
+	# its own take - two default takes, an explicit file, a refused write and
+	# exhaustion, all through the registry on a real engine. Its own file because
+	# ControlRecordingRoutesTest.cpp is at the file-length ratchet's ceiling.
+	src/core/RetroTakeDefaultPathTest.cpp
 	# The destructive waveform editor's first slice (board card #706, group
 	# sample.*): the five ids with their schemas and their A16 contract rows,
 	# every generator and baker proved the A16 way - invoke through the
@@ -8978,6 +8983,11 @@ set_tests_properties(ControlRecordingRoutesTest PROPERTIES
 set_tests_properties(ControlSampleOperatorTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ControlSampleBakeGuardTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# Cluster new-p12-63-port: the default retrospective take path is driven through
+# the registry on a real Engine (the record.* group is engine-gated) and writes
+# real WAVs, so it wants a real Qt platform plugin though nothing opens a window.
+set_tests_properties(RetroTakeDefaultPathTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 # Cluster 2073: the journal guard drives the record.* commands on a real Engine
 # (the group is engine-gated) and writes real WAVs and side files, so it wants a
