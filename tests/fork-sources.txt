@@ -4182,3 +4182,5 @@ docs/qwen-fixes-2026-10/cluster-new-p9-329-port.md
 # cluster new-p14-85 (2026-11): de-esser bypass must clear envelope and gain; regression and verification report.
 tests/src/plugins/DeEsserBypassTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p14-85.md
+# cluster 2099 (2026-11): a refused subproject placement deletes the render it made (fork-NEW regression).
+docs/qwen-fixes-2026-10/cluster-2099.md

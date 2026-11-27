@@ -36,6 +36,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QDomElement>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonArray>
 
@@ -197,15 +198,36 @@ ControlResult addSubproject(const QJsonObject& args)
 	const auto at = static_cast<tick_t>(args.value(QStringLiteral("at")).toInt(0));
 	const QString name = QFileInfo(path).completeBaseName();
 	auto made = std::make_shared<Subproject>(Subproject{0, path, audio, QDateTime::currentMSecsSinceEpoch()});
-	const auto place = [made, name, at]() {
-		Track* track = landAudioTrack(name, made->audio, at, -1);
-		if (track == nullptr) { return track; }  // no track, no link (an id of 0 is no track's)
+	// The link a landed track records, answering the same track back (an id of 0 is no track's).
+	const auto link = [made](Track* track) {
+		if (track == nullptr) { return track; }  // no track, no link
 		made->track = track->id();
 		section().entries.push_back(*made);
 		return track;
 	};
-	Track* track = place();
-	if (track == nullptr) { return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no track could be made for %1").arg(path)); }
+	// The add again, for a redo: the same file lands on a new track and the link names it.
+	const auto place = [link, name, audio, at]() { return link(landAudioTrack(name, audio, at, -1)); };
+	/*  BUG 13: render makes the file before a track plays it, so until the link records the track nothing in the
+	 *  project names it - no clip, no link, no undo step. A placement that fails (nullptr, or the throw
+	 *  Track::create gives when no track can be allocated) deletes it instead of leaving a WAV in the -subprojects
+	 *  folder that nothing could ever play again. Only the placement is guarded: a track that DID land keeps the
+	 *  file it plays, whatever happens to the link. */
+	Track* track = nullptr;
+	try
+	{
+		track = landAudioTrack(name, audio, at, -1);
+	}
+	catch (...)
+	{
+		QFile::remove(audio);
+		throw;  // the control surface's own error boundary answers the caller with the typed error
+	}
+	if (track == nullptr)
+	{
+		QFile::remove(audio);
+		return ControlResult::failure(ControlErrorKind::Refused, QStringLiteral("no track could be made for %1").arg(path));
+	}
+	link(track);
 	addUndoStep([made]() {
 		removeEntry(made->track);
 		ControlResult ignored;
