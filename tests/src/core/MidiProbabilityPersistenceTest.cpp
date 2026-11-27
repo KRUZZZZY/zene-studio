@@ -530,6 +530,101 @@ private slots:
 		}
 	}
 
+	//! (h) A note read out of a project keeps its volume and panning inside the
+	//! bounds every other route into the note guarantees. The constructor and
+	//! setVolume() / setPanning() clamp, but Note::loadSettings assigned the two
+	//! parsed attributes straight into m_volume / m_panning - and those members
+	//! are volume_t (uint8_t) and panning_t (int8_t), so a file value was
+	//! NARROWED before it was ever bounded: <note vol="300"> loaded as volume
+	//! 44, <note vol="-1"> as 255 (past MaxVolume), <note pan="200"> as -56.
+	//! Out of range is not cosmetic: panningToVolumeVector() returns a NEGATIVE
+	//! gain for |panning| > PanningRight (inverted phase on one side),
+	//! panningToMidi() leaves the MIDI range, and every plugin that scales by
+	//! getVolume() / DefaultVolume goes past unity.
+	//!
+	//! A value the file cannot express at all - the attribute absent, or text
+	//! that is not a number - falls back to the documented neutral default
+	//! rather than to whatever toInt() yields on failure, which is 0: volume
+	//! zero is a silent note, and a note that exists must be audible.
+	void projectLoadedNoteVolumeAndPanningStayInBounds()
+	{
+		QDomDocument doc;
+		QDomElement root = doc.createElement( QStringLiteral( "notes" ) );
+
+		// Readable but out-of-range text clamps to the setter's bounds, and is
+		// clamped BEFORE it is narrowed into the member's type. The in-range
+		// rows are the "old projects load exactly as before" half.
+		const std::pair<const char*, int> volumeRows[] = {
+			{ "300", MaxVolume }, { "255", MaxVolume }, { "201", MaxVolume },
+			{ "2147483647", MaxVolume }, { "-1", MinVolume }, { "-300", MinVolume },
+			{ "200", MaxVolume }, { "100", DefaultVolume }, { "0", MinVolume } };
+		for ( const auto& row : volumeRows )
+		{
+			QDomElement element = noteElementWith( doc, root, "1", "0" );
+			element.setAttribute( QStringLiteral( "vol" ), QLatin1String( row.first ) );
+			Note loaded;
+			loaded.restoreState( element );
+			QVERIFY2( static_cast<int>( loaded.getVolume() ) == row.second, row.first );
+			// the velocity the note sends is an in-range MIDI one, not a
+			// wrapped volume's
+			QVERIFY2( loaded.midiVelocity( 63 ) >= 0 && loaded.midiVelocity( 63 ) <= 127,
+				row.first );
+		}
+
+		const std::pair<const char*, int> panningRows[] = {
+			{ "200", PanningRight }, { "127", PanningRight }, { "101", PanningRight },
+			{ "2147483647", PanningRight }, { "-101", PanningLeft },
+			{ "-128", PanningLeft }, { "100", PanningRight }, { "0", PanningCenter },
+			{ "-100", PanningLeft } };
+		for ( const auto& row : panningRows )
+		{
+			QDomElement element = noteElementWith( doc, root, "1", "0" );
+			element.setAttribute( QStringLiteral( "pan" ), QLatin1String( row.first ) );
+			Note loaded;
+			loaded.restoreState( element );
+			QVERIFY2( static_cast<int>( loaded.getPanning() ) == row.second, row.first );
+			// no negative gain out of panningToVolumeVector(): both sides of
+			// the stereo pair stay between silence and unity
+			const StereoVolumeVector gains = panningToVolumeVector( loaded.getPanning() );
+			QVERIFY2( gains.vol[0] >= 0.f && gains.vol[0] <= 1.f
+				&& gains.vol[1] >= 0.f && gains.vol[1] <= 1.f, row.first );
+		}
+
+		// Text the file cannot express is treated as absent, not as zero.
+		for ( const char* text : { "", "bad", "1.5" } )
+		{
+			QDomElement element = noteElementWith( doc, root, "1", "0" );
+			element.setAttribute( QStringLiteral( "vol" ), QLatin1String( text ) );
+			element.setAttribute( QStringLiteral( "pan" ), QLatin1String( text ) );
+			Note loaded;
+			loaded.restoreState( element );
+			QVERIFY2( static_cast<int>( loaded.getVolume() ) == DefaultVolume, text );
+			QVERIFY2( static_cast<int>( loaded.getPanning() ) == DefaultPanning, text );
+		}
+
+		// ...and so is an attribute that is not there at all, which is what a
+		// hand-written or third-party note element looks like.
+		{
+			QDomElement element = noteElementWith( doc, root, "1", "0" );
+			element.removeAttribute( QStringLiteral( "vol" ) );
+			element.removeAttribute( QStringLiteral( "pan" ) );
+			Note loaded;
+			loaded.restoreState( element );
+			QCOMPARE( static_cast<int>( loaded.getVolume() ), static_cast<int>( DefaultVolume ) );
+			QCOMPARE( static_cast<int>( loaded.getPanning() ), static_cast<int>( DefaultPanning ) );
+		}
+
+		// The existing rule is untouched: a note the engine set to an in-range
+		// volume and panning round trips through its own saved element exactly.
+		Note source( TimePos( 384 ), TimePos( 0 ), 60 );
+		source.setVolume( 150 );
+		source.setPanning( -60 );
+		Note reloaded;
+		reloaded.restoreState( source.saveState( doc, root ) );
+		QCOMPARE( static_cast<int>( reloaded.getVolume() ), 150 );
+		QCOMPARE( static_cast<int>( reloaded.getPanning() ), -60 );
+	}
+
 	//! A malformed project key of -1 loads as key 0. A legacy tone of -1 also gives -1, so the loader's
 	//! max() keeps the negative and only the clamp on load floors it. scale.detect indexes by key % 12.
 	void negativeProjectKeyLoadsAsKeyZero()
