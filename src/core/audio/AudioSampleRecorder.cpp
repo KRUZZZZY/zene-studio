@@ -27,6 +27,8 @@
 #include "AudioSampleRecorder.h"
 #include "SampleBuffer.h"
 
+#include <limits>
+
 
 namespace lmms
 {
@@ -61,23 +63,66 @@ f_cnt_t AudioSampleRecorder::framesRecorded() const
 	f_cnt_t frames = 0;
 	for (const auto& buffer : m_buffers)
 	{
+		// Saturating, not wrapping: a total past what f_cnt_t can name is reported as the
+		// largest nameable count, so no caller reads a small number out of a big take.
+		if( buffer.second > std::numeric_limits<f_cnt_t>::max() - frames )
+		{
+			return std::numeric_limits<f_cnt_t>::max();
+		}
 		frames += buffer.second;
 	}
 	return frames;
 }
 
+
+bool AudioSampleRecorder::totalFramesWithin( const f_cnt_t* counts, const std::size_t n,
+						std::size_t capacity, std::size_t& total ) noexcept
+{
+	std::size_t sum = 0;
+	for( std::size_t i = 0; i < n; ++i )
+	{
+		// The room left, and the only comparison needed: sum never passes capacity, so an
+		// oversized block is refused before it can add past the destination and wrap.
+		if( counts[i] > capacity - sum )
+		{
+			return false;
+		}
+		sum += static_cast<std::size_t>( counts[i] );
+	}
+	total = sum;
+	return true;
+}
+
+
 std::shared_ptr<const SampleBuffer> AudioSampleRecorder::createSampleBuffer()
 {
-	const f_cnt_t frames = framesRecorded();
-	// create buffer to store all recorded buffers in
-	auto bigBuffer = std::vector<SampleFrame>(frames);
+	// The blocks' frame counts in one array: the wide, checked total below reads a plain
+	// f_cnt_t range, which is what a unit test can hand it without the recording.
+	std::vector<f_cnt_t> counts;
+	counts.reserve( static_cast<std::size_t>( m_buffers.size() ) );
+	for( const auto& buffer : m_buffers )
+	{
+		counts.push_back( buffer.second );
+	}
+
+	std::vector<SampleFrame> bigBuffer;
+	std::size_t frames = 0;
+	// The destination holds one SampleFrame per frame and is indexed by its signed
+	// difference_type: a total either of them cannot represent is refused before anything is
+	// allocated, so the copy below never indexes past what the vector holds.
+	if( !totalFramesWithin( counts.data(), counts.size(), bigBuffer.max_size(), frames ) )
+	{
+		return nullptr;
+	}
+	bigBuffer.resize( frames );
 
 	// now copy all buffers into big buffer
-	auto framesCopied = 0;
+	std::size_t framesCopied = 0;
 	for (const auto& [buf, numFrames] : m_buffers)
 	{
-		std::copy_n(buf, numFrames, bigBuffer.begin() + framesCopied);
-		framesCopied += numFrames;
+		std::copy_n(buf, numFrames,
+			bigBuffer.begin() + static_cast<std::ptrdiff_t>(framesCopied));
+		framesCopied += static_cast<std::size_t>(numFrames);
 	}
 
 	// create according sample-buffer out of big buffer
