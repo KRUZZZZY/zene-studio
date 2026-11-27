@@ -72,6 +72,14 @@ Plugin::Descriptor PLUGIN_EXPORT audiofileprocessor_plugin_descriptor =
 
 
 
+// Cluster new-p15-260-port: note jobs of one instrument render on the engine's worker pool. The continuation they
+// share is one word, so the frame and the direction always come from the same publication, and it must be lock-free:
+// a lock or allocation here would stall the render path.
+static_assert(std::atomic<std::uint64_t>::is_always_lock_free, "note jobs share the stutter continuation lock-free");
+static_assert(std::atomic<f_cnt_t>::is_always_lock_free, "the playhead the render path publishes stays lock-free");
+
+
+
 
 AudioFileProcessor::AudioFileProcessor( InstrumentTrack * _instrument_track ) :
 	Instrument( _instrument_track, &audiofileprocessor_plugin_descriptor ),
@@ -90,8 +98,7 @@ AudioFileProcessor::AudioFileProcessor( InstrumentTrack * _instrument_track ) :
 	// Built for the converter Sample::play asks for, so a note start never re-creates a converter state.
 	m_voices( std::make_unique<SamplerVoicePool>(
 		AudioResampler::modeForSrcQuality( ExportRenderSettings::srcQuality() ) ) ),
-	m_nextPlayStartPoint( 0 ),
-	m_nextPlayBackwards( false )
+	m_stutterContinuation( 0 )
 {
 	connect( &m_reverseModel, SIGNAL( dataChanged() ),
 				this, SLOT( reverseModelChanged() ), Qt::DirectConnection );
@@ -163,8 +170,7 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 	// played.
 	if( m_stutterModel.value() == true && nph->frequency() < 20.0 )
 	{
-		m_nextPlayStartPoint = m_sample.startFrame();
-		m_nextPlayBackwards = false;
+		publishStutterContinuation( StutterStart{ static_cast<f_cnt_t>(m_sample.startFrame()), false } );
 		return;
 	}
 
@@ -178,13 +184,11 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 		nph->m_pluginData = handle;
 		handle->claim = pool->acquire(m_voiceLimitModel.value());
 
-		if (m_stutterModel.value() == true && m_nextPlayStartPoint >= static_cast<std::size_t>(m_sample.endFrame()))
-		{
-			// Restart playing the note if in stutter mode, not in loop mode,
-			// and we're at the end of the sample.
-			m_nextPlayStartPoint = m_sample.startFrame();
-			m_nextPlayBackwards = false;
-		}
+		// Restart the continuation at the sample start when stutter mode is on and it reached the end. The pair is
+		// read as ONE value, so the frame tested here is the frame (and the direction) this note starts from, even
+		// while another note job of this instrument publishes its own position in between.
+		const StutterStart start = stutterStartForNote(m_stutterModel.value() == true);
+		noteStartHook();
 		if (handle->claim.valid())
 		{
 			// Capture the source once, on the note's first period. A file replacement later must not
@@ -192,8 +196,8 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 			handle->sample = m_sample;
 			handle->loopMode = m_loopModel.value();
 			auto& state = pool->voice(handle->claim.index).state;
-			state.setFrameIndex(m_nextPlayStartPoint);
-			state.setBackwards(m_nextPlayBackwards);
+			state.setFrameIndex(start.frame);
+			state.setBackwards(start.backwards);
 		}
 	}
 
@@ -257,8 +261,8 @@ void AudioFileProcessor::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame
 
 	if( m_stutterModel.value() == true )
 	{
-		m_nextPlayStartPoint = voice.state.frameIndex();
-		m_nextPlayBackwards = voice.state.backwards();
+		publishStutterContinuation( StutterStart{ static_cast<f_cnt_t>(voice.state.frameIndex()),
+			voice.state.backwards() } );
 	}
 }
 
@@ -296,6 +300,28 @@ void AudioFileProcessor::deleteNotePluginData( NotePlayHandle * _n )
 	m_voices->free(handle->claim);
 	std::destroy_at(handle);
 }
+
+
+void AudioFileProcessor::noteStartHook() const
+{
+#ifdef LMMS_TESTING
+	if( m_noteStartHook )
+	{
+		m_noteStartHook();
+	}
+#endif
+}
+
+
+#ifdef LMMS_TESTING
+auto AudioFileProcessor::testVoiceState(const NotePlayHandle* nph) const noexcept -> StutterStart
+{
+	const auto* handle = static_cast<const NoteVoice*>(nph->m_pluginData);
+	if (handle == nullptr || !handle->claim.valid()) { return {}; }
+	const auto& state = m_voices->voice(handle->claim.index).state;
+	return StutterStart{static_cast<f_cnt_t>(state.frameIndex()), state.backwards()};
+}
+#endif
 
 auto AudioFileProcessor::prepareConverterMode(AudioResampler::Mode mode) noexcept -> bool
 {
@@ -424,9 +450,10 @@ auto AudioFileProcessor::beatLen(NotePlayHandle* note) const -> f_cnt_t
 	const auto sampleRateRatio = static_cast<double>(Engine::audioEngine()->outputSampleRate())
 		/ m_sampleRate.load(std::memory_order_relaxed);
 
-	const auto startFrame = m_nextPlayStartPoint >= static_cast<std::size_t>(m_sample.endFrame())
+	const f_cnt_t resumeFrame = stutterContinuation().frame;
+	const auto startFrame = resumeFrame >= static_cast<std::size_t>(m_sample.endFrame())
 		? m_sample.startFrame()
-		: static_cast<f_cnt_t>(m_nextPlayStartPoint);
+		: resumeFrame;
 	const auto duration = m_sample.endFrame() - startFrame;
 
 	return static_cast<f_cnt_t>(std::floor(duration * freqFactor * sampleRateRatio));
@@ -437,8 +464,16 @@ auto AudioFileProcessor::beatLen(NotePlayHandle* note) const -> f_cnt_t
 
 gui::PluginView* AudioFileProcessor::instantiateView( QWidget * _parent )
 {
+#ifdef LMMS_TESTING
+	// Test seam (cluster new-p15-260-port): a test target compiles this translation unit without the plugin's view,
+	// because no test opens the sampler window. The shipping build is untouched.
+	Q_UNUSED( _parent );
+	return nullptr;
+#else
 	return new gui::AudioFileProcessorView( this, _parent );
+#endif
 }
+
 
 void AudioFileProcessor::setAudioFile(const QString& _audio_file, bool _rename)
 {
@@ -493,8 +528,7 @@ void AudioFileProcessor::replaceSample(Sample next)
 void AudioFileProcessor::reverseModelChanged()
 {
 	m_sample.setReversed(m_reverseModel.value());
-	m_nextPlayStartPoint = m_sample.startFrame();
-	m_nextPlayBackwards = false;
+	publishStutterContinuation( StutterStart{ static_cast<f_cnt_t>(m_sample.startFrame()), false } );
 	emit sampleUpdated();
 }
 
@@ -510,8 +544,7 @@ void AudioFileProcessor::ampModelChanged()
 
 void AudioFileProcessor::stutterModelChanged()
 {
-	m_nextPlayStartPoint = m_sample.startFrame();
-	m_nextPlayBackwards = false;
+	publishStutterContinuation( StutterStart{ static_cast<f_cnt_t>(m_sample.startFrame()), false } );
 }
 
 
@@ -583,8 +616,7 @@ void AudioFileProcessor::pointChanged()
 	const auto f_end = static_cast<f_cnt_t>(m_endPointModel.value() * m_sample.sampleSize());
 	const auto f_loop = static_cast<f_cnt_t>(m_loopPointModel.value() * m_sample.sampleSize());
 
-	m_nextPlayStartPoint = f_start;
-	m_nextPlayBackwards = false;
+	publishStutterContinuation( StutterStart{ f_start, false } );
 
 	m_sample.setAllPointFrames(f_start, f_end, f_loop, f_end);
 	emit dataChanged();
