@@ -4178,3 +4178,6 @@ docs/050-features/Q050-359.md
 docs/qwen-fixes-2026-10/cluster-Q050-359.md
 tests/src/plugins/OpulenZLifetimeTest.cpp
 docs/qwen-fixes-2026-10/cluster-new-p9-329-port.md
+# cluster new-p14-85 (2026-11): de-esser bypass must clear envelope and gain; regression and verification report.
+tests/src/plugins/DeEsserBypassTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p14-85.md

@@ -66,6 +66,9 @@ set(LMMS_TESTS
 	src/core/AllocationProbeTest.cpp
 	src/plugins/LadspaChannelCountsTest.cpp
 	src/plugins/RnnoiseDenoiserEffectTest.cpp
+	# cluster new-p14-85: bypassing the de-esser must clear its envelope and gain, so un-bypassing on
+	# a quiet signal is not turned down by the attenuation the loud signal left behind.
+	src/plugins/DeEsserBypassTest.cpp
 	src/plugins/VstEffectControlsTest.cpp
 	src/core/LegacyVst2ConversionTest.cpp
 	src/core/ArrayVectorTest.cpp
@@ -2301,6 +2304,16 @@ foreach(LMMS_TEST_SRC IN LISTS LMMS_TESTS)
 		if(NOT MSVC)
 			target_link_libraries(${LMMS_TEST_NAME} PRIVATE m)
 		endif()
+	endif()
+	if(LMMS_TEST_NAME STREQUAL "DeEsserBypassTest")
+		target_sources(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/DeEsser/DeEsser.cpp
+			${CMAKE_SOURCE_DIR}/plugins/DeEsser/DeEsser.h)
+		target_include_directories(${LMMS_TEST_NAME} PRIVATE
+			${CMAKE_SOURCE_DIR}/plugins/DeEsser
+			${CMAKE_BINARY_DIR}/plugins/DeEsser)
+		target_compile_definitions(${LMMS_TEST_NAME} PRIVATE
+			PLUGIN_NAME=deesser deesser_EXPORTS)
 	endif()
 	# WinMM short-message packing: the regression reads the output path's source by its compiled-in root.
 	if(LMMS_TEST_NAME STREQUAL "MidiWinMMShortMessageTest")
