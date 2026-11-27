@@ -4139,3 +4139,8 @@ docs/qwen-fixes-2026-10/cluster-ci-d3e29f18fa53a626-port.md
 # cluster new-p10-505: the wide, checked frame total AudioSampleRecorder::createSampleBuffer()
 # sizes its destination with, and its INT_MAX / SIZE_MAX boundaries (fork-NEW test).
 tests/src/core/AudioSampleRecorderTest.cpp
+# cluster new-p15-260-port (round 3): the sampler's stutter continuation is ONE lock-free word (bit 63 the direction,
+# bits 0-62 the frame), and the note start publishes/reads it once - a note can no longer start at one note job's
+# frame with another's direction. This white-box regression compiles the plugin and drives the shipping note-start
+# path through the LMMS_TESTING note-start hook (fork-NEW test).
+tests/src/plugins/SamplerStutterContinuationTest.cpp
