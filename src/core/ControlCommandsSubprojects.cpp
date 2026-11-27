@@ -50,6 +50,7 @@
 #include "ControlVocabulary.h"
 #include "DataFile.h"
 #include "Engine.h"
+#include "PathUtil.h"
 #include "ProjectSection.h"
 #include "SampleClip.h"
 #include "Song.h"
@@ -237,6 +238,31 @@ void pointClips(Track* track, const QString& audio)
 	}
 }
 
+//! The sample file each clip of @a track plays, in clip order (empty for a clip that is no sample clip).
+QStringList clipSamples(Track* track)
+{
+	QStringList files;
+	for (Clip* clip : track->getClips())
+	{
+		const auto* sample = dynamic_cast<SampleClip*>(clip);
+		files.append(sample != nullptr ? PathUtil::toAbsolute(sample->sampleFile()) : QString());
+	}
+	return files;
+}
+
+//! Put each clip of @a track back on the file @a files names for it (what clipSamples() answered before a refresh).
+//! Undo steps run in stack order, so the clips are those the refresh saw; a clip that already plays its file is left alone.
+void restoreClips(Track* track, const QStringList& files)
+{
+	const auto& clips = track->getClips();
+	if (static_cast<qsizetype>(clips.size()) != files.size()) { return; }
+	for (qsizetype i = 0; i < files.size(); ++i)
+	{
+		auto* sample = dynamic_cast<SampleClip*>(clips[static_cast<size_t>(i)]);
+		if (sample != nullptr && !files[i].isEmpty() && PathUtil::toAbsolute(sample->sampleFile()) != files[i]) { sample->setSampleFile(files[i]); }
+	}
+}
+
 ControlResult refreshSubproject(const QJsonObject& args)
 {
 	ControlResult error;
@@ -256,8 +282,14 @@ ControlResult refreshSubproject(const QJsonObject& args)
 		ControlResult ignored;
 		if (Track* owner = resolveTrack(trackId(state.track), &ignored)) { pointClips(owner, state.audio); }
 	};
+	const auto files = std::make_shared<QStringList>(clipSamples(track));  // each clip's own file, before the refresh points them all at the render
+	const int trackKey = track->id();
 	apply(after);
-	addUndoStep([apply, before]() { apply(before); }, [apply, after]() { apply(after); });
+	addUndoStep([apply, before, files, trackKey]() {
+		apply(before);
+		ControlResult ignored;
+		if (Track* owner = resolveTrack(trackId(trackKey), &ignored)) { restoreClips(owner, *files); }
+	}, [apply, after]() { apply(after); });
 	Engine::getSong()->setModified();
 	return ControlResult::success(entryJson(after));
 }
