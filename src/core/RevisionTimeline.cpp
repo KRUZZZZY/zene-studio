@@ -41,6 +41,7 @@
 #include "RevisionTimeline.h"
 
 #include <algorithm>
+#include <memory>
 
 #include <QCoreApplication>
 #include <QCryptographicHash>
@@ -51,6 +52,7 @@
 #include <QJsonArray>
 #include <QStringList>
 
+#include "DataFileSaveLock.h"
 #include "ProjectRecovery.h"
 #include "RevisionTimelineGit.h"
 #include "ProjectRevisions.h"
@@ -435,6 +437,20 @@ bool restoreTimelineRevision(const QString& projectPath, const QString& recovery
 
 	RevisionSlot slot;
 	if (!resolveSlot(projectPath, recoveryFile, id, &slot, error)) { return false; }
+
+	// Cluster new-p10-89. Like restoreProjectRevision, this rotates the revision
+	// set and replaces the live file, so a save in flight in another instance
+	// refuses it before anything is staged, rotated or replaced. (The rotation-id
+	// branch above delegates, and that call takes the lock itself.)
+	QString lockRefusal;
+	const std::unique_ptr<DataFileSaveLock> saveLock = DataFileSaveLock::tryAcquireForProject(
+		projectPath, &lockRefusal);
+	if (!saveLock)
+	{
+		*error = QStringLiteral("%1 was NOT restored: %2. No revision was rotated and the "
+			"project was not replaced.").arg(projectPath, lockRefusal);
+		return false;
+	}
 
 	// Stage FIRST, so nothing is written before the bytes are known readable.
 	QByteArray bytes;

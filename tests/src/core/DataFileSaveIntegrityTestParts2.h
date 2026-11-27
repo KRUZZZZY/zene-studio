@@ -25,6 +25,19 @@
 
 // Complete fixture method definitions; included once after the fixture declaration.
 
+#ifdef Q_OS_UNIX
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 void DataFileSaveIntegrityTest::newFileWithNestedContentBeforeDirectContentIsNotAdopted() {
 	qunsetenv( "ZENE_TEST_SAVE_FAULT" );
 	QTemporaryDir dir;
@@ -276,15 +289,37 @@ QString pendingSong( const QString& probe )
 
 //! Sets \a path's modification time to \a secondsSinceEpoch, so the recovery's
 //! conflict test runs on an injected order instead of on wall-clock timing.
+//!
+//! Metadata only: no handle that reads or writes the file's DATA is opened, so
+//! this also works on a file another process holds open - the save lock, which
+//! QLockFile opens for reading. QFile::open( ReadWrite ) is refused there
+//! (Windows: QLockFile's handle shares FILE_SHARE_READ only), which would make
+//! the aging fixture fail at setup instead of proving anything.
 bool setModifiedTime( const QString& path, qint64 secondsSinceEpoch )
 {
-	QFile file( path );
-	if( !file.open( QIODevice::ReadWrite ) )
+#ifdef Q_OS_WIN
+	const HANDLE file = ::CreateFileW( reinterpret_cast<LPCWSTR>( path.utf16() ),
+		FILE_WRITE_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+		nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr );
+	if( file == INVALID_HANDLE_VALUE )
 	{
 		return false;
 	}
-	return file.setFileTime( QDateTime::fromSecsSinceEpoch( secondsSinceEpoch ),
-		QFileDevice::FileModificationTime );
+	// FILETIME counts 100 ns units from 1601-01-01, the POSIX epoch from 1970.
+	const qint64 hundredNs = ( secondsSinceEpoch + 11644473600LL ) * 10000000LL;
+	FILETIME stamp;
+	stamp.dwLowDateTime = static_cast<DWORD>( static_cast<quint64>( hundredNs ) & 0xffffffffu );
+	stamp.dwHighDateTime = static_cast<DWORD>( static_cast<quint64>( hundredNs ) >> 32 );
+	const bool ok = ::SetFileTime( file, nullptr, &stamp, &stamp ) != 0;
+	::CloseHandle( file );
+	return ok;
+#else
+	// utimensat() names the file instead of opening it, so an open for reading
+	// elsewhere is irrelevant.
+	const timespec times[2] = { { static_cast<time_t>( secondsSinceEpoch ), 0 },
+		{ static_cast<time_t>( secondsSinceEpoch ), 0 } };
+	return ::utimensat( AT_FDCWD, QFile::encodeName( path ).constData(), times, 0 ) == 0;
+#endif
 }
 
 } // namespace
