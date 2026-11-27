@@ -36,6 +36,7 @@
 
 #include "ControlExportPresetSupport.h"
 #include "ControlHardwareIoSupport.h"
+#include "ControlRenderStaging.h"
 #include "ControlRegistry.h"
 
 #include "ControlReversibility.h"
@@ -372,7 +373,19 @@ bool runCliRender(const QString& projectPath, const QString& out, const QString&
 	const ControlExportPreset& settings, int rangeBegin, int rangeEnd, int* exitCode,
 	QString* diagnostics, OutputSettings::ChannelMode channels = OutputSettings::ChannelMode::Stereo)
 {
-	QStringList arguments = controlRenderCliArguments(projectPath, out, formatName, settings, rangeBegin, rangeEnd);
+	// The child writes a file of this render's own (stagedRenderPath) beside the file
+	// `out` resolves to, and the finished one is published there: a render that does
+	// not finish normally leaves the caller's file exactly as it was (cluster 5735).
+	QString target;
+	if (!resolveRenderTarget(out, &target))
+	{
+		*exitCode = -1;
+		*diagnostics = QStringLiteral("%1 is a chain of more than %2 symbolic links")
+			.arg(out).arg(MaxRenderSymlinkHops);
+		return false;
+	}
+	const QString staged = stagedRenderPath(target, formatName);
+	QStringList arguments = controlRenderCliArguments(projectPath, staged, formatName, settings, rangeBegin, rangeEnd);
 	// 0.5.0 F7: only a surround render passes --channels, so a stereo child's command line is unchanged.
 	if (channels == OutputSettings::ChannelMode::Surround)
 	{
@@ -400,11 +413,12 @@ bool runCliRender(const QString& projectPath, const QString& out, const QString&
 		renderer.setStandardErrorFile(QProcess::nullDevice());
 	}
 	renderer.start(QCoreApplication::applicationFilePath(), arguments);
-	const bool finished = renderer.waitForStarted(30000) && renderer.waitForFinished(600000);
-	if (!finished) { renderer.kill(); }
-	*exitCode = finished ? renderer.exitCode() : -1;
+	const bool finished = renderer.waitForStarted(30000) && renderer.waitForFinished(renderTimeoutMs());
 	*diagnostics = finished ? lastWordsOf(errorLog.fileName()) : QString();
-	return finished;
+	// The child names the file it was given; the caller can only act on the path it asked
+	// for, so a quoted "Could not open file <staged> for writing" names `out` instead.
+	diagnostics->replace(staged, out);
+	return finishCliRender(renderer, finished, staged, target, out, exitCode, diagnostics);
 }
 
 ControlResult renderSession(const QJsonObject& args)
