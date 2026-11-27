@@ -4147,3 +4147,8 @@ tests/src/core/AudioSampleRecorderTest.cpp
 # frame with another's direction. This white-box regression compiles the plugin and drives the shipping note-start
 # path through the LMMS_TESTING note-start hook (fork-NEW test).
 tests/src/plugins/SamplerStutterContinuationTest.cpp
+# cluster new-p9-530-port (2026-10): editing an Xpressive output expression raced note
+# initialization - the note path parsed the QByteArray the editor was freeing. The hand-off
+# regression test through the plug-in's own note path, and its report, are fork-NEW.
+tests/src/plugins/XpressiveExpressionHandoffTest.cpp
+docs/qwen-fixes-2026-10/cluster-new-p9-530-port.md
