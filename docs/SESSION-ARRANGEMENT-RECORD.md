@@ -131,6 +131,13 @@ ticks, with the length the performance had.
 * It **refuses, consuming nothing**, while any recorded start is still open. A half-landed
   performance would either lose the starts it could not pair or invent their ends; the
   refusal names the cells that are still playing, which is what the client has to stop.
+* A start the ring can no longer close is **not** that case. The ring is **full**, so the stop
+  that would end that launch has no room and never will — the ring does not grow and only a
+  pass drains it — and no later pass would see that stop either. Such a start is reported in
+  the reply's `landed` array with `landed` false and `reason` `stop_dropped`, counted with
+  `collapsed`, and every complete pair still lands. The span is lost to the overflow either
+  way; refusing it would also strand every pair behind it, permanently, because a later pass
+  refuses on the same start.
 * The intended protocol, therefore: **arm, perform, stop the session
   (`session.stop_all` or `session.back_to_arrangement`), land.**
 * The inverse is **one Track journal checkpoint per touched track**, taken before that

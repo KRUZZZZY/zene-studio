@@ -44,6 +44,14 @@
  * complete and exact inverse for that clip (clip.delete removes it); the
  * mechanism names the checkpoint that carries the rest, because a pass creates
  * one clip per completed launch and a transaction carries one inverse.
+ *
+ * A START THE OVERFLOW STRANDED. The refusal is for a launch that is still
+ * playing: its stop is on its way and the ring has room for it. A start in a
+ * FULL ring is not that - the stop that would close it has no room and the ring
+ * never grows, so no later pass would see it either. It is reported as not
+ * landed (reason stop_dropped, counted with the collapsed pairs) and every
+ * complete pair still lands: refusing it would refuse every later pass too,
+ * because only a pass drains the ring.
  */
 
 #include <cstddef>
@@ -253,12 +261,18 @@ ControlResult validateLandPairs(const Song& song, const SessionModel& model,
 }
 
 ControlResult validateLandRequest(const Song& song, const SessionModel& model,
-	const OpenStart* open, int openCount, const LandPair* pairs, int pairCount,
+	const OpenStart* open, int openCount, bool ringFull, const LandPair* pairs, int pairCount,
 	std::shared_ptr<const SampleBuffer>* audioSamples,
 	QHash<QString, std::shared_ptr<const SampleBuffer>>& audioCache,
 	QHash<const SampleBuffer*, std::shared_ptr<const SampleBuffer>>& recordedAudioCache)
 {
-	if (openCount > 0) { return validateOpenStarts(open, openCount); }
+	// The refusal names the launches that are STILL PLAYING: their stop is on its
+	// way, and the ring has room for it. A start in a FULL ring is not that - the
+	// stop that would close it has no room and the ring never grows, so no later
+	// pass would ever see it either - and refusing it here is what makes a ring
+	// that overflowed mid-span undrainable for good. Those starts are reported as
+	// not landed (stopDroppedEntry) and every complete pair lands.
+	if (openCount > 0 && !ringFull) { return validateOpenStarts(open, openCount); }
 	return validateLandPairs(song, model, pairs, pairCount, audioSamples, audioCache, recordedAudioCache);
 }
 
@@ -327,6 +341,23 @@ QJsonObject pairNotLanded(const LandPair& pair, const QString& reason)
 	return landed;
 }
 
+//! A recorded start the ring can no longer close, reported where its pair would
+//! have been. The ring is FULL, so the stop that would have ended this launch has
+//! no room and never will (the ring does not grow, and only a pass drains it):
+//! the span is already lost to that overflow. The pass says so instead of
+//! inventing an end for it - and instead of refusing, which would refuse every
+//! later pass too and strand the whole recording behind this one start.
+QJsonObject stopDroppedEntry(const OpenStart& open)
+{
+	return QJsonObject{
+		{QStringLiteral("track_index"), open.track},
+		{QStringLiteral("scene"), open.scene},
+		{QStringLiteral("start_tick"), static_cast<int>(open.tick)},
+		{QStringLiteral("landed"), false},
+		{QStringLiteral("reason"), QStringLiteral("stop_dropped")},
+	};
+}
+
 void addLandedClipFields(QJsonObject* landed, const Clip* clip, const Track* track,
 	const ClipSlot& slot, int pattern, const QString& content)
 {
@@ -342,7 +373,9 @@ void addLandedClipFields(QJsonObject* landed, const Clip* clip, const Track* tra
 
 //! Sorts one NOT-LANDED pair into the pass's summary counts: a column that never had
 //! a song track, a session-grid cell removed since the recording (its song track still
-//! exists), or a pair that collapsed (an empty span, a track that made no clip).
+//! exists), or a pair that collapsed (an empty span, a track that made no clip). The
+//! handler counts a start the overflow stranded in the same `collapsed` bucket
+//! (stopDroppedEntry): a launch whose end the ring lost is not landed either.
 void countNotLandedPair(const QJsonObject& entry, int* skippedColumns,
 	int* removedGridCells, int* collapsed)
 {
@@ -439,7 +472,10 @@ void registerRecordLand(ControlRegistry& registry)
 		int unmatchedStops = 0;
 		const int pairCount = landPairEvents(events, count, pairs, MaxLandEvents,
 			open, &openCount, MaxLandEvents, &unmatchedStops);
-		if (ControlResult validation = validateLandRequest(*song, *model, open, openCount,
+		// The snapshot is bounded by the ring's own capacity, so a full snapshot is
+		// a full ring: from here on no stop can be recorded until this pass drains it.
+		const bool ringFull = count >= MaxLandEvents;
+		if (ControlResult validation = validateLandRequest(*song, *model, open, openCount, ringFull,
 				pairs, pairCount, audioSamples, audioCache, recordedAudioCache); !validation.ok) { return validation; }
 
 		// Every event is paired or an unmatched stop (which has no clip to make),
@@ -465,6 +501,18 @@ void registerRecordLand(ControlRegistry& registry)
 			}
 			else { ++clips; }
 			landed.append(entry);
+		}
+
+		// The starts the overflow stranded, reported after the pairs (they have no
+		// stop to order them by). They make no clip and count with the collapsed
+		// pairs: a launch whose span cannot be known is not landed.
+		if (ringFull)
+		{
+			for (int i = 0; i < openCount; ++i)
+			{
+				landed.append(stopDroppedEntry(open[i]));
+				++collapsed;
+			}
 		}
 
 		QJsonObject result;

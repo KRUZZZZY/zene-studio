@@ -608,6 +608,55 @@ private slots:
 		QCOMPARE(landed.result.value(QStringLiteral("pairs")).toInt(), 64);
 		QCOMPARE(landed.result.value(QStringLiteral("clips")).toInt(), 64);
 	}
+
+	//! A ring that fills up while its cells are PLAYING still drains. A start whose
+	//! stop the overflow dropped is not a launch "still playing": the ring is FULL,
+	//! so that stop has no room and never will, and no later pass would see it
+	//! either. It is reported as not landed - never invented into a clip - and every
+	//! complete pair behind it lands, instead of a refusal that strands them all.
+	void aRingThatFillsWhileCellsPlayStillLands()
+	{
+		// Launches that each close before the next: two events a pair, no start open.
+		const int pairs = static_cast<int>(SessionArrangementRecorder::Capacity) / 2 - 1;
+		for (int i = 0; i < pairs; ++i)
+		{
+			QVERIFY(recorder().recordStart(i % 2, 0, i * 10));
+			QVERIFY(recorder().recordStop(i % 2, 0, i * 10 + 5));
+		}
+		QCOMPARE(pending(), static_cast<size_t>(pairs * 2));
+
+		// Two cells start with only two slots left, so both stops are dropped: the
+		// ring is full, and nothing but a land pass drains it.
+		QVERIFY(recorder().recordStart(0, 0, 1000));
+		QVERIFY(recorder().recordStart(1, 0, 1000));
+		QVERIFY(!recorder().recordStop(0, 0, 1010));
+		QVERIFY(!recorder().recordStop(1, 0, 1010));
+		QCOMPARE(recorder().dropped(), std::uint64_t(2));
+
+		const ControlResult landed = run(QStringLiteral("session.arrangement_record_land"));
+		QVERIFY2(landed.ok, qPrintable(landed.errorMessage));
+		QCOMPARE(pending(), size_t{0});
+		QCOMPARE(landed.result.value(QStringLiteral("events")).toInt(), pairs * 2 + 2);
+		QCOMPARE(landed.result.value(QStringLiteral("pairs")).toInt(), pairs);
+		QCOMPARE(landed.result.value(QStringLiteral("clips")).toInt(), pairs);
+
+		// The two launches the overflow stranded are reported, counted with the
+		// collapsed pairs, and produce no clip.
+		QCOMPARE(landed.result.value(QStringLiteral("collapsed")).toInt(), 2);
+		const QJsonArray entries = landed.result.value(QStringLiteral("landed")).toArray();
+		QCOMPARE(entries.size(), pairs + 2);
+		for (int i = pairs; i < entries.size(); ++i)
+		{
+			const QJsonObject stranded = entries.at(i).toObject();
+			QVERIFY(!stranded.value(QStringLiteral("landed")).toBool());
+			QCOMPARE(stranded.value(QStringLiteral("reason")).toString(), QStringLiteral("stop_dropped"));
+		}
+		QCOMPARE(m_first->getClips().size() + m_second->getClips().size(), static_cast<size_t>(pairs));
+
+		// The ring is drained, so the next pass has nothing left to refuse.
+		const ControlResult again = run(QStringLiteral("session.arrangement_record_land"));
+		QVERIFY(again.errorMessage.contains(QStringLiteral("nothing has been recorded")));
+	}
 };
 
 QTEST_MAIN(ControlSessionRecordLandTest)
