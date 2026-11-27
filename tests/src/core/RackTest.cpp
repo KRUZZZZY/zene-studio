@@ -34,6 +34,9 @@
 //!   * **the selector** - selecting chain A vs chain B gives the chain's own
 //!     output and *not* the other chain's, the unselected chain's effect is
 //!     never called, and the switch is stepwise (no crossfade);
+//!   * **the selection change is guarded** - it waits for the render period's
+//!     model ownership (Rack::setSelectedChain), so it never writes the routing
+//!     state the audio thread is reading;
 //!   * **the audio path allocates nothing** (tests/src/core/AllocationProbe.h);
 //!   * **persistence** - the chains and the selector survive save/reload, and a
 //!     project with no <rack> element still loads and re-saves without one.
@@ -47,10 +50,16 @@
 #include <QDomElement>
 #include <QString>
 
+#include <QScopeGuard>
+
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <future>
+#include <thread>
 #include <vector>
 
 #include "AllocationProbe.h"
@@ -709,6 +718,97 @@ private slots:
 		QVERIFY(loadedRoutes(selectedAttribute(QStringLiteral("1"))) == std::vector<int>({1}));
 		QVERIFY(loadedRoutes(selectedAttribute(QStringLiteral("-1"))) == std::vector<int>({0, 1}));
 		QVERIFY(loadedRoutes(QString()) == std::vector<int>({0, 1}));
+	}
+
+	//! cluster new-p19-5 (BUG 15): selecting a chain is a control-thread edit
+	//! that must not write the rack's routing state while a render period reads
+	//! it. Rack::setSelectedChain() takes the engine's model-change guard
+	//! (src/core/Rack.cpp:215-224) - the lock AudioEngine::renderNextPeriod()
+	//! holds for a whole period (src/core/AudioEngine.cpp:1224) - so the write
+	//! waits for the block boundary. `rack.set_selected` reaches it through
+	//! ControlCommandsRack.cpp:368, and the selector's undo step through
+	//! ControlCommandsRack.cpp:109,114.
+	//!
+	//! The render period is stood in for by a thread that takes the same guard,
+	//! and the verdict is an ordering of events, never a duration: a change that
+	//! did not take the guard would land while the period owns the model, which
+	//! is what the assertions below refuse.
+	void aSelectionChangeWaitsForTheRenderPeriod()
+	{
+		Rack& rack = rackUnderTest();
+		// This slot owns the selection it asserts on, whatever the earlier
+		// slots left behind: a clean two-chain rack in parallel mode.
+		rack.clear();
+		QCOMPARE(rack.chainCount(), 1);
+		QCOMPARE(rack.addChain(), 1);
+		rack.setSelectedChain(Rack::Parallel);
+		QVERIFY(rack.routedChains() == std::vector<int>({0, 1}));
+
+		AudioEngine* const engine = Engine::audioEngine();
+		QVERIFY(engine != nullptr);
+
+		std::promise<void> periodOwnsModel;
+		std::atomic<bool> releasePeriod{false};
+		std::thread period([&] {
+			engine->requestChangeInModel();
+			periodOwnsModel.set_value();
+			// Polled, not std::atomic::wait: that needs macOS 11 and the
+			// AudioEngine floor is 10.13. The flag is the signal, so no wake
+			// can be lost.
+			while (!releasePeriod.load(std::memory_order_acquire)) { std::this_thread::yield(); }
+			engine->doneChangeInModel();
+		});
+		// Every exit path, including a failed QVERIFY below, releases the
+		// period and joins it: no assertion may leave a joinable thread (or a
+		// held model lock) behind.
+		const auto stopPeriod = qScopeGuard([&] {
+			releasePeriod.store(true, std::memory_order_release);
+			if (period.joinable()) { period.join(); }
+		});
+
+		periodOwnsModel.get_future().wait();
+
+		// 1 = about to ask for the selection, 2 = the selection call returned.
+		std::atomic<int> selectorStage{0};
+		std::thread selector([&] {
+			selectorStage.store(1, std::memory_order_release);
+			rack.setSelectedChain(1);
+			selectorStage.store(2, std::memory_order_release);
+		});
+		const auto stopSelector = qScopeGuard([&] {
+			// Unblock the period before joining, or a failure between the two
+			// threads would deadlock this guard instead of reporting.
+			releasePeriod.store(true, std::memory_order_release);
+			if (selector.joinable()) { selector.join(); }
+		});
+
+		// The change either parks at the guard - a control thread counted by
+		// modelChangeWaiters() - or it completes without ever waiting. Whichever
+		// comes first decides. The deadline is a hang guard, not the criterion.
+		const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+		while (selectorStage.load(std::memory_order_acquire) != 2
+			&& engine->modelChangeWaiters() == 0
+			&& std::chrono::steady_clock::now() < deadline)
+		{
+			std::this_thread::yield();
+		}
+
+		QVERIFY2(selectorStage.load(std::memory_order_acquire) != 2,
+			"the selection change went through while a render period owned the model: "
+			"Rack::setSelectedChain() no longer takes the model-change guard");
+		QVERIFY2(engine->modelChangeWaiters() > 0,
+			"the selection change never reached the model-change guard");
+		// The state the audio thread reads is untouched while it owns the model.
+		QCOMPARE(rack.selectedChain(), Rack::Parallel);
+		QVERIFY2(rack.routedChains() == std::vector<int>({0, 1}),
+			"the rack's routing snapshot changed under the render period");
+
+		// The period ends and the parked change lands at the block boundary.
+		releasePeriod.store(true, std::memory_order_release);
+		period.join();
+		selector.join();
+		QCOMPARE(rack.selectedChain(), 1);
+		QVERIFY(rack.routedChains() == std::vector<int>({1}));
 	}
 
 private:
