@@ -229,14 +229,32 @@ std::vector<PitchNote> detectNotes(const float* mono, std::size_t count, int rat
 	const int factor = std::max(1, rate / AnalysisRate);
 	const std::vector<float> low = decimate(mono, count, factor);
 	Segmenter segmenter{minFrames};
-	for (std::size_t frame = 0; frame + Window <= low.size(); frame += Hop)
+
+	const std::size_t total = low.size();
+	const auto analyze = [&](std::size_t frame, std::size_t size)
 	{
-		const float level = rms(low.data(), low.size(), frame, Window);
-		const float hz = level > gate ? pitchAt(low.data(), low.size(), frame, Window, rate / factor) : 0.f;
+		const int window = static_cast<int>(size);
+		const float level = rms(low.data(), total, frame, window);
+		const float hz = level > gate ? pitchAt(low.data(), total, frame, window, rate / factor) : 0.f;
 		const int key = hz > 30.f && hz < 2000.f ? keyOf(hz) : -1;
 		const f_cnt_t at = static_cast<f_cnt_t>(frame) * factor;
-		const f_cnt_t onset = segmenter.onsetFor(key, hz, at, low.data(), low.size(), frame, gate, rate, factor);
+		const f_cnt_t onset = segmenter.onsetFor(key, hz, at, low.data(), total, frame, gate, rate, factor);
 		segmenter.feed(key, level, at, onset, hz);
+	};
+
+	std::size_t covered = 0;
+	for (std::size_t frame = 0; frame + Window <= total; frame += Hop)
+	{
+		analyze(frame, Window);
+		covered = frame + Window;
+	}
+	// The audio past the last full window cannot fill one: a final window ends with the signal, so
+	// the tail is heard and a clip shorter than one window is analysed whole instead of yielding
+	// nothing. Both sizes stay inside the buffer, which pitchAt() and rms() also require.
+	if (covered < total)
+	{
+		const std::size_t size = std::min<std::size_t>(Window, total);
+		analyze(total - size, size);
 	}
 	segmenter.close(static_cast<f_cnt_t>(count));
 	return segmenter.notes;
