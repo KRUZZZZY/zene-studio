@@ -219,6 +219,9 @@ private slots:
 	//! A master route (mixer index zero) is cached after its first lookup.
 	void outputBusMasterIndexIsCached();
 
+	//! Audio buffered in a bus's delay line before it was unrouted must not emerge after it is routed again.
+	void outputBusReroutedDelayLineStartsEmpty();
+
 	//! A newly routed Slot must not become visible to the render worker before the model guard.
 	void outputBusSlotPublicationWaitsForRenderPeriod();
 
