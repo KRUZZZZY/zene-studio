@@ -529,8 +529,10 @@ LMMS_EXPORT bool dawProjectModelFromXml(const QByteArray& xml, DawProjectModel* 
 	DawProjectReadReport* report, QString* error);
 
 /*! Write \\a model at \\a path as a .dawproject container (ZIP: project.xml and
- *  metadata.xml, UTF-8). False - with \\a error set and no file left behind -
- *  when the path is unusable or the model cannot be expressed. */
+ *  metadata.xml, UTF-8). False - with \\a error set - when the path is unusable
+ *  or the model cannot be expressed (no file left behind), or when a requested
+ *  \\a report cannot describe the written file because that file cannot be read
+ *  back whole (the file written is left in place). */
 LMMS_EXPORT bool writeDawProject(const QString& path, const DawProjectModel& model,
 	DawProjectWriteReport* report, QString* error);
 
