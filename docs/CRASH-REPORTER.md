@@ -252,6 +252,11 @@ version=0.1.0-alpha
 platform=Linux x86_64
 compiler=GCC 13.3.0
 project=/path/to/the/project.mmp
+frames=10             # 0..kMaxCrashFrames raw addresses, nearest frame first (Q050-224.2)
+frame[0]=0x5589894369b0
+frame[1]=0x55898943981b
+...
+frame[9]=0x5589894368d5
 ```
 
 - `fault_addr` comes from `si_addr` and is only meaningful for the synchronous
@@ -268,6 +273,57 @@ project=/path/to/the/project.mmp
   each load path — the argv load (`main.cpp:996`), the render load
   (`main.cpp:760`) and the script load (`main.cpp:814`) — so a crash inside a
   modal dialog raised during the load still names the file.
+- `frames`/`frame[i]` are the RAW STACK (§2.7): instruction addresses, never
+  symbolised and never module-resolved, up to `kMaxCrashFrames = 24` of them,
+  nearest first. `frame[0]` is the faulting instruction itself where the
+  architecture exposes one, so the sequence always starts at the crash site. The
+  block is additive: a reader that only wants the named fields below/above is
+  unaffected, and a `frames=` line that is absent means this build or platform
+  captured none.
+
+### 2.7 Raw stack context (Q050-224.2, stage 2 of Q050-224)
+
+The report preserves context and refuses to interpret it. `captureFrames()`
+(`src/core/CrashReporterFormat.cpp`) is called from the handler with the signal
+context; it writes the faulting instruction first and then walks the crashing
+thread's **saved frame-pointer chain**, keeping at most `kMaxCrashFrames`
+addresses. `appendFrames()` writes them through the same capped appenders as
+every other field. There is no `dladdr`, no `backtrace_symbols`, no `.symtab`
+read, no `maps` parse and no module lookup anywhere in the handler: the
+addresses are raw, and a reader resolves them with debug symbols for the build
+the report names in `version=`/`platform=`/`compiler=`.
+
+Why the walk is safe here, and where the argument stops:
+
+- **No unwinder, therefore no loader and no allocator.** The first version used
+  `_Unwind_Backtrace()`; a frame budget bounded its steps, not the FDE lookup
+  the unwinder does through the loader, and the unwinder can allocate. That is
+  the defect this pass removes. The walk now dereferences only the stack's own
+  saved frame pointers: no loader object lookup (`dl_iterate_phdr`/
+  `_dl_find_object`), no unwind-table query, no allocation, no lock and no I/O.
+  `CrashReporterFramesTest::fatal_handler_enters_neither_allocator_nor_loader`
+  interposes the allocator, `dl_iterate_phdr` and (glibc 2.35+)
+  `_dl_find_object` in a forked real-fault child: any entry exits the child with
+  a distinct code, and the test requires death by `SIGSEGV` plus a written
+  report.
+- **Bounded, not merely finite.** Every dereference lies in
+  `[interrupted SP, recorded stack ceiling]`. The exact ceiling comes from
+  `pthread_getattr_np()` in `install()` on Linux (main or
+  control thread, never the audio callback); the render/JACK paths only raise a
+  cheap ceiling to the current frame with `noteThreadStackMarker()` (a local's
+  address, no allocation, lock or I/O). Each saved frame pointer must be
+  16-byte aligned and strictly increase, so a corrupt or cyclic chain stops
+  instead of spinning, and the 24-frame budget caps the report lines so
+  `kMaxReportBytes` still holds.
+  On macOS the handler reads the stack top itself with
+  `pthread_get_stackaddr_np(pthread_self())` (a field read for the current
+  thread) and never touches a `thread_local`, because Darwin allocates TLV
+  storage lazily through `malloc` on a thread's first access.
+- **What it cannot promise.** A build compiled with frame pointers omitted
+  yields fewer callers (the PC is still frame 0); a crash reached after
+  registration returned but above the recorded ceiling (a very shallow frame)
+  yields the PC but no walk; a thread that never registered yields the PC only.
+  Windows captures nothing, as everywhere else in this module.
 
 ---
 

@@ -50,9 +50,26 @@ namespace lmms::crashreporter
 // arbitrary state is corrupt.  It therefore calls ONLY functions on POSIX's
 // async-signal-safe list:
 //
-//     openat(), write(), close(), raise(), sigaction(), sigemptyset(),
-//     getpid(), time()
-// plus the raw syscall gettid(), which allocates nothing and takes no lock.
+//     openat(), mkdirat(), unlinkat(), write(), close(), raise(), sigaction(),
+//     sigemptyset(), sigprocmask(), getpid(), time()
+// plus two calls that are NOT on that list and are named here rather than
+// glossed over:
+//
+//   * the raw syscall gettid(), which allocates nothing and takes no lock;
+//     on Darwin the same value comes from the thread's Mach port
+//     (mach_thread_self()/mach_port_deallocate(), two direct traps - NOT the
+//     lock-taking pthread_mach_thread_np(), which is not signal-safe);
+//   * the raw frame-pointer walk (Q050-224.2).  It dereferences only the
+//     crashing thread's saved frame pointers inside stack bounds recorded
+//     OUTSIDE the signal, and writes the addresses raw - no unwinder, so no
+//     loader object lookup, no unwind-table query, no allocation, no lock and
+//     no I/O.  The first version called _Unwind_Backtrace() here; that was the
+//     defect this pass removes (the unwinder's work is not bounded by its frame
+//     budget).  Bounds are the recorded stack region, a strictly increasing
+//     frame-pointer chain and kMaxCrashFrames.  A build that omits frame
+//     pointers, or a thread that never registered a stack, yields fewer
+//     callers (the faulting PC is always frame 0) - fewer frames, never a
+//     different contract. Windows installs no handler, so it captures none.
 //
 // There is no malloc, no C++ object construction, no stdio, no mutex, no Qt
 // call and no unbounded loop in the handler path.  The report is assembled in
@@ -121,6 +138,14 @@ constexpr unsigned long kMaxReportBytes = 4096;
 // Hard cap on the "currently open project" hint kept for the handler.
 constexpr unsigned long kMaxProjectPathBytes = 512;
 
+// Hard cap on the raw frame addresses one report carries (Q050-224.2).  The
+// frame-pointer walk stops at this budget, which - with the recorded stack
+// bounds and the strictly-increasing chain - keeps a corrupt or cyclic chain
+// bounded: 24 lines of at most 29 bytes fit kMaxReportBytes with every other
+// field at its widest, so the byte cap stays reachable only in principle.
+// Proven by CrashReporterFramesTest::frames_are_capped_on_a_deep_crash.
+constexpr int kMaxCrashFrames = 24;
+
 // POD snapshot of a crash.  Trivially copyable on purpose: it is filled in
 // inside the handler and passed by const reference.
 struct CrashInfo
@@ -131,6 +156,15 @@ struct CrashInfo
 	// Instruction pointer from the signal ucontext where the architecture
 	// exposes it (x86_64, aarch64); 0 elsewhere.
 	unsigned long long programCounter = 0;
+	// Raw instruction addresses, nearest frame first, captured in the handler
+	// with NO symbol or module resolution (that belongs to whoever reads the
+	// report, off the crashing process).  frame[0] is the faulting instruction
+	// itself where the architecture exposes one, so the sequence always starts
+	// at the crash site; the rest are the saved frame chain's return addresses,
+	// and a recursive chain repeats one address per depth on purpose.  Kept
+	// addresses are never 0.
+	unsigned long long frames[kMaxCrashFrames] = {};
+	int frameCount = 0;
 	unsigned long long threadId = 0;
 	unsigned long long processId = 0;
 	unsigned long long unixTime = 0;
