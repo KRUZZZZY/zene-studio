@@ -42,6 +42,19 @@ bool withinNyquist( int len, int harm )
 	return 2 * harm <= len;
 }
 
+//! Reads the wavetable stored in \a path into \a waveMipMap. Reports failure when the file cannot be opened or
+//! ends before the table does; the caller then generates the table, exactly as it does for an absent file, so
+//! the samples the file did hold - or the sample a failed read did not supply - never reach playback.
+bool loadWavetable( const QString& path, WaveMipMap& waveMipMap )
+{
+	QFile file( path );
+	if( !file.open( QIODevice::ReadOnly ) ) { return false; }
+
+	QDataStream in( &file );
+	in >> waveMipMap;
+	return in.status() == QDataStream::Ok;
+}
+
 } // namespace
 
 std::array<WaveMipMap, BandLimitedWave::NumWaveforms> BandLimitedWave::s_waveforms = {  };
@@ -67,7 +80,10 @@ QDataStream& operator>> ( QDataStream &in, WaveMipMap &waveMipMap )
 	{
 		for( int i = 0; i < TLENS[tbl]; i++ )
 		{
-			sample_t sample;
+			// a file that ended partway has left the stream failed: stop instead of storing a sample the
+			// stream never supplied
+			if( in.status() != QDataStream::Ok ) { return in; }
+			sample_t sample = 0.0f;
 			in >> sample;
 			waveMipMap.setSampleAt( tbl, i, sample );
 		}
@@ -86,22 +102,10 @@ void BandLimitedWave::generateWaves()
 	// set wavetable directory
 	s_wavetableDir = "data:wavetables/";
 
-// set wavetable files
-	QFile saw_file( s_wavetableDir + "saw.bin" );
-	QFile sqr_file( s_wavetableDir + "sqr.bin" );
-	QFile tri_file( s_wavetableDir + "tri.bin" );
-	QFile moog_file( s_wavetableDir + "moog.bin" );
-
 // saw wave - BLSaw
-// check for file and use it if exists
-	if( saw_file.exists() )
-	{
-		saw_file.open( QIODevice::ReadOnly );
-		QDataStream in( &saw_file );
-		in >> s_waveforms[static_cast<std::size_t>(BandLimitedWave::Waveform::BLSaw)];
-		saw_file.close();
-	}
-	else
+// use the file when it is there and reads completely, generate the table otherwise
+	if( !loadWavetable( s_wavetableDir + "saw.bin",
+			s_waveforms[static_cast<std::size_t>(BandLimitedWave::Waveform::BLSaw)] ) )
 	{
 		for (int i = 0; i <= MAXTBL; i++)
 		{
@@ -131,15 +135,9 @@ void BandLimitedWave::generateWaves()
 	}
 
 // square wave - BLSquare
-// check for file and use it if exists
-	if( sqr_file.exists() )
-	{
-		sqr_file.open( QIODevice::ReadOnly );
-		QDataStream in( &sqr_file );
-		in >> s_waveforms[static_cast<std::size_t>(BandLimitedWave::Waveform::BLSquare)];
-		sqr_file.close();
-	}
-	else
+// use the file when it is there and reads completely, generate the table otherwise
+	if( !loadWavetable( s_wavetableDir + "sqr.bin",
+			s_waveforms[static_cast<std::size_t>(BandLimitedWave::Waveform::BLSquare)] ) )
 	{
 		for (int i = 0; i <= MAXTBL; i++)
 		{
@@ -169,14 +167,9 @@ void BandLimitedWave::generateWaves()
 	}
 
 // triangle wave - BLTriangle
-	if( tri_file.exists() )
-	{
-		tri_file.open( QIODevice::ReadOnly );
-		QDataStream in( &tri_file );
-		in >> s_waveforms[static_cast<std::size_t>(BandLimitedWave::Waveform::BLTriangle)];
-		tri_file.close();
-	}
-	else
+// use the file when it is there and reads completely, generate the table otherwise
+	if( !loadWavetable( s_wavetableDir + "tri.bin",
+			s_waveforms[static_cast<std::size_t>(BandLimitedWave::Waveform::BLTriangle)] ) )
 	{
 		for (int i = 0; i <= MAXTBL; i++)
 		{
@@ -208,14 +201,9 @@ void BandLimitedWave::generateWaves()
 
 // moog saw wave - BLMoog
 // basically, just add in triangle + 270-phase saw
-	if( moog_file.exists() )
-	{
-		moog_file.open( QIODevice::ReadOnly );
-		QDataStream in( &moog_file );
-		in >> s_waveforms[static_cast<std::size_t>(BandLimitedWave::Waveform::BLMoog)];
-		moog_file.close();
-	}
-	else
+// use the file when it is there and reads completely, generate the table otherwise
+	if( !loadWavetable( s_wavetableDir + "moog.bin",
+			s_waveforms[static_cast<std::size_t>(BandLimitedWave::Waveform::BLMoog)] ) )
 	{
 		for (int i = 0; i <= MAXTBL; i++)
 		{

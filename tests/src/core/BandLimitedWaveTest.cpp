@@ -24,10 +24,13 @@
 
 #include "BandLimitedWave.h"
 
+#include <QDataStream>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QString>
 #include <QStringList>
+#include <QTemporaryDir>
 #include <QtTest>
 
 #include <algorithm>
@@ -120,6 +123,40 @@ double worstDeviation(BandLimitedWave::Waveform wave, int tbl, const std::vector
 	return worst;
 }
 
+//! The value the short wavetable files carry. It is not a sample of any in-band table, so a table that keeps
+//! it, or that keeps the zeroed sample a failed read leaves behind, cannot match its reference.
+constexpr float kShortFileValue = 0.5f;
+
+//! Writes \a sampleCount samples of kShortFileValue the way WaveMipMap's operator<< writes a table, but cut
+//! short: a complete table holds 20475 samples, so a reader always runs past the end of such a file.
+void writeShortTable( const QString& path, int sampleCount )
+{
+	QFile file( path );
+	QVERIFY( file.open( QIODevice::WriteOnly ) );
+	QDataStream out( &file );
+	for( int i = 0; i < sampleCount; ++i ) { out << kShortFileValue; }
+	QVERIFY2( out.status() == QDataStream::Ok, "the short fixture itself must be written completely" );
+}
+
+//! Writes the four wavetables of the data search path \a dir as short files of \a sampleCount samples.
+void writeShortTables( const QString& dir, int sampleCount )
+{
+	const QString wavetableDir = QDir( dir ).filePath( QStringLiteral("wavetables") );
+	QVERIFY( QDir().mkpath( wavetableDir ) );
+	for( const char* name : { "saw", "sqr", "tri", "moog" } )
+	{
+		writeShortTable( QDir( wavetableDir ).filePath( QStringLiteral("%1.bin").arg( QString::fromLatin1( name ) ) ),
+			sampleCount );
+	}
+}
+
+//! Size of the shipped table \a name, which is a complete table: a fixture shorter than it is truncated.
+qint64 shippedTableSize( const char* name )
+{
+	return QFileInfo( QDir( QStringLiteral(QT_TESTCASE_SOURCEDIR) )
+		.filePath( QStringLiteral("../data/wavetables/%1.bin").arg( QString::fromLatin1( name ) ) ) ).size();
+}
+
 //! Compares every stored table, except the two-sample one, with the in-band reference.
 void verifyStoredTables()
 {
@@ -183,6 +220,47 @@ private slots:
 		BandLimitedWave::s_waveforms = {};
 		BandLimitedWave::generateWaves();
 		QVERIFY(BandLimitedWave::s_wavesGenerated);
+
+		verifyStoredTables();
+	}
+
+	//! A wavetable file that ends partway through its data must not feed the samples it does hold into the
+	//! tables: a failed load is treated like an absent file and the table is generated instead.
+	void truncatedTablesAreRegenerated()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		writeShortTables( dir.path(), 64 );
+		const QString shortSaw = QDir( dir.path() ).filePath( QStringLiteral("wavetables/saw.bin") );
+		QVERIFY( QFileInfo( shortSaw ).size() < shippedTableSize( "saw" ) );
+
+		QDir::setSearchPaths( QStringLiteral("data"), QStringList{ dir.path() } );
+		QVERIFY( QFile::exists( QStringLiteral("data:wavetables/saw.bin") ) );
+
+		BandLimitedWave::s_wavesGenerated = false;
+		BandLimitedWave::s_waveforms = {};
+		BandLimitedWave::generateWaves();
+		QVERIFY( BandLimitedWave::s_wavesGenerated );
+
+		verifyStoredTables();
+	}
+
+	//! A wavetable file that holds no sample at all is the same failure with nothing read: the tables must be
+	//! generated, not left as the indeterminate samples the failed read produced.
+	void emptyTablesAreRegenerated()
+	{
+		QTemporaryDir dir;
+		QVERIFY( dir.isValid() );
+		writeShortTables( dir.path(), 0 );
+		QVERIFY( QFileInfo( QDir( dir.path() ).filePath( QStringLiteral("wavetables/moog.bin") ) ).size() == 0 );
+
+		QDir::setSearchPaths( QStringLiteral("data"), QStringList{ dir.path() } );
+		QVERIFY( QFile::exists( QStringLiteral("data:wavetables/sqr.bin") ) );
+
+		BandLimitedWave::s_wavesGenerated = false;
+		BandLimitedWave::s_waveforms = {};
+		BandLimitedWave::generateWaves();
+		QVERIFY( BandLimitedWave::s_wavesGenerated );
 
 		verifyStoredTables();
 	}

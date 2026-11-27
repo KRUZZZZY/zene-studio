@@ -3336,6 +3336,10 @@ endif()
 # s_wavesGenerated, so the fallback generator and the shipped-file load must not share one cache.
 add_test(NAME BandLimitedWaveFallback COMMAND BandLimitedWaveTest fallbackTablesHoldOnlyInBandHarmonics)
 add_test(NAME BandLimitedWaveShipped COMMAND BandLimitedWaveTest shippedTablesHoldOnlyInBandHarmonics)
+# A wavetable file that is present but truncated, or holds no sample at all, must fall back to the
+# generator instead of feeding its partial content, or an indeterminate sample, into the tables.
+add_test(NAME BandLimitedWaveTruncated COMMAND BandLimitedWaveTest truncatedTablesAreRegenerated)
+add_test(NAME BandLimitedWaveEmpty COMMAND BandLimitedWaveTest emptyTablesAreRegenerated)
 
 # Compile the FIFO header in its shared-memory mode independently of the host's
 # selected socket transport, so the ownership and semaphore regressions run on
