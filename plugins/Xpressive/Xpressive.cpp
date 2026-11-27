@@ -26,6 +26,7 @@
 
 #include <cmath>
 #include <cstring>
+#include <thread>
 
 #include <QDomElement>
 #include <QPlainTextEdit>
@@ -111,6 +112,9 @@ Xpressive::Xpressive(InstrumentTrack* instrument_track) :
 {
 	m_outputExpression[0]="sinew(integrate(f*(1+0.05sinew(12t))))*(2^(-(1.1+A2)*t)*(0.4+0.1(1+A3)+0.4sinew((2.5+2A1)t))^2)";
 	m_outputExpression[1]="expw(integrate(f*atan(500t)*2/pi))*0.5+0.12";
+	// A note created before anything is edited parses these defaults.
+	m_outputExpressionSnapshot[0].publish(m_outputExpression[0]);
+	m_outputExpressionSnapshot[1].publish(m_outputExpression[1]);
 
 	// The render path runs on the audio thread, where logging is not allowed. A
 	// failing expression is recorded there and reported from the main thread by this
@@ -118,6 +122,82 @@ Xpressive::Xpressive(InstrumentTrack* instrument_track) :
 	m_errorReportTimer.setInterval(1000);
 	connect(&m_errorReportTimer, &QTimer::timeout, this, &Xpressive::reportPendingError);
 	m_errorReportTimer.start();
+}
+
+Xpressive::ExpressionSnapshot::Read::~Read()
+{
+	if (m_snapshot != nullptr) { m_snapshot->unpin(m_slot); }
+}
+
+const char* Xpressive::ExpressionSnapshot::Read::text() const
+{
+	if (m_snapshot == nullptr || m_slot < 0) { return ""; }
+	return m_snapshot->m_texts[static_cast<std::size_t>(m_slot)].constData();
+}
+
+void Xpressive::ExpressionSnapshot::publish(const QByteArray& expression)
+{
+	// The one writer: fill a slot that is neither published nor pinned, then publish
+	// it. Two notes copying at once leave a third slot free, so this normally finds
+	// one at the first scan; the yield is the control thread's, never a reader's.
+	const int current = m_published.load(std::memory_order_seq_cst);
+	for (;;)
+	{
+		for (int slot = 0; slot < Slots; ++slot)
+		{
+			const std::size_t index = static_cast<std::size_t>(slot);
+			if (slot == current || m_readers[index].load(std::memory_order_seq_cst) != 0)
+			{
+				continue;
+			}
+			m_texts[index] = expression;
+			m_published.store(slot, std::memory_order_seq_cst);
+			return;
+		}
+		// Every other slot is pinned by a note worker that is mid-copy: wait for one
+		// on THIS (control) thread - a reader never waits for the writer.
+		std::this_thread::yield();
+	}
+}
+
+Xpressive::ExpressionSnapshot::Read Xpressive::ExpressionSnapshot::read() const
+{
+	// Pin the published slot, then check it is still the published one; a slot the
+	// writer had already chosen reads as unpublished here and is dropped untouched.
+	for (int attempt = 0; attempt < ReadAttempts; ++attempt)
+	{
+		const int slot = m_published.load(std::memory_order_seq_cst);
+		const std::size_t index = static_cast<std::size_t>(slot);
+		m_readers[index].fetch_add(1, std::memory_order_seq_cst);
+		if (m_published.load(std::memory_order_seq_cst) == slot)
+		{
+			return Read{this, slot};
+		}
+		m_readers[index].fetch_sub(1, std::memory_order_seq_cst);
+	}
+	// Every attempt lost to a publication in between: this note starts silent rather
+	// than making the audio thread wait.
+	return Read{};
+}
+
+void Xpressive::ExpressionSnapshot::unpin(int slot) const
+{
+	m_readers[static_cast<std::size_t>(slot)].fetch_sub(1, std::memory_order_seq_cst);
+}
+
+ExprFront* Xpressive::makeExprFront(const ExpressionSnapshot& snapshot)
+{
+	const ExpressionSnapshot::Read text = snapshot.read();
+	return new ExprFront(text.text(), Engine::audioEngine()->outputSampleRate());
+}
+
+void Xpressive::setOutputExpression(int i, const QByteArray& expression)
+{
+	// The GUI thread's copy is what the editor shows and what saveSettings stores;
+	// the audio thread reads the published one, so an edit reaches a note only
+	// through the hand-off.
+	m_outputExpression[i] = expression;
+	m_outputExpressionSnapshot[i].publish(expression);
 }
 
 void Xpressive::saveSettings(QDomDocument & _doc, QDomElement & _this) {
@@ -160,6 +240,9 @@ void Xpressive::loadSettings(const QDomElement & _this) {
 
 	m_outputExpression[0]=_this.attribute( "O1").toLatin1();
 	m_outputExpression[1]=_this.attribute( "O2").toLatin1();
+	// A project load replaces the text the audio thread parses, so publish it.
+	m_outputExpressionSnapshot[0].publish(m_outputExpression[0]);
+	m_outputExpressionSnapshot[1].publish(m_outputExpression[1]);
 	m_wavesExpression[0]=_this.attribute( "W1").toLatin1();
 	m_wavesExpression[1]=_this.attribute( "W2").toLatin1();
 	m_wavesExpression[2]=_this.attribute( "W3").toLatin1();
@@ -203,9 +286,12 @@ void Xpressive::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame> out) {
 
 	if (!nph->m_pluginData) {
 
-		auto exprO1 = new ExprFront(m_outputExpression[0].constData(),
-			Engine::audioEngine()->outputSampleRate()); // give the "last" function a whole second
-		auto exprO2 = new ExprFront(m_outputExpression[1].constData(), Engine::audioEngine()->outputSampleRate());
+		// Each note pins the published text for its own copy, never m_outputExpression:
+		// several note workers start notes at once and all of them read this one
+		// instrument, so the text must stay pinned until it has been copied
+		// (cluster new-p9-530-port).
+		auto exprO1 = makeExprFront(m_outputExpressionSnapshot[0]);
+		auto exprO2 = makeExprFront(m_outputExpressionSnapshot[1]);
 
 		auto init_expression_step1 = [this, nph](ExprFront* e) { //lambda function to init exprO1 and exprO2
 			//add the constants and the variables to the expression.
@@ -561,6 +647,7 @@ void XpressiveView::expressionChanged() {
 	auto e = castModel<Xpressive>();
 	QByteArray text = m_expressionEditor->toPlainText().toLatin1();
 	QByteArray* stored_expression = nullptr;
+	int output_expression = -1;
 
 	switch (m_selectedGraphGroup->model()->value()) {
 		case W1_EXPR:
@@ -573,15 +660,25 @@ void XpressiveView::expressionChanged() {
 			stored_expression = &e->wavesExpression(2);
 			break;
 		case O1_EXPR:
-			stored_expression = &e->outputExpression(0);
+			output_expression = 0;
 			break;
 		case O2_EXPR:
-			stored_expression = &e->outputExpression(1);
+			output_expression = 1;
 			break;
 	}
-	const bool stored_expression_changed = stored_expression && *stored_expression != text;
-	if (stored_expression)
+	const bool stored_expression_changed = output_expression >= 0
+		? e->outputExpression(output_expression) != text
+		: stored_expression && *stored_expression != text;
+	if (output_expression >= 0)
+	{
+		// The audio thread parses the published copy, so the edit goes through the
+		// hand-off rather than being written in place.
+		e->setOutputExpression(output_expression, text);
+	}
+	else if (stored_expression)
+	{
 		*stored_expression = text;
+	}
 	if (m_wave_expr)
 		m_graph->setEnabled(m_smoothKnob->model()->value() == 0 && text.size() == 0);
 
