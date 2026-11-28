@@ -205,6 +205,36 @@ private slots:
 			"the muted track's clip was not rendered at its clip gain");
 	}
 
+	/*! The consolidated file is the clips' own audio, not the track's output
+	 *  (include/ClipConsolidate.h:42-47): the track's fader is NOT baked in, because the
+	 *  replacement clip is put back on the SAME track (src/core/ControlCommandsConsolidate.cpp:191)
+	 *  and the fader applies once on playback, in the track's AudioBusHandle
+	 *  (src/core/AudioBusHandle.cpp:199-215, called at :245). Baking it in here would make
+	 *  playback apply it twice. This pins that contract against the finding that asked for
+	 *  consolidation to render through the track's fader and devices. */
+	void theTracksFaderIsNotBakedInAndTheReplacementStaysOnTheTrack()
+	{
+		Track* track = newSampleTrack();
+		addTake(track, 0, 0.5f);
+		auto* sampleTrack = dynamic_cast<SampleTrack*>(track);
+		QVERIFY(sampleTrack != nullptr);
+		sampleTrack->volumeModel()->setValue(25.0f);
+		QCOMPARE(sampleTrack->volumeModel()->value(), 25.0f);
+
+		const ControlResult done = run(QStringLiteral("clip.consolidate"), args(track, {}));
+		QVERIFY2(done.ok, qPrintable(done.errorMessage));
+		QCOMPARE(done.result.value(QStringLiteral("track")).toString(), control::trackIdOf(track));
+		const auto after = clipsOf(track);
+		QCOMPARE(after.size(), std::size_t{1});
+		const tick_t length = after[0]->length().getTicks();
+		const tick_t pad = length / 8;
+		QVERIFY2(std::fabs(levelAt(after[0], pad, length - pad) - 0.5) < 1e-4,
+			"the track's fader was baked into the consolidated file; the clip is put back on the "
+			"same track, so playback would then apply the fader twice");
+		// The fader still lives on the track whose clip carries the file, so playback applies it.
+		QCOMPARE(sampleTrack->volumeModel()->value(), 25.0f);
+	}
+
 	void theCompositeIsHonouredThenNamesTheOneClip()
 	{
 		Track* track = newSampleTrack();
