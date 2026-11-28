@@ -52,6 +52,8 @@ namespace
 constexpr int RefreshMs = 150;
 constexpr int HeaderRow = 1;  //!< 0.5.0 theme 14: the column headers take the grid's first row
 constexpr int CellWidth = 72;
+constexpr int MaxVisibleTracks = 64;  //!< cluster 5360: 64 x 64 = 4,096 cell buttons, not 131,072
+constexpr int MaxVisibleScenes = 64;
 
 void setTip(QWidget* widget, const QString& tip)
 {
@@ -179,12 +181,16 @@ void SessionGridView::rebuild(int tracks, int scenes)
 	m_sceneButtons.clear();
 	m_stopButtons.clear();
 	m_headers.clear();
-	m_tracks = tracks;
-	m_scenes = scenes;
+	m_gridTracks = tracks;
+	m_gridScenes = scenes;
+	m_tracks = std::min(tracks, MaxVisibleTracks);
+	m_scenes = std::min(scenes, MaxVisibleScenes);
 	m_dropCell = -1;
 	m_selected.clear();  // a cell's index means another cell in a grid of another size
-	m_playingScene.assign(static_cast<std::size_t>(tracks), -1);
-	for (int track = 0; track < tracks; ++track)
+	m_playingScene.assign(static_cast<std::size_t>(tracks), -1);  // every authored track, drawn or not (cluster 5360)
+	m_playingName.assign(static_cast<std::size_t>(m_tracks), QString());
+	m_sceneHasClip.assign(static_cast<std::size_t>(m_scenes), false);
+	for (int track = 0; track < m_tracks; ++track)
 	{
 		// 0.5.0 theme 14: the column's header names its track (paintHeaders); a header is read, not pressed.
 		auto* header = new QLabel(this);
@@ -193,7 +199,7 @@ void SessionGridView::rebuild(int tracks, int scenes)
 		header->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);  // the cells set the width; the name elides to it
 		m_grid->addWidget(header, 0, track);
 		m_headers.push_back(header);
-		for (int scene = 0; scene < scenes; ++scene)
+		for (int scene = 0; scene < m_scenes; ++scene)
 		{
 			QToolButton* cell = makeButton(QStringLiteral("session.launch_slot"));
 			cell->setAcceptDrops(true);  // WF-053: an audio file dropped here fills the cell
@@ -210,19 +216,19 @@ void SessionGridView::rebuild(int tracks, int scenes)
 		stop->setText(tr("\u25A0 Stop"));
 		stop->setAccessibleName(tr("Stop track %1").arg(track + 1));
 		connect(stop, &QToolButton::clicked, this, [this, track] { stopColumn(track); });
-		m_grid->addWidget(stop, HeaderRow + scenes, track);
+		m_grid->addWidget(stop, HeaderRow + m_scenes, track);
 		m_stopButtons.push_back(stop);
 	}
-	for (int scene = 0; scene < scenes; ++scene)
+	for (int scene = 0; scene < m_scenes; ++scene)
 	{
 		QToolButton* launch = makeButton(QStringLiteral("session.launch_scene"));
 		connect(launch, &QToolButton::clicked, this, [this, scene] {
 			report(run(QStringLiteral("session.launch_scene"), {{QStringLiteral("scene"), scene}}));
 		});
-		m_grid->addWidget(launch, HeaderRow + scene, tracks);
+		m_grid->addWidget(launch, HeaderRow + scene, m_tracks);
 		m_sceneButtons.push_back(launch);
 	}
-	m_grid->addWidget(m_stopAll, HeaderRow + scenes, tracks);
+	m_grid->addWidget(m_stopAll, HeaderRow + m_scenes, m_tracks);
 }
 
 
@@ -238,7 +244,7 @@ void SessionGridView::refresh()
 	const QJsonObject grid = state.result.value(QStringLiteral("grid")).toObject();
 	const int tracks = grid.value(QStringLiteral("tracks")).toInt();
 	const int scenes = grid.value(QStringLiteral("scenes")).toInt();
-	if (tracks != m_tracks || scenes != m_scenes) { rebuild(tracks, scenes); }
+	if (tracks != m_gridTracks || scenes != m_gridScenes) { rebuild(tracks, scenes); }
 	m_status->setText(statusText(tracks, scenes));
 	readColumns(state.result.value(QStringLiteral("columns")).toArray());
 	m_slots = state.result.value(QStringLiteral("slots")).toArray();
@@ -246,10 +252,11 @@ void SessionGridView::refresh()
 	m_subScenes = state.result.value(QStringLiteral("subscenes")).toArray();
 	m_names = cellNames(m_slots);
 	readPlayback(m_slots);
+	readAuthoredClips(m_slots);
 	paintHeaders();
-	for (int track = 0; track < tracks; ++track)
+	for (int track = 0; track < m_tracks; ++track)
 	{
-		for (int scene = 0; scene < scenes; ++scene) { paintCell(track, scene); }
+		for (int scene = 0; scene < m_scenes; ++scene) { paintCell(track, scene); }
 	}
 	paintScenes(state.result.value(QStringLiteral("scenes")).toArray());
 }
@@ -271,6 +278,11 @@ QString SessionGridView::statusText(int tracks, int scenes) const
 			static_cast<int>(m_selected.size()))
 			: tr("%n cell(s) selected: right-click for Sub-scenes > Make a Sub-scene From the Selection", nullptr, static_cast<int>(m_selected.size()));
 	}
+	if (tracks > m_tracks || scenes > m_scenes)
+	{
+		return tr("%1 tracks, %2 scenes (showing the first %3 x %4: the launcher draws at most %5 cells)")
+			.arg(tracks).arg(scenes).arg(m_tracks).arg(m_scenes).arg(MaxVisibleTracks * MaxVisibleScenes);
+	}
 	return tracks == 0 || scenes == 0 ? tr("The session grid is empty: Grid... (session.set_grid) sizes it.")
 		: tr("%1 tracks, %2 scenes").arg(tracks).arg(scenes);
 }
@@ -289,12 +301,12 @@ void SessionGridView::report(const ControlResult& result)
 void SessionGridView::readColumns(const QJsonArray& columns)
 {
 	std::fill(m_playingScene.begin(), m_playingScene.end(), -1);
-	m_phases.assign(static_cast<std::size_t>(std::max(m_tracks, 0)), QString());
+	m_phases.assign(static_cast<std::size_t>(std::max(m_gridTracks, 0)), QString());
 	for (const QJsonValue& value : columns)
 	{
 		const QJsonObject column = value.toObject();
 		const int track = column.value(QStringLiteral("track")).toInt();
-		if (track < 0 || track >= m_tracks) { continue; }
+		if (track < 0 || track >= m_gridTracks) { continue; }
 		m_playingScene[static_cast<std::size_t>(track)] = column.value(QStringLiteral("scene")).toInt();
 		m_phases[static_cast<std::size_t>(track)] = column.value(QStringLiteral("phase")).toString();
 	}
@@ -332,6 +344,27 @@ void SessionGridView::readPlayback(const QJsonArray& slotList)
 		const auto index = static_cast<std::size_t>(track * m_scenes + scene);
 		m_badges[index] = sessiongrid::playbackBadge(slot);
 		m_playback[index] = sessiongrid::playbackWords(slot);
+	}
+}
+
+
+//! Cluster 5360: the view draws at most 64 x 64 cells, but a scene button and a cell's replacement note
+//! speak for the whole authored grid, as PerformView does: note which drawn scenes hold a clip on any
+//! track, and the name of the clip each drawn track plays, in whatever scene row that is.
+void SessionGridView::readAuthoredClips(const QJsonArray& slotList)
+{
+	m_sceneHasClip.assign(static_cast<std::size_t>(std::max(m_scenes, 0)), false);
+	m_playingName.assign(static_cast<std::size_t>(std::max(m_tracks, 0)), QString());
+	for (const QJsonValue& value : slotList)
+	{
+		const QJsonObject slot = value.toObject();
+		const int track = slot.value(QStringLiteral("track")).toInt();
+		const int scene = slot.value(QStringLiteral("scene")).toInt();
+		if (track < 0 || track >= m_gridTracks) { continue; }
+		if (scene >= 0 && scene < m_scenes) { m_sceneHasClip[static_cast<std::size_t>(scene)] = true; }
+		if (track >= m_tracks || scene != m_playingScene[static_cast<std::size_t>(track)]) { continue; }
+		const QString name = slot.value(QStringLiteral("name")).toString();
+		m_playingName[static_cast<std::size_t>(track)] = name.isEmpty() ? tr("clip") : name;
 	}
 }
 
@@ -395,11 +428,17 @@ QString SessionGridView::launchNote(int track, int scene) const
 {
 	const int on = m_playingScene[static_cast<std::size_t>(track)];
 	const QString& name = m_names[static_cast<std::size_t>(track * m_scenes + scene)];
-	if (on < 0 || on == scene || on >= m_scenes || m_phases[static_cast<std::size_t>(track)] == QLatin1String("stopping"))
+	if (on < 0 || on == scene || on >= m_gridScenes || m_phases[static_cast<std::size_t>(track)] == QLatin1String("stopping"))
 	{
 		return name.isEmpty() ? QString() : tr("Press to launch %1").arg(name);
 	}
-	return sessiongrid::launchReplaces(name, m_names[static_cast<std::size_t>(track * m_scenes + on)]);
+	return sessiongrid::launchReplaces(name, m_playingName[static_cast<std::size_t>(track)]);
+}
+
+
+bool SessionGridView::sceneHoldsClip(int scene) const
+{
+	return scene >= 0 && scene < static_cast<int>(m_sceneHasClip.size()) && m_sceneHasClip[static_cast<std::size_t>(scene)];
 }
 
 
@@ -411,7 +450,9 @@ void SessionGridView::paintScenes(const QJsonArray& sceneStates)
 		const QString name = sceneStates.at(scene).toObject().value(QStringLiteral("name")).toString();
 		const QString label = name.isEmpty() ? tr("Scene %1").arg(scene + 1) : name;
 		// 0.5.0 theme 14: the play mark says the row's state by its shape; an empty scene is in italics too.
-		const sessiongrid::SceneState state = sessiongrid::sceneState(scene, m_scenes, m_names, m_playingScene, m_phases);
+		// The row's state is over every authored track: a clip on a track this view does not draw still fills it.
+		sessiongrid::SceneState state = sessiongrid::sceneState(scene, m_scenes, m_names, m_playingScene, m_phases);
+		if (state == sessiongrid::SceneState::Empty && sceneHoldsClip(scene)) { state = sessiongrid::SceneState::Stopped; }
 		button->setText(sessiongrid::sceneMark(state) + label);
 		if (button->font().italic() != (state == sessiongrid::SceneState::Empty))
 		{
@@ -498,7 +539,7 @@ void SessionGridView::populateMenu(QMenu* menu, QToolButton* button) const
 		SessionGridMenus::populateScene(menu, row, m_sceneStates.at(row).toObject());
 		SessionGridMenus::populateSubScenes(menu, row, m_subScenes, selection());  // WF-064
 	}
-	else { SessionGridMenus::populateGrid(menu, m_tracks, m_scenes); }
+	else { SessionGridMenus::populateGrid(menu, m_gridTracks, m_gridScenes); }
 }
 
 

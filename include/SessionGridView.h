@@ -137,6 +137,8 @@ private:
 	std::vector<QString> cellNames(const QJsonArray& slotList) const;
 	//! Q050-493: each audio cell's playback settings off their defaults into m_badges and m_playback (cellNames' order).
 	void readPlayback(const QJsonArray& slotList);
+	void readAuthoredClips(const QJsonArray& slotList);  //!< cluster 5360: what the cap hides still counts
+	bool sceneHoldsClip(int scene) const;  //!< any authored track, drawn or not, holds a clip in drawn scene @a scene
 	void paintHeaders();
 	void paintCell(int track, int scene);
 	//! Q050-493: an audio cell's playback settings off their defaults after its name ("-6.0dB +12st W128"), and in
@@ -172,10 +174,14 @@ private:
 	int m_dropCell = -1;               //!< the cell a drag is over (track * scenes + scene)
 	QString m_dropFile;                //!< and the audio file it carries
 	std::vector<int> m_playingScene;  //!< per column, from the last refresh; -1 when idle
-	std::vector<QString> m_phases;    //!< per column: launching, playing, stopping or empty
+	std::vector<QString> m_phases;    //!< per column: launching, playing, stopping or empty (every authored track, cluster 5360)
+	std::vector<bool> m_sceneHasClip;  //!< per drawn scene: any authored track, drawn or not, holds a clip (cluster 5360)
+	std::vector<QString> m_playingName;  //!< per drawn track: the name of the clip it plays, even in a scene row not drawn
 	QJsonObject m_take;                //!< session.record_slot_status, from the last refresh
 	mutable bool m_landTake = false;   //!< a record entry of this grid's menu started the take in hand
-	int m_tracks = -1;
+	int m_gridTracks = -1;             //!< the authored grid, from session.get_state
+	int m_gridScenes = -1;
+	int m_tracks = -1;                 //!< the columns and scenes this view draws: at most 64 x 64 (cluster 5360)
 	int m_scenes = -1;
 	QTimer m_timer;
 };
