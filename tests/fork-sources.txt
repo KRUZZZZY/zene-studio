@@ -4226,3 +4226,8 @@ docs/qwen-fixes-2026-10/cluster-new-p10-333.md
 # cluster new-p12-56 (2026-11): the per-period controller notification is a control-thread timer, not a
 # Qt signal emitted from the render thread - the regression drives the timer by its object name (fork-NEW).
 tests/src/core/ControllerFrameNotificationTest.cpp
+# Q050-525 (2026-11-28): the Rune front end's hosted-CI helpers, the pinned-Rune fetch script and its workflow (fork-NEW).
+rune/ci/check_png.py
+rune/ci/summarize.py
+rune/ci/window_check.py
+rune/fetch-rune.sh
