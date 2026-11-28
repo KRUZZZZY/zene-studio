@@ -22,6 +22,8 @@
  *
  */
 
+#include <memory>
+
 #include <QCryptographicHash>
 #include <QDir>
 #include <QFile>
@@ -30,11 +32,15 @@
 #include <QJsonObject>
 #include <QSet>
 
+#include "BounceInPlace.h" // namesTheSameFile: is this the file the session has open?
 #include "ControlDeviceSupport.h" // controlReadFileBytes / controlWriteFileBytes
 #include "ControlEdit.h"
 #include "ControlProjectAssets.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
+#include "Engine.h"
+#include "ProjectJournal.h"
+#include "Song.h"
 
 namespace lmms
 {
@@ -155,11 +161,159 @@ void collectAll(const QString& project, const QDir& projectDir, const QDir& fold
 	}
 }
 
+/*! The open session a collection has to keep in step, when @a project is the
+ *  file it is working on: the song, the session as it was captured BEFORE the
+ *  command runs (the undo half), and the sections a partial session omitted.
+ *  `song` is nullptr for a project that is not open - a plain file, which this
+ *  verb has always handled and still does. */
+struct OpenSession
+{
+	Song* song = nullptr;
+	std::shared_ptr<const QByteArray> before;
+	QStringList skipped;
+};
+
+/*! Whether @a project is the file the session has open, and the session state the
+ *  collected document is adopted with. Refused - BEFORE anything is written -
+ *  when the session holds changes the rewrite would drop, or when the session
+ *  cannot be captured for the one step that undoes the command: a collection
+ *  that cannot be taken back must not start. */
+bool prepareOpenSession(const QString& project, OpenSession* open, ControlResult* error)
+{
+	Song* const song = Engine::getSong();
+	if (song == nullptr || song->projectFileName().isEmpty()
+		|| !BounceInPlace::namesTheSameFile(song->projectFileName(), project))
+	{
+		return true;
+	}
+	open->song = song;
+	if (song->isModified())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("'%1' is the project this session has open, and the session has unsaved "
+				"changes: collecting media rewrites the file and then reopens the collected document in "
+				"the session, so those changes would be lost. Save the project first (project.save), then "
+				"collect again").arg(project));
+		return false;
+	}
+	ProjectJournal* const journal = Engine::projectJournal();
+	if (journal == nullptr || !journal->isJournalling())
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("'%1' is the project this session has open and this instance's undo journal "
+				"is not recording, so the session could not be put back after the collection; nothing "
+				"was written").arg(project));
+		return false;
+	}
+	open->before = song->captureUndoSnapshot(&open->skipped);
+	if (!open->before)
+	{
+		*error = ControlResult::failure(ControlErrorKind::Refused,
+			QStringLiteral("'%1' is the project this session has open and the session could not be "
+				"captured for undo (a load is running); nothing was written").arg(project));
+		return false;
+	}
+	return true;
+}
+
+/*! The collected document, adopted by the session that has @a project open, and the
+ *  ONE recorded step for the whole command.
+ *
+ *  The session is LOADED from the file the command just wrote - the load
+ *  project.open runs - and not restored from a snapshot: the collected document
+ *  names its copies as project-relative `local:` paths, which the engine
+ *  resolves against the open project's own directory, and a snapshot is loaded
+ *  from a temporary file where that base would point somewhere else. The
+ *  undo/redo history the load clears is held across it and put back, so the
+ *  command costs one step of the history it found instead of all of it.
+ *
+ *  The step restores BOTH halves: the file's previous bytes and the session
+ *  they were collected from, so one control.undo leaves disk and memory saying
+ *  the same thing - which is the whole point of the fix (BUG 13). A collected
+ *  document that cannot be reopened or re-captured puts the file back and
+ *  refuses, so the call never leaves half of itself done.
+ *
+ *  A project that is not open records exactly the step it always did: the
+ *  file's bytes, and the copies stay. */
+bool recordCollectionStep(const OpenSession& open, const QString& project, const QByteArray& previous,
+	const QByteArray& written, QJsonObject* transaction, ControlResult* error)
+{
+	const QJsonObject about{{QStringLiteral("project"), project}, {QStringLiteral("bytes"), previous.size()}};
+	if (open.song == nullptr)
+	{
+		addUndoStep(
+			[project, previous]() { ControlResult ignored; controlWriteFileBytes(project, previous, true, &ignored); },
+			[project, written]() { ControlResult ignored; controlWriteFileBytes(project, written, true, &ignored); });
+		*transaction = transactionPayload(about,
+			QStringLiteral("recorded action step: the project file's previous bytes"), QJsonObject(), true,
+			QStringLiteral("action checkpoint (the project file's previous bytes, written back; the copies stay)"));
+		return true;
+	}
+
+	ProjectJournal* const journal = Engine::projectJournal();
+	ProjectJournal::DetachedHistory history = journal->detachHistory();
+	open.song->loadProject(project);
+	const QString refusal = open.song->loadRefusal();
+	QStringList skippedAfter;
+	const std::shared_ptr<const QByteArray> after = refusal.isEmpty()
+		? open.song->captureUndoSnapshot(&skippedAfter) : nullptr;
+	journal->reattachHistory(std::move(history));
+	if (after == nullptr)
+	{
+		ControlResult ignored;
+		controlWriteFileBytes(project, previous, true, &ignored);
+		*error = ControlResult::failure(ControlErrorKind::Refused, refusal.isEmpty()
+			? QStringLiteral("the collected document of '%1' could not be captured for undo, so the file "
+				"was put back").arg(project)
+			: QStringLiteral("the collected document of '%1' could not be reopened (%2); the file was put "
+				"back").arg(project, refusal));
+		return false;
+	}
+
+	// The session and its file are ONE document again: the captured snapshot is what a save
+	// of this session writes, so the flag goes back to the state an open leaves (the capture
+	// itself marks the session modified, as every document build does).
+	open.song->noteProjectSaved(project);
+
+	const auto restoreBoth = [project](const QByteArray& bytes, const std::shared_ptr<const QByteArray>& session,
+		const QStringList& skipped)
+	{
+		ControlResult ignored;
+		if (!controlWriteFileBytes(project, bytes, true, &ignored))
+		{
+			recordActionRestoreFailure(QStringLiteral("the project file %1 could NOT be written back during "
+				"the undo of project.collect_media - the file still holds the collected bytes").arg(project));
+		}
+		if (!Engine::getSong()->restoreUndoSnapshot(*session, project, skipped))
+		{
+			recordActionRestoreFailure(QStringLiteral("the session could NOT be restored during the undo of "
+				"project.collect_media - it still holds the collected references"));
+		}
+		// The session and its file are one document again (a restore marks the session modified).
+		Engine::getSong()->noteProjectSaved(project);
+	};
+	addStructuralUndoStep(
+		[restoreBoth, previous, before = open.before, skipped = open.skipped]() {
+			restoreBoth(previous, before, skipped);
+		},
+		[restoreBoth, written, after, skippedAfter]() { restoreBoth(written, after, skippedAfter); },
+		open.before->size() + after->size());
+	*transaction = transactionPayload(about,
+		QStringLiteral("recorded action step: the project file's previous bytes and the session they were "
+			"collected from"), QJsonObject(), true,
+		QStringLiteral("action checkpoint (the collected document is the session's own state; one step puts "
+			"the file's previous bytes back AND reopens the session it had, so disk and memory agree again; "
+			"the copies stay)"));
+	return true;
+}
+
 ControlResult collectMedia(const QJsonObject& args)
 {
 	const QString project = args.value(QStringLiteral("project")).toString();
 	const QDir projectDir = QFileInfo(project).absoluteDir();
 	ControlResult error;
+	OpenSession open;
+	if (!prepareOpenSession(project, &open, &error)) { return error; }
 	QString folderName;
 	if (!mediaFolderName(args, projectDir, &folderName, &error)) { return error; }
 	ProjectAssetScan scan;
@@ -189,13 +343,9 @@ ControlResult collectMedia(const QJsonObject& args)
 		{QStringLiteral("missing"), scan.missingCount()}};
 	// An unchanged project file records no step, and so no transaction claims one (the registry records nothing).
 	if (written == previous) { return ControlResult::success(result); }
-	addUndoStep(
-		[project, previous]() { ControlResult ignored; controlWriteFileBytes(project, previous, true, &ignored); },
-		[project, written]() { ControlResult ignored; controlWriteFileBytes(project, written, true, &ignored); });
-	result.insert(QStringLiteral("__transaction"),
-		transactionPayload(QJsonObject{{QStringLiteral("project"), project}, {QStringLiteral("bytes"), previous.size()}},
-			QStringLiteral("recorded action step: the project file's previous bytes"), QJsonObject(), true,
-			QStringLiteral("action checkpoint (the project file's previous bytes, written back; the copies stay)")));
+	QJsonObject transaction;
+	if (!recordCollectionStep(open, project, previous, written, &transaction, &error)) { return error; }
+	result.insert(QStringLiteral("__transaction"), transaction);
 	return ControlResult::success(result);
 }
 

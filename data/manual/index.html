@@ -908,7 +908,9 @@ this list. An agent gets the same ids from <code>revisions.list</code> and runs 
 <code>revisions.compare</code> or <code>revisions.restore</code>; a restore changes the file on disk, so
 the agent reopens the project with <code>project.open</code> to work with the restored bytes.</p>
 <p>Collect Media copies every file a project uses beside it; Project &gt; Hand Off writes a folder someone
-else can open with a list of the devices to install first. Import Tracks copies tracks from another project;
+else can open with a list of the devices to install first. Collect Media also repoints the project you
+have open at those copies, so saving afterwards keeps the collection (it asks you to save first if the
+project has unsaved changes); Import Tracks copies tracks from another project;
 Save as Template keeps a project to start from.</p>
 <p>Project &gt; New Document starts a production, mastering or live project from its own template (your own
 <i>type</i>.mpt in the templates folder wins); the window title names a mastering or live document. A mastering document
