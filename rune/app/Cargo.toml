@@ -5,6 +5,12 @@ edition = "2024"
 license = "GPL-2.0-or-later"
 description = "Zene Studio: independent Rune UI prototype (simulated playback, demo data)"
 
+# rune/link (the engine link crate) is a member of this workspace; plain `cargo build` and
+# `cargo test` here cover both crates (default-members), so the hosted workflow needs no change.
+[workspace]
+members = [".", "../link"]
+default-members = [".", "../link"]
+
 [[bin]]
 name = "zene-rune"
 path = "src/main.rs"
@@ -13,7 +19,9 @@ path = "src/main.rs"
 # Rune pinned at b53fe7236ab11225108f6aee837c2d9942f63991 (vendor/rune, branch dev).
 rune = { path = "../vendor/rune/crates/rune" }
 rune-kit = { path = "../vendor/rune/crates/rune-kit" }
-# Phase 0 spike: the control-socket link (src/zene.rs). Already in the lock file through Rune.
+# The engine link (connection, supervision, status): rune/link, no GUI dependency.
+zene-link = { path = "../link" }
+# The Phase 0 model loader (src/zene.rs) reads replies as JSON. Already in the lock file through Rune.
 serde_json = "1"
 
 # Rune's own patched dependencies: an app that builds Rune must repeat them (vendor/rune/Cargo.toml).

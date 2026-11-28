@@ -4350,12 +4350,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "zene-link"
+version = "0.0.1"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "zene-rune"
 version = "0.0.1"
 dependencies = [
  "rune",
  "rune-kit",
  "serde_json",
+ "zene-link",
 ]
 
 [[package]]

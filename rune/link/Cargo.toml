@@ -1,0 +1,21 @@
+[package]
+name = "zene-link"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-2.0-or-later"
+description = "Zene Studio: the engine link (control-socket connection, engine process supervision, link status). No GUI dependency."
+# A member of the workspace rooted at rune/app (its Cargo.lock, [patch] and profiles apply).
+workspace = "../app"
+
+[lib]
+path = "src/lib.rs"
+
+# The in-process and out-of-process fake engine the deterministic tests run against
+# (src/fake.rs). A test fixture: never started by the UI.
+[[bin]]
+name = "zene-fake-engine"
+path = "src/bin/zene-fake-engine.rs"
+
+[dependencies]
+# Already in the lock file through Rune; the only dependency (everything else is std).
+serde_json = "1"
