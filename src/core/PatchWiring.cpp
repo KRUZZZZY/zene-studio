@@ -27,6 +27,8 @@
 
 #include "PatchWiring.h"
 
+#include <QDomDocument>
+#include <QDomElement>
 #include <QJsonObject>
 #include <QJsonValue>
 
@@ -59,6 +61,39 @@ bool readPortField(const QJsonValue& value, int* port)
 		return false;
 	}
 	*port = static_cast<int>(number);
+	return true;
+}
+
+//! The project-file form (@see PatchWiring::saveXml)
+constexpr auto XML_ELEMENT = "patchwiring";
+constexpr auto XML_EDGE = "edge";
+
+//! Reads one <edge>'s port attribute: absent means port 0, as in the JSON form;
+//! present but not an integer is malformed.
+bool readXmlPort(const QDomElement& entry, const QString& name, int* port)
+{
+	if (!entry.hasAttribute(name)) { return true; }
+	bool ok = false;
+	const int value = entry.attribute(name).toInt(&ok);
+	if (!ok) { return false; }
+	*port = value;
+	return true;
+}
+
+//! One saved <edge>, or false (and @a error) when a reference or a port is malformed
+bool readXmlEdge(const QDomElement& entry, PatchEdge* edge, QString* error)
+{
+	if (!PatchRef::parse(entry.attribute(QStringLiteral("from")), &edge->from, error)
+		|| !PatchRef::parse(entry.attribute(QStringLiteral("to")), &edge->to, error))
+	{
+		return false;
+	}
+	if (!readXmlPort(entry, QStringLiteral("fromport"), &edge->fromPort)
+		|| !readXmlPort(entry, QStringLiteral("toport"), &edge->toPort))
+	{
+		if (error != nullptr) { *error = QStringLiteral("edge port is not an integer"); }
+		return false;
+	}
 	return true;
 }
 
@@ -214,6 +249,49 @@ auto PatchWiring::fromJson(const QJsonArray& array, PatchWiring* wiring, QString
 		}
 		parsed.addEdge(edge);
 	}
+
+	*wiring = parsed;
+	return true;
+}
+
+void PatchWiring::saveXml(QDomDocument& doc, QDomElement& parent) const
+{
+	if (isEmpty()) { return; }  // the derivation is the absence of the element
+
+	QDomElement element = doc.createElement(QString::fromLatin1(XML_ELEMENT));
+	element.setAttribute(QStringLiteral("output"), m_output.toString());
+	for (const PatchEdge& edge : m_edges)
+	{
+		QDomElement entry = doc.createElement(QString::fromLatin1(XML_EDGE));
+		entry.setAttribute(QStringLiteral("from"), edge.from.toString());
+		entry.setAttribute(QStringLiteral("fromport"), edge.fromPort);
+		entry.setAttribute(QStringLiteral("to"), edge.to.toString());
+		entry.setAttribute(QStringLiteral("toport"), edge.toPort);
+		element.appendChild(entry);
+	}
+	parent.appendChild(element);
+}
+
+auto PatchWiring::loadXml(const QDomElement& parent, PatchWiring* wiring, QString* error) -> bool
+{
+	if (wiring == nullptr) { return false; }
+	wiring->clear();
+
+	const QDomElement element = parent.firstChildElement(QString::fromLatin1(XML_ELEMENT));
+	if (element.isNull()) { return true; }
+
+	// Parsed into a local first, as fromJson does: a malformed edge must not
+	// leave a half-built wiring behind.
+	PatchWiring parsed;
+	for (QDomElement entry = element.firstChildElement(QString::fromLatin1(XML_EDGE)); !entry.isNull();
+		entry = entry.nextSiblingElement(QString::fromLatin1(XML_EDGE)))
+	{
+		PatchEdge edge;
+		if (!readXmlEdge(entry, &edge, error)) { return false; }
+		parsed.addEdge(edge);
+	}
+	if (parsed.isEmpty()) { return true; }  // an element with no edges is the derivation too
+	if (!PatchRef::parse(element.attribute(QStringLiteral("output")), &parsed.m_output, error)) { return false; }
 
 	*wiring = parsed;
 	return true;

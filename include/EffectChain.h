@@ -232,6 +232,9 @@ private:
 	PatchWiring m_patch;
 	//! Set by rebuildRoutingGraph() when it could not apply m_patch
 	bool m_patchDropped = false;
+	//! loadSettings(): m_patch from the <patchwiring> @a chainElement carries -
+	//! the derivation when it carries none, or a malformed one (reported).
+	void loadPatchWiring(const QDomElement& chainElement);
 
 	//! Audio thread: renders one bus block through the graph. Allocates nothing.
 	auto processThroughGraph(AudioBus& bus) -> bool;

@@ -893,6 +893,10 @@ set(LMMS_TESTS
 	# legacy test effects, because a chain of audio-plugin devices keeps its
 	# plain effect loop and would prove nothing.
 	src/core/PatcherCommandsTest.cpp
+	# An EffectChain's authored patch wiring survives saveSettings/loadSettings: the
+	# <patchwiring> child, the derived wiring when it is absent or malformed, and no
+	# child at all on a derived chain (old projects' format).
+	src/core/PatcherWiringPersistenceTest.cpp
 	src/core/VcaGroupTest.cpp
 	# Mixer channel pan (MixerChannel::m_panModel): the render, the file and the command.
 	src/core/MixerChannelPanTest.cpp
@@ -4201,6 +4205,9 @@ set_tests_properties(VcaRefreshAtomicityTest PROPERTIES
 # the render, so it needs a Qt platform plugin for the same reason (guiless
 # otherwise: nothing opens a window).
 set_tests_properties(PatcherCommandsTest PROPERTIES
+	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+# PatcherWiringPersistenceTest builds chains on a real Engine for the same reason.
+set_tests_properties(PatcherWiringPersistenceTest PROPERTIES
 	ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # ControlVcaCommandsTest drives the `vca.*` command group through the registry

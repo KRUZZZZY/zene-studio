@@ -184,6 +184,7 @@ void EffectChain::saveSettings( QDomDocument & _doc, QDomElement & _this )
 			if (!vendor.isEmpty()) { ef.setAttribute("vendor", vendor); }
 		}
 	}
+	m_patch.saveXml(_doc, _this);  // new-p11-64: an authored wiring is project state; the derivation writes nothing
 }
 
 
@@ -265,6 +266,7 @@ void EffectChain::loadSettings( const QDomElement & _this )
 		}
 	}
 
+	loadPatchWiring(_this);  // new-p11-64: before the rebuild that applies it; replaces any wiring clear() kept
 	refreshLatency();
 	// The restored effects are this chain's signal path too.
 	rebuildRoutingGraph();
