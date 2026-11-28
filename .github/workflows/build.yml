@@ -194,6 +194,12 @@ jobs:
             ctest --rerun-failed -V --timeout 1500
             exit 1
           }
+      # Q050-517: the control-socket suite again, against serve mode (zene --engine: the engine with
+      # no interface). Same scripts and assertions - tests/serve-mode-suite.py sets
+      # ZENE_HARNESS_ENGINE_SERVE=1, which makes the harness add --engine - minus the tests named with
+      # a reason in tests/serve-mode-exclusions.txt because they exercise the Qt interface itself.
+      - name: Serve-mode control suite
+        run: python3 tests/serve-mode-suite.py build -j 2 --timeout 1500
       - name: Signal-death backtrace (a SIGSEGV must name its frame)
         # QtTest's own handler prints an EMPTY stack on a runner - "Received signal at function
         # time: 0ms ... dumping stack" then "End of stack trace" with nothing between - so the

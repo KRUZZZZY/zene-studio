@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-26T14:41:42Z",
+  "captured_at": "2026-11-28T15:26:48Z",
   "commands": [
     {
       "args_schema": {
@@ -7988,6 +7988,9 @@
           "engine_ready": {
             "type": "boolean"
           },
+          "interface": {
+            "type": "string"
+          },
           "pong": {
             "type": "boolean"
           },
@@ -15228,6 +15231,9 @@
         "properties": {
           "count": {
             "type": "integer"
+          },
+          "record_routes_reset": {
+            "type": "array"
           },
           "removed": {
             "type": "string"
@@ -40574,14 +40580,14 @@
   ],
   "count": 939,
   "instance": {
-    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-Q050-211/build/zene",
-    "binary_bytes": 36688712,
-    "binary_sha256": "5dbd7a20ad39c5781f597eb35a3438073c407254147ba9a40e8515d8722d26e9",
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-Q050-211/tools/zene-pa-agentctl",
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fable-rune/build/zene",
+    "binary_bytes": 36811600,
+    "binary_sha256": "f8794081b7a1aefabc82d59e15b7e87ecc1b952b5ff4395bdc6537df7c9b6baa",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-fable-rune/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-1xms0yhx/zene.sock",
-    "version": "0.4.0-alpha.8356+5f6d0e4"
+    "source_socket": "/tmp/zctl-run-vwmpwn7a/zene.sock",
+    "version": "0.4.0-alpha.8787+3f06570"
   },
   "kind": "zene-control-command-list",
   "proto": 1,

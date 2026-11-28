@@ -24,6 +24,8 @@
 
 
 #include <QDir>
+#include <memory>
+
 #include <QApplication>
 #include <QFile>
 #include <QMessageBox>
@@ -264,15 +266,34 @@ public:
 };
 
 
+//! The import's progress dialog where there is an interface to show it on, and nothing where there is
+//! none (zene --engine, Q050-517): a QProgressDialog needs a QApplication and a main window, and a
+//! process with neither used to die here on the first project.import of a MIDI file.
+class ImportProgress
+{
+public:
+	explicit ImportProgress(int steps)
+	{
+		if (gui::getGUI() == nullptr) { return; }
+		m_dialog = std::make_unique<QProgressDialog>(TrackContainer::tr("Importing MIDI-file..."),
+			TrackContainer::tr("Cancel"), 0, steps, gui::getGUI()->mainWindow());
+		m_dialog->setWindowTitle(TrackContainer::tr("Please wait..."));
+		m_dialog->setWindowModality(Qt::WindowModal);
+		m_dialog->setMinimumDuration(0);
+	}
+	void setValue(int value) { if (m_dialog) { m_dialog->setValue(value); } }
+	void setMaximum(int maximum) { if (m_dialog) { m_dialog->setMaximum(maximum); } }
+
+private:
+	std::unique_ptr<QProgressDialog> m_dialog;
+};
+
+
 bool MidiImport::readSMF(TrackContainer* tc)
 {
 	constexpr int MIDI_CC_COUNT = 128 + 1; // 0-127 (128) + pitch bend
 	constexpr int preTrackSteps = 2;
-	QProgressDialog pd(TrackContainer::tr("Importing MIDI-file..."),
-	TrackContainer::tr("Cancel"), 0, preTrackSteps, gui::getGUI()->mainWindow());
-	pd.setWindowTitle(TrackContainer::tr("Please wait..."));
-	pd.setWindowModality(Qt::WindowModal);
-	pd.setMinimumDuration(0);
+	ImportProgress pd(preTrackSteps);
 
 	pd.setValue(0);
 

@@ -1,0 +1,16 @@
+# Harness tests that cannot pass in serve mode (zene --engine) because they exercise the Qt interface
+# itself. Read by tests/serve-mode-suite.py: <ctest name><TAB><reason>. A blank reason is refused, a
+# name that is not a harness test is refused, and `--audit` fails on an entry that passes.
+ControlShell	drives the Qt shell itself: window.get_state, window.set_view and the panel list
+ControlNoteEditor	opens a clip in the Qt note editor (window.note_editor_set) and reads the panel back
+ControlStepGrid	opens the Qt step grid (window.step_grid) and compares it with note.list
+ControlFill	reads the filled notes back through the Qt step grid (window.step_grid)
+ControlCustomisation	shortcuts.list and window.layout_save act on the Qt menus and the window layout
+ControlMixingRouting	window.select and window.phase_scope: the Qt selection and the phase scope window
+ControlMixingStripFeatures	window.input_meters opens the Qt input-meter window
+ControlPluginShortcuts	plugin.selected_load and shortcuts.set act on the Qt selection and key bindings
+ControlDevices	window.select and the Qt Device panel drawing the chain
+ControlTrackFolderTranscript	one check shows the Qt mixer (window.toggle) and repaints it for 40 rounds
+ControlSuccessPaths	window.screenshot, window.sample_editor, app.about and five more window.* success paths; its engine checks (project.import of a MIDI file among them) are held by ControlEngineServe
+ControlFeedbackCommands	compares the saved bytes with a baseline the application wrote, which holds the window-state sections (piano roll, project notes) a served engine has none of
+ControlAbsentSocket	starts WITHOUT --control-socket, which serve mode refuses by design (ControlEngineServe, start-refusals)

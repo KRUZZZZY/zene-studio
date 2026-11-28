@@ -423,6 +423,7 @@ include/EffectRackView.h
 include/EffectSelectDialog.h
 include/EffectView.h
 include/Engine.h
+include/EngineServe.h
 include/EnvelopeAndLfoParameters.h
 include/EnvelopeAndLfoView.h
 include/EnvelopeGraph.h
@@ -2077,6 +2078,7 @@ src/core/Effect.cpp
 src/core/EffectChain.cpp
 src/core/EffectChainPatcher.cpp
 src/core/Engine.cpp
+src/core/EngineServe.cpp
 src/core/EnvelopeAndLfoParameters.cpp
 src/core/ExportDither.cpp
 src/core/ExportNoiseShaper.cpp
@@ -3031,6 +3033,7 @@ tests/src/core/DrumSynthTestParts1.h
 tests/src/core/DummyPacingTest.cpp
 tests/src/core/EffectControlsVisibilityTest.cpp
 tests/src/core/EngineRenderBenchmarkTest.cpp
+tests/src/core/EngineServeTest.cpp
 tests/src/core/EnvelopeAndLfoParametersTest.cpp
 tests/src/core/ExportDitherTest.cpp
 tests/src/core/ExportNoiseShaperTest.cpp

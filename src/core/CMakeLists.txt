@@ -918,6 +918,7 @@ set(LMMS_SRCS
 	# carries a whole-tree file-length baseline row (Gate 7's tolerance is zero).
 	core/EffectChainPatcher.cpp
 	core/Engine.cpp
+	core/EngineServe.cpp
 	core/EnvelopeAndLfoParameters.cpp
 	core/ExportDither.cpp
 	# Noise-shaped TPDF requantisation for 16-bit export (040/dither, owner decision 13).
