@@ -202,6 +202,42 @@ private slots:
 		QVERIFY(gainAt(frames - 1) > 0.99f);
 	}
 
+	//! The rendered consequence of the owner ruling (docs/m0-design/decisions-r3-clips.md section 2): the default
+	//! crossfade clamps both ramps to the shared span but writes EDGE fades only, so the outer clip stays at unity
+	//! under the contained clip - [20, 40) is not ducked and its ramp stays at its own end, [80, 100). The explicit
+	//! container gesture is the one that ducks it. Ticks stand in for frames: the ramps are ratios.
+	void theDefaultCrossfadeDoesNotDuckTheOuterClipUnderTheContainedClip()
+	{
+		Clip* earlier = clipAt(m_track, 0, 100);          // [0, 100)
+		Clip* later = clipAt(m_track, 20, 20);            // [20, 40), wholly inside it
+		QCOMPARE(arrangement::applyOverlap(later, arrangement::Overlap::Crossfade), 1);
+		const auto outerGain = [&](f_cnt_t frame) {
+			const ClipEdits outer = earlier->clipEdits();
+			return clipFadeGainAt(frame, static_cast<f_cnt_t>(earlier->length().getTicks()),
+				static_cast<f_cnt_t>(outer.fadeInTicks), static_cast<f_cnt_t>(outer.fadeOutTicks),
+				outer.fadeInShape, outer.fadeOutShape, static_cast<f_cnt_t>(outer.fadeInOffsetTicks),
+				static_cast<f_cnt_t>(outer.fadeOutOffsetTicks), outer.fadeOffsetGap);
+		};
+		for (f_cnt_t frame = 20; frame < 40; ++frame) { QCOMPARE(outerGain(frame), 1.0f); }
+		// The clamped ramp is the outer clip's own edge fade: full a tick before it, silent at its last frame.
+		QVERIFY(outerGain(79) > 0.999f);
+		QVERIFY(outerGain(99) < 0.1f);
+
+		// The explicit gesture ducks it instead: down over [20, 30), back up over [30, 40).
+		later->setClipEdits(ClipEdits());
+		ClipEdits authored = later->clipEdits();
+		authored.fadeInTicks = 10;
+		authored.fadeOutTicks = 10;
+		later->setClipEdits(authored);
+		QString why;
+		QCOMPARE(arrangement::applyOverlap(later, arrangement::Overlap::Crossfade, &why, true), 1);
+		QVERIFY2(why.isEmpty(), qPrintable(why));
+		QVERIFY(outerGain(20) > 0.999f);
+		QVERIFY(outerGain(25) < 0.75f);   // sin(pi/4) in the middle of the ramp down
+		QVERIFY(outerGain(30) < 0.01f);   // silent under the contained clip's midpoint...
+		QVERIFY(outerGain(39) > 0.9f);    // ...and back up by its end
+	}
+
 	void aMoveSnapsToAnEdgeOrAMarkerOnlyWhenClose()
 	{
 		Clip* other = clipAt(m_track, 0, Bar);
