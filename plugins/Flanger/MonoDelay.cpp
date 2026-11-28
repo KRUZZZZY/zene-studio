@@ -59,9 +59,29 @@ void MonoDelay::tick( sample_t* sample )
 	if (m_length == 0.0f) { return; }
 
 	m_writeIndex = ( m_writeIndex + 1 ) % ( int )m_maxLength;
-	int readIndex = m_writeIndex - static_cast<int>(m_length);
-	if (readIndex < 0 ) { readIndex += m_maxLength; }
-	float out = m_buffer[ readIndex ];
+
+	float out;
+	if( m_length < 1.0f )
+	{
+		// No stored sample is old enough for a delay below one sample: the slot
+		// at the write index is about to be overwritten and still holds a sample
+		// from a full ring ago, so reading it delayed the signal by m_maxLength
+		// frames instead of the requested fraction. Interpolate between the two
+		// samples that do bracket the request - the incoming sample (delay zero)
+		// and the newest stored one (delay one).
+		int previousIndex = m_writeIndex - 1;
+		if( previousIndex < 0 ) { previousIndex += m_maxLength; }
+		out = ( 1.0f - m_length ) * m_buffer[ previousIndex ] + m_length * *sample;
+	}
+	else
+	{
+		// Delays of one sample or more keep the whole-sample read the frozen
+		// pre-migration reference renders with.
+		int readIndex = m_writeIndex - static_cast<int>(m_length);
+		if (readIndex < 0 ) { readIndex += m_maxLength; }
+		out = m_buffer[ readIndex ];
+	}
+
 	m_buffer[ m_writeIndex ] = *sample + ( out * m_feedback );
 	*sample = out;
 }
