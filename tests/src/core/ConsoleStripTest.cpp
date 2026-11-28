@@ -395,6 +395,34 @@ private slots:
 		QCOMPARE(older, fresh);  // bit for bit: the glue stage is skipped while off
 	}
 
+	//! A bypassed (zero-gain) EQ band must not keep its filter history: raising the gain again on
+	//! silence must produce silence, not a burst replayed from the old audio.
+	void aReEnabledEqBandStartsFromCleanHistory()
+	{
+		MixerChannel* c = channel(1);
+		const f_cnt_t frames = 8;
+		c->m_eqLowModel.setValue(12.f);
+		c->m_eqMidModel.setValue(0.f);
+		c->m_eqHighModel.setValue(0.f);
+		std::fill(c->m_eqState.begin(), c->m_eqState.end(), 0.f);
+		for (f_cnt_t f = 0; f < frames; ++f) { c->m_buffer[f] = SampleFrame(0.5f, 0.5f); }
+		mixerstrip::applyChannelEq(*c, frames);  // the low band now holds history
+		QVERIFY(c->m_eqState[0] != 0.f);
+		c->m_eqLowModel.setValue(0.f);  // all flat: bypassed
+		for (f_cnt_t f = 0; f < frames; ++f) { c->m_buffer[f] = SampleFrame(0.5f, 0.5f); }
+		mixerstrip::applyChannelEq(*c, frames);
+		for (const float s : c->m_eqState) { QCOMPARE(s, 0.f); }
+		c->m_eqLowModel.setValue(12.f);  // enabled again, on silence
+		for (f_cnt_t f = 0; f < frames; ++f) { c->m_buffer[f] = SampleFrame(0.f, 0.f); }
+		mixerstrip::applyChannelEq(*c, frames);
+		for (f_cnt_t f = 0; f < frames; ++f)
+		{
+			QCOMPARE(c->m_buffer[f][0], 0.f);
+			QCOMPARE(c->m_buffer[f][1], 0.f);
+		}
+		c->m_eqLowModel.setValue(0.f);
+	}
+
 	//! The glue stage on every test channel, at the largest period, block after block: no allocation on the
 	//! processing path, a finite output, and a bounded reduction.
 	void theGlueAllocatesNothingWhileProcessing()

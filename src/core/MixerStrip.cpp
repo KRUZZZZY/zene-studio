@@ -122,12 +122,17 @@ void runBand(MixerChannel& channel, const Biquad& q, float* state, f_cnt_t frame
 void applyChannelEq(MixerChannel& channel, f_cnt_t frames)
 {
 	const float gains[3] = {channel.m_eqLowModel.value(), channel.m_eqMidModel.value(), channel.m_eqHighModel.value()};
-	if (gains[0] == 0.f && gains[1] == 0.f && gains[2] == 0.f) { return; }
 	const double rate = Engine::audioEngine()->outputSampleRate();
 	const double freqs[3] = {100.0, channel.m_eqMidFreqModel.value(), 8000.0};
 	for (int b = 0; b < 3; ++b)
 	{
-		if (gains[b] == 0.f) { continue; }
+		if (gains[b] == 0.f)
+		{
+			// A bypassed band sees no audio, so its memories go stale: clear them, or re-enabling the band
+			// would replay old history through the new coefficients as a burst.
+			std::fill_n(channel.m_eqState.data() + b * 8, 8, 0.f);
+			continue;
+		}
 		runBand(channel, band(freqs[b], gains[b], rate, b == 1, b == 2), channel.m_eqState.data() + b * 8, frames);
 	}
 }
