@@ -4216,3 +4216,7 @@ docs/qwen-fixes-2026-10/cluster-new-p10-333.md
 # cluster new-p12-56 (2026-11): the per-period controller notification is a control-thread timer, not a
 # Qt signal emitted from the render thread - the regression drives the timer by its object name (fork-NEW).
 tests/src/core/ControllerFrameNotificationTest.cpp
+include/EngineServe.h
+src/core/EngineServe.cpp
+tests/control-engine-serve.py
+tests/serve-mode-suite.py

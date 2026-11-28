@@ -56,6 +56,13 @@ LMMS_EXPORT bool isUnattendedRun();
 //! modal screen away from an agent.
 LMMS_EXPORT bool hasDisplay();
 
+//! True when this process is the engine alone (`zene --engine`, Q050-517): the control server and an
+//! event loop over a QCoreApplication, with no interface of its own. It has no display by definition -
+//! hasDisplay() is false and isUnattendedRun() is true whatever the desktop offers - because nothing
+//! in such a process can put a pixel on one. Set by main() in its first parsing stage.
+LMMS_EXPORT bool isEngineServe();
+LMMS_EXPORT void setEngineServe(bool serve);
+
 } // namespace lmms
 
 #endif // LMMS_UNATTENDED_RUN_H

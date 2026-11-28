@@ -92,6 +92,7 @@
 #include "ScriptEngine.h"
 #include "ControlRegistry.h"
 #include "ControlServer.h"
+#include "EngineServe.h"
 #include "UnattendedRun.h"
 
 #include <memory>
@@ -284,6 +285,8 @@ void printHelp()
 		"      --control-socket <path>    Listen for agent JSON-RPC commands on the\n"
 		"          AF_UNIX socket <path>, or on the named pipe <path> on Windows\n"
 		"          (\\\\.\\pipe\\<name>). Opt-in; off unless given.\n"
+		"      --engine                   Run the engine alone: the control socket and\n"
+		"          no interface, until control.quit or SIGTERM. Needs --control-socket.\n"
 		"  -s, --samplerate <samplerate>  Specify output samplerate in Hz\n"
 		"          Range: 44100 (default) to 192000\n"
 		"          Possible values: 1, 2, 4, 8\n"
@@ -583,6 +586,12 @@ int main( int argc, char * * argv )
 			// Scripts always run headless; the script's LuaLog output goes to
 			// stdout and the process exit code reports success.
 			coreOnly = true;
+		}
+		else if (arg == "--engine")
+		{
+			// Serve mode (Q050-517, EngineServe.h): the engine with no interface of its own.
+			coreOnly = true;
+			lmms::setEngineServe( true );
 		}
 		else if (arg == "--report")
 		{
@@ -1314,7 +1323,7 @@ int main( int argc, char * * argv )
 			// (task #625, SPEC A13).
 			lmms::setAgentInstance( true );
 		}
-		else
+		else if( arg != "--engine" )  // --engine was taken by the first stage
 		{
 			if( argv[i][0] == '-' )
 			{
@@ -1657,6 +1666,20 @@ int main( int argc, char * * argv )
 
 		QTimer::singleShot( 0, qApp, &QCoreApplication::quit );
 	}
+	else if( lmms::isEngineServe() )
+	{
+		// Serve mode: the engine, the control server above and the event loop below - no GuiApplication.
+		QString serveError;
+		if( !engineserve::start( { controlSocket, fileToLoad, fileToImport }, &serveError ) )
+		{
+			fprintf( stderr, "\n%s\n\nTry \"%s --help\" for more information.\n\n",
+				serveError.toUtf8().constData(), argv[0] );
+			crashreporter::endSession();
+			safestart::endSession();
+			return EXIT_FAILURE;
+		}
+		destroyEngine = true;
+	}
 	else // otherwise, start the GUI
 	{
 		using namespace lmms::gui;
@@ -1951,7 +1974,7 @@ int main( int argc, char * * argv )
 	}
 
 	// ProjectRenderer::updateConsoleProgress() doesn't return line after render
-	if( coreOnly )
+	if( coreOnly && !lmms::isEngineServe() )
 	{
 		printf( "\n" );
 	}

@@ -732,6 +732,8 @@ set(LMMS_TESTS
 	# cluster new-p10-380-port-port: a short sid_fillbuffer fill must leave the un-written tail silent.
 	src/plugins/SidInstrument.cpp
 	src/core/ProjectOpenIntegrityTest.cpp
+	# Q050-517: serve mode (zene --engine) - the start refusal, the quit-time save, the no-display rule.
+	src/core/EngineServeTest.cpp
 	src/core/ProjectRecoveryTest.cpp
 	src/core/ProjectVersionTest.cpp
 	src/core/RackMacrosTest.cpp
@@ -8989,6 +8991,23 @@ endif()
 # hang counts as a failure, never as a wait.
 # ---------------------------------------------------------------------------
 if(PYTHON3_EXECUTABLE AND CONTROL_SUITE_AVAILABLE)
+	# Q050-517 (Rune E1): serve mode, `zene --engine` - the engine with the control socket and no
+	# interface. Seven checks against the real binary: it comes up ready with NO display at all (and
+	# the application in the same environment does not - the control), interface commands answer
+	# typed, edits/undo/save/open work, control.quit and SIGTERM end it cleanly (save:true saves),
+	# the start refusal, and a project named on the command line. POSIX: the checks use SIGTERM and
+	# the unix socket; the named-pipe transport is Q050-524's.
+	if(NOT WIN32)
+		add_test(NAME ControlEngineServe
+			COMMAND ${PYTHON3_EXECUTABLE}
+				${CMAKE_CURRENT_SOURCE_DIR}/control-engine-serve.py
+				$<TARGET_FILE:zene>
+		)
+		set_tests_properties(ControlEngineServe PROPERTIES
+			ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+			TIMEOUT 600
+		)
+	endif()
 	add_test(NAME ControlShutdown
 		COMMAND ${PYTHON3_EXECUTABLE}
 			${CMAKE_CURRENT_SOURCE_DIR}/control-shutdown.py

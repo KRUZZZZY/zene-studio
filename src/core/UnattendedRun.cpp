@@ -44,8 +44,11 @@ bool isHeadlessPlatformName(const QString& name)
 //! Both sources are consulted: QT_QPA_PLATFORM is set before an application
 //! object exists (main() asks that early) and platformName() is authoritative
 //! once it does.
+bool s_engineServe = false;
+
 bool platformHasNoDisplay()
 {
+	if (s_engineServe) { return true; }
 	const QByteArray requested = qgetenv("QT_QPA_PLATFORM");
 	if (requested.contains("offscreen") || requested.contains("minimal") ||
 		requested.contains("vnc"))
@@ -71,6 +74,16 @@ bool isAgentInstance()
 void setAgentInstance(bool agent)
 {
 	s_agentInstance = agent;
+}
+
+bool isEngineServe()
+{
+	return s_engineServe;
+}
+
+void setEngineServe(bool serve)
+{
+	s_engineServe = serve;
 }
 
 bool hasNoDisplay()

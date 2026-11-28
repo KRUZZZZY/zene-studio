@@ -251,12 +251,17 @@ class Instance:
         for key in ("XDG_CONFIG_HOME", "XDG_DATA_HOME"): os.makedirs(env[key], exist_ok=True)
         return env
 
+    def argv(self):
+        """The launch line. ZENE_HARNESS_ENGINE_SERVE=1 adds `--engine` (Q050-517), so the SAME test
+        drives the engine with no interface: that is how the suite is run against serve mode."""
+        serve = ["--engine"] if os.environ.get("ZENE_HARNESS_ENGINE_SERVE") == "1" else []
+        return [self.binary, "--config", self.config_path, "--control-socket", self.socket_path] + serve
+
     def spawn(self):
         self._stderr = open(self.stderr_path, "wb")
         self._stdout = open(self.stdout_path, "wb")
         self.process = subprocess.Popen(
-            [self.binary, "--config", self.config_path, "--control-socket", self.socket_path],
-            stdout=self._stdout, stderr=self._stderr, env=self.env(), cwd=self.tmp)
+            self.argv(), stdout=self._stdout, stderr=self._stderr, env=self.env(), cwd=self.tmp)
         register_instance(self)
         return self.process
 

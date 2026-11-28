@@ -39,6 +39,7 @@
 #include "ProjectJournal.h"
 #include "RenderQueue.h"
 #include "Song.h"
+#include "UnattendedRun.h"
 #include "UndoHistory.h"
 #include "lmmsversion.h"
 
@@ -111,6 +112,8 @@ QJsonObject pingResult()
 	result.insert(QStringLiteral("engine_ready"), state.ready);
 	result.insert(QStringLiteral("version"), QString::fromUtf8(LMMS_VERSION));
 	result.insert(QStringLiteral("proto"), ControlProtocolVersion);
+	// Q050-517: which interface this process has - "qt" (the application) or "none" (zene --engine).
+	result.insert(QStringLiteral("interface"), isEngineServe() ? QStringLiteral("none") : QStringLiteral("qt"));
 	result.insert(QStringLiteral("render_queue_capacity_refusals"),
 		static_cast<double>(RenderQueue::instance().capacityRefusals()));
 	if (!state.ready)
@@ -176,6 +179,7 @@ void registerPingCommand(ControlRegistry& registry)
 		{QStringLiteral("engine_ready"), booleanProperty()},
 		{QStringLiteral("version"), stringProperty()},
 		{QStringLiteral("proto"), integerProperty()},
+		{QStringLiteral("interface"), stringProperty()},
 		{QStringLiteral("render_queue_capacity_refusals"), integerProperty()},
 		// present only while engine_ready is false: {code, message}
 		{QStringLiteral("reason"), objectProperty()},
