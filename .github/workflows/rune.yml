@@ -50,7 +50,7 @@ env:
   RUST_BACKTRACE: "1"
   RUNE_GPU_LOG: "1"
   # cargo test covers both workspace crates (rune/app and rune/link). 43 is the Windows count (the
-  # unix-socket tests compile there to one skip-with-reason test each); Linux and macOS run 70.
+  # unix-socket tests compile there to one skip-with-reason test each); Linux and macOS run 71.
   MIN_TESTS: "43"
 
 jobs:

@@ -290,6 +290,22 @@ mod unix {
     }
 
     #[test]
+    fn discard_while_the_connection_is_down_stops_the_engine_at_once() {
+        let d = dir();
+        let mut s = Session::supervise(spec(&[], None), opts(&d));
+        s.wait_ready(T).unwrap();
+        let pid = s.pid().unwrap();
+        s.connection().unwrap().close();
+        // Save cannot work without a connection: refused, engine untouched.
+        assert!(s.exit(ExitChoice::Save).is_err());
+        assert!(alive(pid));
+        let t0 = Instant::now();
+        let out = s.exit(ExitChoice::Discard).unwrap();
+        assert!(matches!(out, ExitOutcome::Stopped { exit: Some(e) } if e.signal == Some(15)), "{out:?}");
+        assert!(t0.elapsed() < Duration::from_secs(3), "no wait for a quit that never reached the engine");
+    }
+
+    #[test]
     fn an_untitled_project_cannot_be_saved_on_quit_until_it_has_a_file() {
         let d = dir();
         let mut s = Session::supervise(spec(&[], None), opts(&d));

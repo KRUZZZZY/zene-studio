@@ -42,10 +42,10 @@ Needs a Rust toolchain (`rustup` picks up `app/rust-toolchain.toml`). On Linux t
 sh rune/fetch-rune.sh
 cd rune/app
 cargo build --locked --profile perf     # release codegen, no incremental; binary target/perf/zene-rune
-cargo test --locked                     # both crates: 70 tests on Linux (2 Phase 0 engine tests are ignored)
+cargo test --locked                     # both crates: 71 tests on Linux (2 Phase 0 engine tests are ignored)
 ```
 
-On Linux and macOS the count is 70: 20 link unit tests, 11 deterministic lifecycle tests against the
+On Linux and macOS the count is 71: 20 link unit tests, 12 deterministic lifecycle tests against the
 fake engine (`link/tests/lifecycle.rs`), 7 real-engine link tests (`link/tests/real_engine.rs`) and 32
 UI tests (6 of them on the link, `app/src/link_tests.rs`, one of which is real-engine). The 8
 real-engine tests only print `DID NOT RUN` unless `ZENE_ENGINE_BIN` is set (below). On

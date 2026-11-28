@@ -817,6 +817,7 @@ impl Session {
         if !save && !discard_confirmed && !(self.refresh_project() && !self.project().modified()) {
             return Err(LinkError::UnsavedChanges("Closing the engine now would discard unsaved changes; choose Save or Discard.".into()));
         }
+        let mut delivered = true;
         match self.call_ready("control.quit", json!({"save": save}), Duration::from_secs(10)) {
             Ok(_) => {}
             Err(LinkError::Remote { kind, message, .. }) if save && kind == "refused" => {
@@ -829,13 +830,16 @@ impl Session {
                 self.notices.push(why.clone());
                 return Err(LinkError::UnsavedChanges(why));
             }
-            Err(e) if discard_confirmed => self.log.note(format!("control.quit failed ({e}); stopping the process instead")),
+            Err(e) if discard_confirmed => {
+                self.log.note(format!("control.quit failed ({e}); stopping the process instead"));
+                delivered = false;
+            }
             Err(e) => return Err(e),
         }
         self.stopping = true;
         let timeout = self.opts.stop_timeout;
         let p = self.process.as_mut().expect("running");
-        let mut exit = p.wait_exit(timeout);
+        let mut exit = p.wait_exit(if delivered { timeout } else { Duration::ZERO });
         if exit.is_none() {
             if save {
                 // It may still be writing the file: never kill it here.
