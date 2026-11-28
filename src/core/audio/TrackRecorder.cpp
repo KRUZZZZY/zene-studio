@@ -163,6 +163,9 @@ bool TrackRecorder::arm(const std::string& filePath, int sampleRate, int inputCh
 	setInputChannel(inputChannel);
 	m_inputUnavailable.store(false, std::memory_order_release);
 	m_filePath = filePath;
+	// A route armed by number belongs to no track until track.set_arm's handler says otherwise
+	// (cluster 4736): a stale owner must never outlive the capture that named it.
+	m_armedTrackId.store(-1, std::memory_order_relaxed);
 
 	SF_INFO info{};
 	info.samplerate = sampleRate;
@@ -295,6 +298,9 @@ void TrackRecorder::writeJournal()
 
 bool TrackRecorder::disarm()
 {
+	// The capture stops here, so the track association stops with it: a later arm() of this route
+	// (by number, by another track) must not inherit the track that armed the one just stopped.
+	m_armedTrackId.store(-1, std::memory_order_relaxed);
 	if (!m_armed.exchange(false, std::memory_order_acq_rel))
 	{
 		if (m_journalPath.empty()) { return true; } // nothing outstanding
