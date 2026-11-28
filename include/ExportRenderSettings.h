@@ -52,10 +52,14 @@ namespace lmms
  *  - `OutputSettings`' two new fields default to its values, so a caller that
  *    does not mention them (the export dialog, the CLI) inherits whatever was
  *    last selected through `export.set_dither` / `export.set_src_quality`;
- *  - `ProjectRenderer` publishes the `OutputSettings` it was handed here for the
- *    render's duration and restores the previous values when it is destroyed
- *    (including on abort), so an explicit per-render choice wins and nothing
- *    leaks from one render into the next.
+ *  - `ProjectRenderer` publishes the `OutputSettings` it was handed here for as
+ *    long as it lives, and retires that publication when it is destroyed
+ *    (including on abort). The selection IN FORCE is the newest LIVE
+ *    publication's; the selection found before the first publication returns
+ *    when the last one is retired. So an explicit per-render choice wins, a
+ *    renderer that ends while another is still alive cannot put its own older
+ *    snapshot back under it (cluster 5239), and nothing leaks into the next
+ *    render.
  *
  *  **Defaults are the pre-existing behaviour**: dither OFF, `Linear`. That is
  *  not a convenience - an always-on dither would falsify this release's
@@ -97,8 +101,47 @@ public:
 #endif
 
 	//! Back to the compile-time defaults: dither off, `SrcQuality::Linear`,
-	//! loudness report OFF.
+	//! loudness report OFF. Every live publication is dropped too: `reset()`
+	//! promises the defaults, and a renderer constructed before it must not put a
+	//! selection from before it back afterwards.
 	static void reset() noexcept;
+
+	/*! A render's own publication of the two choices that outlive one
+	 *  OutputSettings. `token` identifies it so its owner can retire it; 0 means
+	 *  nothing was published. `srcQualityApplied` is false when the engine could
+	 *  not prepare converters for the requested quality - the render is refused
+	 *  (`ProjectRenderer::refusal()`), and the publication is still retired
+	 *  normally by the renderer's destruction.
+	 */
+	struct RenderSelection
+	{
+		std::uint64_t token = 0;
+		bool srcQualityApplied = false;
+	};
+
+	/*! Publishes \a mode and \a quality for as long as the renderer that asked
+	 *  lives, and returns the token its destruction retires with.
+	 *
+	 *  **Ownership, in the presence of more than one renderer.** The selection in
+	 *  force is the newest live publication's, and retiring is safe in ANY order:
+	 *  the retirement re-applies the newest publication that is still alive, and
+	 *  when the last one goes it re-applies the selection found before the first
+	 *  one published. A renderer's own "previous value" snapshot is deliberately
+	 *  NOT what a retirement puts back - that snapshot belongs to whoever was
+	 *  current when this renderer was built, and it is the snapshot of an OLDER
+	 *  renderer that used to land under a newer one (cluster 5239).
+	 *
+	 *  Control threads only: a renderer publishes in its constructor and retires
+	 *  in its destructor. The audio and render paths read `ditherMode()` /
+	 *  `srcQuality()` and never take the registry's lock.
+	 */
+	static auto publishRenderSelection(DitherMode mode, SrcQuality quality) -> RenderSelection;
+	/*! Retires one publication and re-applies the newest remaining one, or the
+	 *  pre-render selection when none is left. A token that was already retired,
+	 *  or that `reset()` dropped, is ignored. False only when re-applying the
+	 *  SRC quality failed.
+	 */
+	static auto retireRenderSelection(std::uint64_t token) -> bool;
 
 private:
 	static std::atomic<int> s_ditherMode;

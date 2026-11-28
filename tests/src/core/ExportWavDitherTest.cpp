@@ -70,10 +70,12 @@
 #include "AudioFileDevice.h"
 #include "AudioFileFlac.h"
 #include "AudioFileWave.h"
+#include "AudioResampler.h"
 #include "Engine.h"
 #include "ExportDither.h"
 #include "ExportRenderSettings.h"
 #include "OutputSettings.h"
+#include "ProjectRenderer.h"
 #include "SampleFrame.h"
 
 using namespace lmms;
@@ -489,7 +491,90 @@ private slots:
 	}
 #endif
 
+	// -----------------------------------------------------------------------
+	// 6. THE LIFECYCLE: a render's selection belongs to THAT render (cluster 5239).
+	// -----------------------------------------------------------------------
+
+	/*! A renderer publishes its dither/SRC choice process-wide when it is built
+	 *  and, before cluster 5239, put its OWN snapshot back when it was destroyed.
+	 *  A snapshot is only correct when renderers die in reverse order of their
+	 *  construction: with two alive at once - which the class permits, and which a
+	 *  nested export does - the older one's destruction put the pre-render choice
+	 *  back UNDER the newer one while it was still to render.
+	 *
+	 *  The published value IS the behaviour here, not an internal: a playback state
+	 *  built on the render thread takes its converter mode from it
+	 *  (`Sample::PlaybackState`'s default argument, include/Sample.h:51, through
+	 *  `AudioResampler::modeForCurrentSrcQuality`), so a publication that was
+	 *  overwritten means the survivor resamples with a converter it did not ask for.
+	 */
+	void aLiveRenderersSelectionSurvivesAnotherRenderersDestruction()
+	{
+		ExportRenderSettings::reset();
+		const OutputSettings settings = renderSelectionSettings();
+
+		auto first = std::make_unique<ProjectRenderer>(settings,
+			ProjectRenderer::ExportFileFormat::Wave, wavPath(QStringLiteral("selection-first.wav")));
+		QVERIFY2(first->isReady(), "the first renderer did not open its file");
+		QCOMPARE(ExportRenderSettings::srcQuality(), SrcQuality::SincBest);
+		QCOMPARE(AudioResampler::modeForCurrentSrcQuality(), AudioResampler::Mode::SincBest);
+
+		// Built while the first is still alive: the overlap the finding names.
+		auto second = std::make_unique<ProjectRenderer>(settings,
+			ProjectRenderer::ExportFileFormat::Wave, wavPath(QStringLiteral("selection-second.wav")));
+		QVERIFY2(second->isReady(), "the second renderer did not open its file");
+
+		// The FIRST renderer ends first. That used to put the pre-render selection
+		// (Linear, dither off) back under the second one, which has still to render.
+		first.reset();
+		QCOMPARE(ExportRenderSettings::srcQuality(), SrcQuality::SincBest);
+		QCOMPARE(AudioResampler::modeForCurrentSrcQuality(), AudioResampler::Mode::SincBest);
+		QCOMPARE(ExportRenderSettings::ditherMode(), DitherMode::Tpdf);
+
+		// The last renderer puts back exactly what it found: nothing leaks.
+		second.reset();
+		QCOMPARE(ExportRenderSettings::srcQuality(), SrcQuality::Linear);
+		QCOMPARE(ExportRenderSettings::ditherMode(), DitherMode::Off);
+	}
+
+	/*! The other order - nested renderers, the newer one destroyed first - was
+	 *  correct before the fix and must stay correct: the survivor's own choice is
+	 *  what is in force again, and nothing of either renderer is left behind. */
+	void aNestedRenderersDestructionRestoresTheSelection()
+	{
+		ExportRenderSettings::reset();
+		const OutputSettings settings = renderSelectionSettings();
+
+		auto outer = std::make_unique<ProjectRenderer>(settings,
+			ProjectRenderer::ExportFileFormat::Wave, wavPath(QStringLiteral("nested-outer.wav")));
+		auto inner = std::make_unique<ProjectRenderer>(settings,
+			ProjectRenderer::ExportFileFormat::Wave, wavPath(QStringLiteral("nested-inner.wav")));
+		QVERIFY2(outer->isReady(), "the outer renderer did not open its file");
+		QVERIFY2(inner->isReady(), "the inner renderer did not open its file");
+
+		inner.reset();
+		QCOMPARE(ExportRenderSettings::srcQuality(), SrcQuality::SincBest);
+		QCOMPARE(ExportRenderSettings::ditherMode(), DitherMode::Tpdf);
+
+		outer.reset();
+		QCOMPARE(ExportRenderSettings::srcQuality(), SrcQuality::Linear);
+		QCOMPARE(ExportRenderSettings::ditherMode(), DitherMode::Off);
+	}
+
 private:
+
+	//! What the two lifecycle tests publish: a non-default dither AND a non-default
+	//! converter, so a lost publication shows in both halves of the selection.
+	OutputSettings renderSelectionSettings() const
+	{
+		OutputSettings settings(44100, 160, OutputSettings::BitDepth::Depth16Bit,
+			OutputSettings::StereoMode::Stereo);
+		settings.setDitherMode(DitherMode::Tpdf);
+		settings.setSrcQuality(SrcQuality::SincBest);
+		return settings;
+	}
+
+	QString wavPath(const QString& name) const { return QDir(m_dir.path()).filePath(name); }
 
 	QString writeWavMode(const std::vector<float>& signal, DitherMode mode,
 		OutputSettings::BitDepth depth, const QString& name)
