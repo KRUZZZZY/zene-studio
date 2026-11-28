@@ -128,6 +128,12 @@ public:
 	//! Decode @a job's source and write it as @a job asks; empty on success, else the reason.
 	static QString convert(const RenderJob& job);
 
+	//! Test-only: observe the thread that reads a finished job's output (RenderQueue.cpp: reportOf), right
+	//! before it scans the file. Nothing is waited for - the probe records where it ran, so a test can tell
+	//! the control thread from a worker without a sleep or a schedule race.
+	using ReportProbe = void (*)();
+	static void setReportProbeForTesting(ReportProbe probe);
+
 private:
 	RenderQueue() = default;
 	RenderJob* find(int id);
@@ -140,6 +146,10 @@ private:
 	void clearBounceProcess();
 	void runConvert(RenderJob& job);
 	void finish(const TaskToken& token, int id, bool ok, int exitCode, const QString& error);
+	//! Read a finished job's report on a worker and post it back; the job ends when it is in place.
+	void beginReport(RenderJob& job);
+	void applyReport(int id, const QJsonObject& report);
+	void endProcess(int id);
 	void bounceProcessEnded(int id, bool ok, int exitCode, const QString& error);
 	void beginBounceFinalization(int id);
 	void finishBounce(int id, BounceInPlace::PreparedRender prepared, BounceInPlace::Result rendered,
