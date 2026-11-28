@@ -73,6 +73,12 @@ public:
 	//! E6: the tail the plug-in declared after its last prepare, so silence does not cut it.
 	int tailFrames() const override { return m_tailFrames.load(std::memory_order_relaxed); }
 
+	//! GUI thread: the same latency read, when the plug-in reported that its latency changed
+	//! (clap_host_latency.changed). The host's callback only records the report - it may run on the
+	//! plug-in's own thread, and reading the plug-in plus walking the chain is not real-time safe - so
+	//! this is where the cached value and the chain's compensation follow it.
+	void refreshLatencyIfChanged();
+
 	//! Set from the audio thread when the plug-in is not prepared, polled by
 	//! ClapEffectControls on the GUI thread.
 	auto needsReprepare() const -> bool

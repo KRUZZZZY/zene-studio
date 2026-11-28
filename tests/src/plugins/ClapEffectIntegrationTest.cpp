@@ -92,6 +92,7 @@ private slots:
 	void testOnNativeWaylandTheEditorRefusesWithTheReason();
 	void testThePluginsLatencyReachesTheChain();
 	void testThePluginsTailKeepsItRunning();
+	void testALatencyChangeThePluginReportsReachesTheChain();
 	void testParameterRescansRebuildTheModels();
 	void testParameterRescanHoldsTheModelGuardAcrossTheWholeUpdate();
 	void testReadOnlyParametersGetNoKnob();
@@ -723,6 +724,52 @@ void lmms::ClapEffectIntegrationTest::testThePluginsTailKeepsItRunning()
 	QCOMPARE(effect->tailFrames(), 96000);
 	const auto periods = static_cast<f_cnt_t>(96000 / Engine::audioEngine()->framesPerPeriod());
 	QVERIFY2(effect->timeout() > periods, "the auto-quit wait covers the declared tail");
+	chain.clear();
+}
+
+/*! cluster new-p16-320: a plug-in that changes its latency and says so with clap_host_latency.changed()
+ *  must reach the effect's cached latency and the chain's delay compensation. The host's callback used
+ *  to be an empty function, so the plugin's report was dropped and the chain kept the old alignment
+ *  until something else re-prepared the plug-in. The report is made from process() - a thread the host
+ *  does not own - so the callback may not re-read the plug-in or walk the chain there: the first pair of
+ *  assertions is that the change is NOT applied yet, the second that the control thread's poll applies
+ *  it. The fixture reports 320 frames against the 0 it was constructed with, so the value the poll has
+ *  to find can only come from the notification. */
+void lmms::ClapEffectIntegrationTest::testALatencyChangeThePluginReportsReachesTheChain()
+{
+	BufferManager::init(48);
+	qputenv("CLAP_TEST_GAIN_LATENCY", "0");
+	EffectChain chain{nullptr};
+	const auto key = makeKey();
+	auto* effect = new ClapEffect{&chain, &key};
+	chain.appendEffect(effect);
+	QCOMPARE(effect->latencyFrames(), 0);
+	QCOMPARE(chain.latencyFrames(), 0);
+
+	// The plug-in's latency becomes 320 and its next process() announces that.
+	qputenv("CLAP_TEST_GAIN_LATENCY", "320");
+	qputenv("CLAP_TEST_GAIN_LATENCY_REPORT", "1");
+	SampleFrame storage[48];
+	for (auto& frame : storage) { frame = SampleFrame(0.5f, 0.5f); }
+	SampleFrame* busData[1] = {storage};
+	AudioBus bus{busData, 1, 48};
+	QVERIFY(chain.processAudioBuffer(bus));
+	qunsetenv("CLAP_TEST_GAIN_LATENCY_REPORT");
+	qInfo("after the plug-in's clap_host_latency.changed(): effect %d frames, chain %d frames",
+		effect->latencyFrames(), chain.latencyFrames());
+	QCOMPARE(effect->latencyFrames(), 0);
+	QCOMPARE(chain.latencyFrames(), 0);
+
+	// The control thread's poll is where the host acts on it.
+	auto* controls = dynamic_cast<ClapEffectControls*>(effect->controls());
+	QVERIFY(controls != nullptr);
+	QVERIFY(QMetaObject::invokeMethod(controls, "poll"));
+	qInfo("after the control-thread poll: effect %d frames, chain %d frames",
+		effect->latencyFrames(), chain.latencyFrames());
+	QCOMPARE(effect->latencyFrames(), 320);
+	QCOMPARE(chain.latencyFrames(), 320);
+
+	qunsetenv("CLAP_TEST_GAIN_LATENCY");
 	chain.clear();
 }
 

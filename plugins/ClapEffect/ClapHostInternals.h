@@ -218,6 +218,11 @@ struct HostedPlugin::Impl
 		int outputChannels, int offset, int chunk) -> bool;
 
 	std::atomic<bool> needsReprepare{false};
+	//! The plug-in announced a latency change (clap_host_latency.changed) since the owner last took it.
+	//! A REPORT, not a re-read: the callback may run on any thread (a plug-in's processing thread is
+	//! one), while re-reading the plug-in and re-aligning the effect chain (EffectChain::refreshLatency)
+	//! allocates and may log. The owner takes this on its control-thread poll.
+	std::atomic<bool> latencyChangePending{false};
 	std::atomic<bool> callbackRequested{false};
 	//! E8: what the plug-in asked of the host, serviced on the main thread (serviceMainThread)
 	std::atomic<std::uint32_t> rescanFlags{0};
@@ -472,7 +477,14 @@ struct HostedPlugin::Impl
 		}
 	}
 
-	static void CLAP_ABI latencyChanged(const clap_host_t*) {}
+	//! The plug-in's latency changed. Only the report is recorded here: the read and the chain re-align
+	//! happen on the owner's control thread (latencyChangePending), so this callback - which a plug-in
+	//! may make from its processing thread - allocates nothing, takes no lock, waits for nothing and
+	//! logs nothing.
+	static void CLAP_ABI latencyChanged(const clap_host_t* host)
+	{
+		static_cast<Impl*>(host->host_data)->latencyChangePending.store(true, std::memory_order_relaxed);
+	}
 
 	static void CLAP_ABI logMessage(const clap_host_t*, clap_log_severity severity, const char* message)
 	{

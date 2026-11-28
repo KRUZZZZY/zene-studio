@@ -66,6 +66,9 @@ void ClapEffectControls::poll()
 		plugin->clearNeedsReprepare();
 		m_effect->reprepare();
 	}
+	// A latency change the plug-in reported (clap_host_latency.changed) may have been made on its own
+	// thread; this is the control thread that re-reads it and lets the chain re-align.
+	m_effect->refreshLatencyIfChanged();
 	if (m_params.sync())
 	{
 		emit parametersChanged();

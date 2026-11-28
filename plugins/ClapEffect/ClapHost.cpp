@@ -170,6 +170,16 @@ void HostedPlugin::clearNeedsReprepare()
 	m_impl->needsReprepare.store(false, std::memory_order_relaxed);
 }
 
+auto HostedPlugin::latencyChangePending() const -> bool
+{
+	return m_impl->latencyChangePending.load(std::memory_order_relaxed);
+}
+
+void HostedPlugin::clearLatencyChangePending()
+{
+	m_impl->latencyChangePending.store(false, std::memory_order_relaxed);
+}
+
 auto HostedPlugin::editorTimerCount() const -> int
 {
 	return m_impl->editorHost != nullptr ? m_impl->editorHost->timerCount() : 0;
@@ -322,6 +332,7 @@ void HostedPlugin::unload()
 	impl.paramSlots.reset();
 	// Every request the old plug-in left pending goes with it: none is the next plug-in's.
 	impl.needsReprepare.store(false, std::memory_order_relaxed);
+	impl.latencyChangePending.store(false, std::memory_order_relaxed);
 	impl.callbackRequested.store(false, std::memory_order_relaxed);
 	impl.rescanFlags.store(0, std::memory_order_relaxed);
 	impl.flushRequested.store(false, std::memory_order_relaxed);
