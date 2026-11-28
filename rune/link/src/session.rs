@@ -184,6 +184,8 @@ pub struct Session {
     poll_slot: Slot,
     poll_pending: bool,
     last_seq: Option<i64>,
+    /// The engine's event sequence number when the subscription began (from its reply).
+    sub_seq: Arc<Mutex<Option<i64>>>,
     events: VecDeque<Value>,
     notices: Vec<String>,
     stopping: bool,
@@ -256,6 +258,7 @@ impl Session {
             poll_slot: Arc::new(Mutex::new(None)),
             poll_pending: false,
             last_seq: None,
+            sub_seq: Arc::new(Mutex::new(None)),
             events: VecDeque::new(),
             notices: Vec::new(),
             stopping: false,
@@ -499,13 +502,14 @@ impl Session {
         self.restarting = false;
         self.ever_ready_this_process = true;
         self.last_seq = None;
+        *self.sub_seq.lock().unwrap() = None;
         if let Some(c) = &self.conn {
             if self.opts.subscribe_events {
                 let log = self.log.clone();
-                let _ = c.send_with("events.subscribe", json!({"queue_limit": 4096}), move |r| {
-                    if let Err(e) = r {
-                        log.note(format!("events.subscribe refused: {e} (unsaved-change tracking falls back to the engine's modified flag)"));
-                    }
+                let sub_seq = self.sub_seq.clone();
+                let _ = c.send_with("events.subscribe", json!({"queue_limit": 4096}), move |r| match r {
+                    Ok(v) => *sub_seq.lock().unwrap() = v["seq"].as_i64(),
+                    Err(e) => log.note(format!("events.subscribe refused: {e} (unsaved-change tracking falls back to the engine's modified flag)")),
                 });
             }
         }
@@ -552,6 +556,9 @@ impl Session {
         let Some(c) = &self.conn else { return };
         let dropped_before = c.dropped_events();
         let evs = c.drain_events();
+        if self.last_seq.is_none() {
+            self.last_seq = *self.sub_seq.lock().unwrap();
+        }
         let mut info = self.project.lock().unwrap();
         for ev in &evs {
             if ev["event"] != "project_changed" {
@@ -720,10 +727,36 @@ impl Session {
         }
     }
 
-    /// Read `project.get_state` now and fold in pending events; false if the engine did not answer.
+    /// Read `project.get_state` now and fold in every event the engine has sent so far; false if
+    /// the engine did not answer. Events can trail replies (an edit from another client, or one
+    /// still in the engine's queue), so it first asks `events.get_state` for the newest sequence
+    /// number and waits (at most a second) until the events up to it have arrived.
     fn refresh_project(&mut self) -> bool {
-        self.take_engine_events();
-        let Some(c) = self.conn.clone().filter(|c| c.is_open() && matches!(self.phase, Phase::Ready { .. })) else { return false };
+        let Some(c) = self.conn.clone().filter(|c| c.is_open() && matches!(self.phase, Phase::Ready { .. })) else {
+            self.take_engine_events();
+            return false;
+        };
+        if self.opts.subscribe_events {
+            match c.call("events.get_state", json!({}), Duration::from_secs(2)).map(|v| v["seq"].as_i64()) {
+                Ok(Some(target)) => {
+                    let t0 = Instant::now();
+                    loop {
+                        self.take_engine_events();
+                        if self.last_seq.is_some_and(|l| l >= target) || t0.elapsed() > Duration::from_secs(1) {
+                            break;
+                        }
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    if self.last_seq.is_none_or(|l| l < target) {
+                        self.log.note(format!("events up to {target} did not all arrive; assuming unsaved changes"));
+                        self.project.lock().unwrap().changed_since_save = true;
+                    }
+                }
+                _ => self.take_engine_events(),
+            }
+        } else {
+            self.take_engine_events();
+        }
         match c.call("project.get_state", json!({}), Duration::from_secs(2)) {
             Ok(v) => {
                 self.project.lock().unwrap().read(&v);

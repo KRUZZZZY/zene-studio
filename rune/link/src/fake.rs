@@ -309,6 +309,7 @@ mod imp {
                 emit(sh, "transport.set_tempo", args.clone());
                 json!({"tempo": t})
             }
+            "events.get_state" => json!({"seq": sh.seq.load(Ordering::SeqCst)}),
             "transport.get_state" => json!({"playing": false, "position_ticks": 0, "tempo": p.tempo}),
             "track.overview" => json!({"tracks": tracks(&p)}),
             "mixer.get_state" => {

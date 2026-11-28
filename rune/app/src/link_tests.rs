@@ -197,6 +197,63 @@ mod unix {
         assert!(rt.state.quit_requested);
     }
 
+    /// The real engine under the real UI (gated on `ZENE_ENGINE_BIN`, like `zene-link`'s
+    /// `tests/real_engine.rs`): supervised start with no interface, the engine's project as the
+    /// model, an edit made through the UI, and Quit > Save writing it to the file.
+    #[test]
+    fn real_engine_ui_supervised_shows_the_engines_project_and_saves_on_quit() {
+        let Some(bin) = std::env::var_os("ZENE_ENGINE_BIN").map(PathBuf::from) else {
+            eprintln!("DID NOT RUN real_engine_ui_supervised_shows_the_engines_project_and_saves_on_quit: set ZENE_ENGINE_BIN (see rune/README.md)");
+            return;
+        };
+        let base = std::env::var_os("ZENE_ENGINE_EVIDENCE").map(PathBuf::from).unwrap_or_else(|| std::env::temp_dir().join(format!("zene-rune-real-{}", std::process::id())));
+        let ev = base.join("ui");
+        let _ = std::fs::remove_dir_all(&ev);
+        std::fs::create_dir_all(&ev).unwrap();
+        let sb = zene_link::runtime::Sandbox::create(&ev.join("sandbox")).unwrap();
+        let spec = |project: Option<&Path>| EngineSpec { config: Some(sb.config.clone()), env: sb.env.clone(), cwd: Some(sb.root.clone()), project: project.map(Path::to_path_buf), ..EngineSpec::new(&bin) };
+        let o = |sub: &str| SessionOptions { runtime_dir: Some(dir().join("rt")), log_dir: Some(ev.join(sub)), ready_timeout: Duration::from_secs(60), spawn_timeout: Duration::from_secs(60), ..Default::default() };
+        // A saved project with a recognisable track, made through the engine.
+        let song = ev.join("ui.mmpz");
+        {
+            let mut s = Session::supervise(spec(None), o("fixture"));
+            s.wait_ready(Duration::from_secs(60)).unwrap();
+            let c = s.connection().unwrap();
+            c.call("track.add", json!({"type": "instrument", "name": "Fixture Lead", "instrument": "tripleoscillator"}), Duration::from_secs(30)).unwrap();
+            c.call("project.save", json!({"path": song}), Duration::from_secs(30)).unwrap();
+            s.stop_if_clean().unwrap();
+        }
+        let mut rt = rig(Session::supervise(spec(Some(&song)), o("ui")));
+        assert_eq!(chip(&rt), "Engine ready", "{}", rt.state.status);
+        let e = link(&mut rt);
+        assert_eq!(e.session.ping().unwrap().interface, "none", "no Qt interface in the engine");
+        let pid = e.session.pid().unwrap();
+        let engine_names: Vec<String> = e.session.connection().unwrap().call("track.overview", json!({}), Duration::from_secs(30)).unwrap()["tracks"]
+            .as_array().unwrap().iter().filter(|t| matches!(t["type"].as_str(), Some("instrument" | "sample"))).map(|t| t["name"].as_str().unwrap().to_string()).collect();
+        let ui_names: Vec<String> = rt.state.project.lanes().map(|t| t.name.clone()).collect();
+        assert_eq!(ui_names, engine_names, "the UI shows the engine's project");
+        assert!(ui_names.iter().any(|n| n == "Fixture Lead"));
+        let lead = rt.state.project.lanes().find(|t| t.name == "Fixture Lead").unwrap().id;
+        rt.update(|s, _| {
+            s.run(Command::SelectTrack(lead));
+            s.run(Command::Rename("Renamed In Rune".into()));
+        });
+        frames(&mut rt, 6);
+        rt.update(|s, _| s.run(Command::Quit));
+        assert!(rt.state.exit_prompt.as_ref().is_some_and(|p| p.file.as_deref() == Some(song.as_path())), "{:?}", rt.state.exit_prompt);
+        rt.update(|s, _| s.run(Command::ExitSave));
+        assert!(rt.state.quit_requested, "{}", rt.state.status);
+        assert!(!alive(pid));
+        let hist: Vec<String> = link(&mut rt).session.history().iter().map(|(t, s)| format!("{t:.3} {}", s.label())).collect();
+        std::fs::write(ev.join("ui-status-history.txt"), hist.join("\n")).unwrap();
+        // Read it back through a fresh engine.
+        let mut v = Session::supervise(spec(Some(&song)), o("verify"));
+        v.wait_ready(Duration::from_secs(60)).unwrap();
+        let names = v.connection().unwrap().call("track.overview", json!({}), Duration::from_secs(30)).unwrap().to_string();
+        assert!(names.contains("Renamed In Rune"), "{names}");
+        v.stop_if_clean().unwrap();
+    }
+
     impl App {
         fn engine_link(&mut self) -> Option<&mut ZeneEngine> {
             self.engine.as_any().downcast_mut::<ZeneEngine>()
