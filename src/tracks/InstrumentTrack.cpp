@@ -384,11 +384,9 @@ bool InstrumentTrack::trackMpeInputEvent( const MidiEvent& event )
 			return false;
 
 		case MidiNoteOff:
-			// 0.5.0 Q050-039: the note-off's velocity is release velocity. The
-			// note model can store it (Note::setReleaseVelocity) and playback
-			// already sends it back (NotePlayHandle::noteOff), but live MPE
-			// input dropped it here.
-			captureMpeReleaseVelocity( event );
+			// 0.5.0 Q050-039: the note-off's velocity is release velocity; processInEvent's
+			// MidiNoteOff branch stores it on the note it resolves under the engine guard
+			// (captureMpeReleaseVelocity), so this path touches no note handle.
 			m_mpeExpression.noteOff( event.channel(), event.key() );
 			return false;
 
@@ -401,22 +399,20 @@ bool InstrumentTrack::trackMpeInputEvent( const MidiEvent& event )
 		return false;
 	}
 
-	loadMpeExpressionOntoChannelNotes( event.channel() );
+	// Cluster 3192: published for the render thread, not written onto the note handles here.
+	publishLiveMpeExpression( event.channel() );
 	return true;
 }
 
 
 
 
-void InstrumentTrack::captureMpeReleaseVelocity( const MidiEvent& event )
+int InstrumentTrack::captureMpeReleaseVelocity( const MidiEvent& event )
 {
-	if( !m_mpeExpression.isMemberChannel( event.channel() ) )
+	if( !MpeExpression::isEnabled() || event.type() != MidiNoteOff
+		|| !m_mpeExpression.isMemberChannel( event.channel() ) )
 	{
-		return;
-	}
-	if( event.key() < 0 || event.key() >= NumKeys )
-	{
-		return;
+		return -1;
 	}
 	// Velocity 0 is what an MPE controller sends when it has no release
 	// velocity to report, so the note keeps its "unset" release and playback
@@ -424,64 +420,131 @@ void InstrumentTrack::captureMpeReleaseVelocity( const MidiEvent& event )
 	const int velocity = event.velocity();
 	if( velocity <= 0 )
 	{
-		return;
+		return -1;
 	}
 
-	NotePlayHandle* note = m_notes[event.key()];
-	if( note == nullptr || note->midiChannel() != event.channel() )
-	{
-		// Released, never started, or another channel's note holding this key
-		// - the same window loadMpeExpressionOntoChannelNotes() lives with.
-		return;
-	}
-
-	// The velocity is stored on the note's own volume scale (0..200, 100 =
-	// default) through the conversion that is the exact inverse of the
-	// playback emission (Note::midiReleaseVelocity), so the velocity the
-	// note-off carried is the velocity playback sends (Q050-039).
-	note->setReleaseVelocity(
-		Note::releaseVelocityFromMidi( velocity, midiPort()->baseVelocity() ) );
+	// The velocity is on the note's own volume scale (0..200, 100 = default) through the
+	// conversion that is the exact inverse of the playback emission (Note::midiReleaseVelocity),
+	// so the velocity the note-off carried is the velocity playback sends (Q050-039).
+	return Note::releaseVelocityFromMidi( velocity, midiPort()->baseVelocity() );
 }
 
 
 
 
-void InstrumentTrack::loadMpeExpressionOntoChannelNotes( int channel )
+void InstrumentTrack::publishLiveMpeExpression( int channel )
 {
-	const MpeNoteExpression expression = m_mpeExpression.current( channel );
-	const int count = m_mpeExpression.activeNoteCount( channel );
-
-	for( int i = 0; i < count; ++i )
+	if( channel < 0 || channel >= MpeExpression::ChannelCount )
 	{
-		const int key = m_mpeExpression.activeNote( channel, i );
-		if( key < 0 || key >= NumKeys )
-		{
-			continue;
-		}
-
-		NotePlayHandle* note = m_notes[key];
-		if( note == nullptr || note->midiChannel() != channel )
-		{
-			// Released (or never started) between the event and this lookup -
-			// the same window MidiKeyPressure below already lives with. A note
-			// on another channel holding this key is not this channel's note.
-			continue;
-		}
-
-		const MpeNoteExpression before = note->mpeExpression();
-		note->setMpeExpression( expression );
-		note->setFrequencyUpdate();
-
-		// MPE (task #649): the pitch axis reaches playback through the
-		// frequency above. Pressure and timbre have no frequency to ride on,
-		// so they are sent to the instrument as MIDI on the note's own
-		// channel - but only when they actually changed: a bend-only update
-		// (every pitch gesture, and the common case) sends nothing extra.
-		if( before.pressure != expression.pressure || before.timbre != expression.timbre )
-		{
-			note->sendMpeExpressionMidi();
-		}
+		return;
 	}
+	const MpeNoteExpression expression = m_mpeExpression.current( channel );
+	// One word: a period that loads it sees all three axes of the same capture, never one axis of
+	// this message beside one of the next. The top bit says "published", so the value-initialised
+	// zero keeps meaning "this channel has published nothing" and no note is touched before it
+	// does.
+	const std::uint32_t packed = MpeLivePublished
+		| ( ( static_cast<std::uint32_t>( expression.pitchCents + MpeNoteExpression::MaxPitchCents )
+			& 0x3FFFu ) << 14 )
+		| ( ( static_cast<std::uint32_t>( expression.pressure ) & 0x7Fu ) << 7 )
+		| ( static_cast<std::uint32_t>( expression.timbre ) & 0x7Fu );
+	m_mpeLive[channel].store( packed, std::memory_order_release );
+}
+
+
+
+
+void InstrumentTrack::applyLiveMpeExpression( NotePlayHandle& note )
+{
+	// Only a note this track's MIDI INPUT started carries a live channel expression: a clip
+	// note's expression comes from the clip (a saved project) and is never overwritten here.
+	if( !MpeExpression::isEnabled() || note.origin() != NotePlayHandle::Origin::MidiInput )
+	{
+		return;
+	}
+	const int channel = note.midiChannel();
+	if( channel < 0 || channel >= MpeExpression::ChannelCount )
+	{
+		return;
+	}
+	if( note.isReleased() )
+	{
+		// A released note keeps the expression it had at its note-off, through its release
+		// tail: the input path only ever updated notes still held on their key.
+		return;
+	}
+
+	const std::uint32_t packed = m_mpeLive[channel].load( std::memory_order_acquire );
+	MpeNoteExpression wanted;
+	if( ( packed & MpeLivePublished ) != 0 )
+	{
+		wanted.pitchCents = static_cast<int>( ( packed >> 14 ) & 0x3FFFu )
+			- MpeNoteExpression::MaxPitchCents;
+		wanted.pressure = static_cast<int>( ( packed >> 7 ) & 0x7Fu );
+		wanted.timbre = static_cast<int>( packed & 0x7Fu );
+	}
+
+	const MpeNoteExpression before = note.mpeExpression();
+	if( before.pitchCents == wanted.pitchCents && before.pressure == wanted.pressure
+		&& before.timbre == wanted.timbre )
+	{
+		// Nothing published since this note last took the channel's expression: no write, no
+		// frequency recomputation and no MIDI event - a bend-only gesture sends nothing extra.
+		return;
+	}
+
+	note.setMpeExpression( wanted );
+	note.setFrequencyUpdate();
+	if( before.pressure != wanted.pressure || before.timbre != wanted.timbre )
+	{
+		// Render thread: the same thread and the same processOutEvent path the note's own note-on
+		// and note-off messages to the instrument already take (NotePlayHandle::play/noteOff).
+		note.sendMpeExpressionMidi();
+	}
+}
+
+
+
+
+
+void InstrumentTrack::releaseLiveNote( const MidiEvent& event, f_cnt_t offset )
+{
+	// Cluster 3192: a note-off for a key this track is not holding has nothing to resolve, so it
+	// must not take the engine's model lock. JACK dispatches MIDI from its audio callback before
+	// the render owner is entered (src/core/audio/AudioJack.cpp:442 vs :476), so a guard taken
+	// here waits on the control threads; a note-on this track dropped - monitoring Off, a key
+	// outside firstKey()..lastKey() - leaves exactly that empty slot. playingNote() bounds-checks
+	// the key, and only this thread ever fills a slot.
+	if( playingNote( event.key() ) == nullptr )
+	{
+		return;
+	}
+	// Cluster 3192: the note is resolved UNDER the engine guard. The render thread retires a
+	// finished handle while it holds the model lock (and the handle's destructor clears this
+	// slot), so a pointer read before the guard could be dangling by the time it is used; read
+	// after it, the slot is either a live note or null. Note-on, and note-off for a held key,
+	// already reach the engine through this guard, so no new wait is added for the callers that
+	// deliver MIDI from an audio callback.
+	const int releaseVelocity = captureMpeReleaseVelocity( event );
+	Engine::audioEngine()->requestChangeInModel();
+	NotePlayHandle* const note = m_notes[event.key()];
+	if( note != nullptr )
+	{
+		// do actual note off and remove internal reference to NotePlayHandle (which itself will
+		// be deleted later automatically)
+		if( releaseVelocity >= 0 && note->midiChannel() == event.channel() )
+		{
+			// 0.5.0 Q050-039: not another channel's note holding this key
+			note->setReleaseVelocity( releaseVelocity );
+		}
+		note->noteOff( offset );
+		if( isSustainPedalPressed() && note->origin() == NotePlayHandle::Origin::MidiInput )
+		{
+			m_sustainedNotes << note;
+		}
+		m_notes[event.key()] = nullptr;
+	}
+	Engine::audioEngine()->doneChangeInModel();
 }
 
 
@@ -564,21 +627,7 @@ void InstrumentTrack::processInEvent( const MidiEvent& event, const TimePos& tim
 			}
 
 		case MidiNoteOff:
-			if( m_notes[event.key()] != nullptr )
-			{
-				// do actual note off and remove internal reference to NotePlayHandle (which itself will
-				// be deleted later automatically)
-				Engine::audioEngine()->requestChangeInModel();
-				m_notes[event.key()]->noteOff( offset );
-				if (isSustainPedalPressed() &&
-					m_notes[event.key()]->origin() ==
-					NotePlayHandle::Origin::MidiInput)
-				{
-					m_sustainedNotes << m_notes[event.key()];
-				}
-				m_notes[event.key()] = nullptr;
-				Engine::audioEngine()->doneChangeInModel();
-			}
+			releaseLiveNote( event, offset );
 			eventHandled = true;
 			break;
 

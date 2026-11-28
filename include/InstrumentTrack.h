@@ -452,16 +452,30 @@ private:
 	void processOutEventImpl(const MidiEvent& event, const TimePos& time, f_cnt_t offset,
 		std::atomic_bool* baseInstrumentAccepted);
 
-	// MPE capture (task #601). Both run on the MIDI-input thread and only
-	// touch fixed arrays plus plain int writes on live note handles.
+	// MPE capture (task #601). Runs on whatever thread delivered the event and never writes a
+	// note handle: the capture is published in this track's atomics and applied by the render
+	// thread (cluster 3192 - the JACK backend dispatches MIDI from its audio callback BEFORE the
+	// render owner scope is entered, so this path may not wait for the engine's model lock, and it
+	// may not reach through a note pointer the render thread can retire).
 	bool trackMpeInputEvent( const MidiEvent& event );
-	//! 0.5.0 Q050-039: stores the release velocity an MPE note-off arrived with
-	//! on the released note's handle, so playback (and a record pass) keeps it.
-	void captureMpeReleaseVelocity( const MidiEvent& event );
+	//! 0.5.0 Q050-039: the release velocity an MPE note-off carried, converted to the note's own
+	//! volume scale (Note::releaseVelocityFromMidi), or -1 when the event carries none. Pure: it
+	//! touches no note. The caller stores it on the note it resolves under the engine guard
+	//! (processInEvent's MidiNoteOff branch).
+	int captureMpeReleaseVelocity( const MidiEvent& event );
+	//! processInEvent's note-off: resolves the live note on the event's key under the engine guard,
+	//! stores the MPE release velocity on it, releases it and drops the track's reference.
+	void releaseLiveNote( const MidiEvent& event, f_cnt_t offset );
+	//! Cluster 3192: publishes channel @a channel's current expression for the render thread - one
+	//! atomic store, any thread, no lock and no note pointer.
+	void publishLiveMpeExpression( int channel );
+	//! Cluster 3192: AUDIO THREAD ONLY. Applies the published expression of @a note's own channel
+	//! to the handle, so the pitch, pressure and timbre the render path reads are written by the
+	//! render thread alone.
+	void applyLiveMpeExpression( NotePlayHandle& note );
 	//! Live input through the track's MIDI input transform (InstrumentTrackNotes.cpp): true when
 	//! the event was handled here - transformed and played, or dropped.
 	bool handleInputTransform( const MidiEvent& event, const TimePos& time, f_cnt_t offset );
-	void loadMpeExpressionOntoChannelNotes( int channel );
 
 	// 0.5.0 MX-112/MX-114/MX-120 (InstrumentTrackNotes.cpp)
 	//! processOutEvent's note-on, note-off and other messages to the instrument (@a fallbackChannel is the
@@ -488,6 +502,17 @@ private:
 	MidiPort m_midiPort;
 
 	MpeExpression m_mpeExpression;
+	/*! Cluster 3192: each member channel's live expression as the render thread reads it - the
+	 *  three axes packed into ONE atomic word (so a period never sees one axis of a message and
+	 *  another of the next: pitch 14 bits, pressure 7, timbre 7), written by the MIDI input thread
+	 *  and applied by NotePlayHandle::play(). Never serialized: with MPE off it stays zero and the
+	 *  input path behaves exactly as it did before this feature. */
+	std::array<std::atomic<std::uint32_t>, MpeExpression::ChannelCount> m_mpeLive{};
+	//! Cluster 3192: the packed word's "this channel has published" bit, so the value-initialised
+	//! zero means "nothing published" and a real all-neutral capture (pitch -48 st) is distinct
+	//! from it. Layout: bit 31 published, bits 14-27 pitch + MaxPitchCents, bits 7-13 pressure,
+	//! bits 0-6 timbre.
+	static constexpr std::uint32_t MpeLivePublished = 1u << 31;
 	MidiInputTransform m_inputTransform;
 	ArticulationMap m_articulations;
 	std::atomic<int> m_delayMs{0};
