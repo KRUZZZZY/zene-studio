@@ -26,6 +26,8 @@ mod zene;
 mod tests;
 #[cfg(all(test, unix))]
 mod engine_tests;
+#[cfg(test)]
+mod link_tests;
 
 use std::time::Duration;
 
@@ -35,22 +37,61 @@ use command::{Command, action_for_key};
 use model::Clip;
 use state::*;
 
-/// `--engine SOCKET` (or `ZENE_CONTROL_SOCKET`) binds the UI to a running Zene Studio engine
-/// instead of the demo project and the simulation.
+fn arg(args: &[String], name: &str) -> Option<String> {
+    args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).cloned()
+}
+
+/// Bind the UI to a real engine instead of the demo project and the simulation:
+///
+/// - `--engine SOCKET` (or `ZENE_CONTROL_SOCKET`): attach to a running engine; closing the window
+///   never stops it.
+/// - `--engine-bin PATH` (or `ZENE_ENGINE_BIN`): start `PATH --engine` and supervise it, with
+///   `--project FILE` to open, `--engine-config XML` for its settings, `--engine-sandbox` for a
+///   silent throwaway world (its own HOME and a Dummy audio device: no sound, the user's settings
+///   untouched) and `--engine-log-dir DIR` for the protocol log and the engine's output.
+///
+/// Whatever happens, the window opens; the engine chip and the status line say what happened.
+#[cfg(unix)]
 fn engine_app(args: &[String]) -> Option<App> {
-    let path = args.iter().position(|a| a == "--engine").and_then(|i| args.get(i + 1)).cloned().or_else(|| std::env::var("ZENE_CONTROL_SOCKET").ok())?;
-    #[cfg(unix)]
-    match zene::connect(&path) {
-        Ok((project, engine)) => {
-            let mut app = App::with(project, Box::new(engine));
-            app.zoom_fit();
-            app.status = format!("Connected to the engine at {path}");
-            return Some(app);
+    use engine::Engine;
+    use zene_link::{EngineSpec, SessionOptions};
+    let socket = arg(args, "--engine");
+    let bin = arg(args, "--engine-bin");
+    let engine = if let Some(path) = socket.clone().or_else(|| bin.is_none().then(|| std::env::var("ZENE_CONTROL_SOCKET").ok()).flatten()) {
+        zene::ZeneEngine::start(zene_link::Session::attach(&path, SessionOptions::default()))
+    } else {
+        let bin = bin.or_else(|| std::env::var("ZENE_ENGINE_BIN").ok())?;
+        let mut spec = EngineSpec { project: arg(args, "--project").map(Into::into), config: arg(args, "--engine-config").map(Into::into), ..EngineSpec::new(bin) };
+        let log_dir = arg(args, "--engine-log-dir").map(std::path::PathBuf::from);
+        if args.iter().any(|a| a == "--engine-sandbox") {
+            let root = log_dir.clone().unwrap_or_else(std::env::temp_dir).join(format!("zene-rune-sandbox-{}", std::process::id()));
+            match zene_link::runtime::Sandbox::create(&root) {
+                Ok(sb) => {
+                    spec.config = Some(sb.config.clone());
+                    spec.env = sb.env.clone();
+                    spec.cwd = Some(sb.root.clone());
+                }
+                Err(e) => eprintln!("zene-rune: --engine-sandbox {}: {e}", root.display()),
+            }
         }
-        Err(e) => eprintln!("zene-rune: --engine {path}: {e}"),
+        zene::ZeneEngine::start(zene_link::Session::supervise(spec, SessionOptions { log_dir, ..Default::default() }))
+    };
+    let mut engine = engine;
+    let model = engine.take_reload().unwrap_or_else(zene::empty_project);
+    let sentence = engine.session.status().sentence();
+    let notices = engine.take_notices();
+    let mut app = App::with(model, Box::new(engine));
+    app.zoom_fit();
+    app.link_seen = app.engine.link_status().cloned();
+    app.status = notices.last().cloned().unwrap_or(sentence);
+    Some(app)
+}
+
+#[cfg(not(unix))]
+fn engine_app(args: &[String]) -> Option<App> {
+    if let Some(path) = arg(args, "--engine").or_else(|| arg(args, "--engine-bin")) {
+        eprintln!("zene-rune: {path}: the engine link on Windows needs the named-pipe transport (Q050-524); showing the demo");
     }
-    #[cfg(not(unix))]
-    eprintln!("zene-rune: --engine {path}: the spike link is unix-socket only");
     None
 }
 
@@ -79,8 +120,12 @@ fn setup(s: &mut App, waker: Waker) {
 pub fn poll(s: &mut App, now: f64, tx: &mut Tx) -> bool {
     s.engine.gesture(s.gesture.is_some());
     s.engine.advance(now, &s.project);
+    let mut changed = s.follow_link();
+    if s.quit_requested {
+        tx.quit();
+    }
     let playing = s.playing();
-    let mut changed = playing != s.was_playing;
+    changed |= playing != s.was_playing;
     for (id, peaks) in s.engine.take_model_patch() {
         if let Some(Clip { kind: model::ClipKind::Audio { peaks: p, .. }, .. }) = s.project.clip_mut(id) {
             *p = peaks;
@@ -173,15 +218,42 @@ pub fn on_key(s: &mut App, ev: &KeyEvent, tx: &mut Tx) -> bool {
     false
 }
 
+thread_local! {
+    /// The running app's handle, for reopening the window when closing it needs a question first.
+    static HANDLE: std::cell::RefCell<Option<rune::AppHandle<App>>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The window's close button (or Cmd-Q, or the window manager): close at once when nothing can be
+/// lost; otherwise bring the window back with the save / discard / cancel question. Rune cannot
+/// veto a close, so the window keeps running hidden (`keep_running`) and is shown again.
+fn on_close(s: &mut App, tx: &mut Tx) {
+    if !s.quit_requested && s.exit_prompt.is_none() {
+        s.run(Command::Quit);
+    }
+    if s.quit_requested || rune::quitting() {
+        tx.quit();
+    } else {
+        HANDLE.with(|h| {
+            if let Some(h) = h.borrow().as_ref() {
+                h.open();
+            }
+        });
+    }
+}
+
 fn main() {
-    rune::run(AppSpec::<App> {
+    let app = rune::App::new(AppSpec::<App> {
         min_size: Some((1100.0, 640.0)),
         setup: Some(setup),
         poll: Some(poll),
         on_key: Some(on_key),
         scenes: SCENES,
         ..AppSpec::new("Zene Studio (Rune prototype, simulated playback)", (1366.0, 768.0), init, ui::view)
-    });
+    })
+    .keep_running()
+    .on_close(on_close);
+    HANDLE.with(|h| *h.borrow_mut() = Some(app.handle()));
+    app.run();
 }
 
 /// Prepared states for snapshots and checks. Each goes through the command layer.

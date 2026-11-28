@@ -58,6 +58,31 @@ pub trait Engine {
     /// A pointer gesture is in progress (true) or over (false). An engine may hold back edits
     /// that only make sense once the gesture ends.
     fn gesture(&mut self, _active: bool) {}
+    /// The engine link's status, for an engine behind a link (`None`: the simulation).
+    fn link_status(&self) -> Option<&zene_link::Status> {
+        None
+    }
+    /// A whole new model read from the engine after it (re)connected; replaces the UI's project.
+    fn take_reload(&mut self) -> Option<Project> {
+        None
+    }
+    /// Sentences the user must see once (what a crash lost, a refused save).
+    fn take_notices(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+    /// What closing the window needs (see `zene_link::Session::exit_check`).
+    fn exit_check(&mut self) -> zene_link::ExitCheck {
+        zene_link::ExitCheck::NoEngine
+    }
+    fn exit(&mut self, _choice: zene_link::ExitChoice) -> Result<zene_link::ExitOutcome, zene_link::LinkError> {
+        Ok(zene_link::ExitOutcome::Stopped { exit: None })
+    }
+    /// Stop the engine only if nothing is unsaved (see `zene_link::Session::stop_if_clean`).
+    fn stop_if_clean(&mut self) -> Result<zene_link::ExitOutcome, zene_link::LinkError> {
+        Ok(zene_link::ExitOutcome::Stopped { exit: None })
+    }
+    fn reconnect(&mut self) {}
+    fn restart(&mut self) {}
     fn as_any(&mut self) -> &mut dyn std::any::Any;
 }
 

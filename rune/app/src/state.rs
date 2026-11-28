@@ -57,6 +57,7 @@ pub enum MenuId {
     Edit,
     View,
     Transport,
+    Engine,
     Help,
     Snap,
 }
@@ -125,6 +126,17 @@ pub struct Lives {
     pub meters: Vec<MeterLive>,
 }
 
+/// The question asked before closing with unsaved changes in an engine this window started.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ExitPrompt {
+    /// The project's file; `None` when it was never saved (Save cannot work then).
+    pub file: Option<std::path::PathBuf>,
+    /// The engine answered just now (false: it could not be asked, so the worst is assumed).
+    pub known: bool,
+    /// Why the last choice did not go through (a refused save), shown in the dialog.
+    pub problem: Option<String>,
+}
+
 pub struct App {
     pub project: Project,
     pub engine: Box<dyn Engine>,
@@ -188,6 +200,15 @@ pub struct App {
 
     pub hint: &'static str,
     pub status: String,
+    /// The close-the-window question, while it is open (an engine this window started has unsaved changes).
+    pub exit_prompt: Option<ExitPrompt>,
+    /// The window may close now (`poll` quits the app).
+    pub quit_requested: bool,
+    /// The last engine-link status the status bar announced.
+    pub link_seen: Option<zene_link::Status>,
+    /// A notice about the engine (what a crash lost) kept until the engine is ready again, so the
+    /// status line still says it when the restart is over.
+    pub link_notice: Option<String>,
 
     /// Observed window rects, for hit-testing drops and sizing the visible range.
     pub lanes_rect: [f32; 4],
@@ -264,6 +285,10 @@ impl App {
             name_for: Selection::None,
             hint: "",
             status: String::new(),
+            exit_prompt: None,
+            quit_requested: false,
+            link_seen: None,
+            link_notice: None,
             lanes_rect: [432.0, 98.0, 686.0, 390.0],
             pr_rect: [282.0, 518.0, 836.0, 174.0],
             live,
@@ -631,4 +656,96 @@ pub fn fader_to_db(p: f32) -> f32 {
 
 pub fn db_to_fader(db: f32) -> f32 {
     if db <= -60.0 { 0.0 } else { 1.0 - ((6.0 - db.min(6.0)) / 66.0).powf(1.0 / 1.7) }
+}
+
+// ---- closing the window and following the engine link (Q050-506) ----------------------------
+
+impl App {
+    /// `Command::Quit`: close at once when nothing can be lost, else ask (`exit_prompt`).
+    pub fn request_exit(&mut self) {
+        use zene_link::ExitCheck;
+        match self.engine.exit_check() {
+            ExitCheck::NoEngine => self.quit_requested = true,
+            ExitCheck::Detach => self.finish_exit(zene_link::ExitChoice::Discard),
+            ExitCheck::Clean => match self.engine.stop_if_clean() {
+                Ok(_) => self.quit_requested = true,
+                // It changed between the check and the stop: ask after all.
+                Err(_) => self.exit_prompt = Some(ExitPrompt { file: None, known: false, problem: None }),
+            },
+            ExitCheck::Unsaved { file, known } => {
+                self.status = "The project has unsaved changes: save, discard or cancel".into();
+                self.exit_prompt = Some(ExitPrompt { file, known, problem: None });
+            }
+        }
+    }
+
+    /// Carry out the choice made in the close dialog (or by a script).
+    pub fn finish_exit(&mut self, choice: zene_link::ExitChoice) {
+        use zene_link::ExitOutcome;
+        match self.engine.exit(choice) {
+            Ok(ExitOutcome::Cancelled) => {
+                self.exit_prompt = None;
+                self.status = "Nothing was closed".into();
+            }
+            Ok(ExitOutcome::LeftRunning { pid }) => {
+                self.exit_prompt = None;
+                self.status = format!("The engine (process {pid}) is still saving and was left running");
+                self.quit_requested = true;
+            }
+            Ok(_) => {
+                self.exit_prompt = None;
+                self.quit_requested = true;
+            }
+            Err(e) => {
+                let problem = e.to_string();
+                self.status = problem.clone();
+                match &mut self.exit_prompt {
+                    Some(p) => p.problem = Some(problem),
+                    None => self.exit_prompt = Some(ExitPrompt { file: None, known: false, problem: Some(problem) }),
+                }
+            }
+        }
+    }
+
+    /// Once per frame: a new model from the engine, notices, and status changes worth announcing.
+    /// Returns whether the view must be rebuilt.
+    pub fn follow_link(&mut self) -> bool {
+        let mut changed = false;
+        if let Some(p) = self.engine.take_reload() {
+            self.project = p;
+            self.undo.clear();
+            self.redo.clear();
+            self.gesture = None;
+            self.clear_selection();
+            self.pr_clip = None;
+            self.ensure_meters();
+            self.zoom_fit();
+            changed = true;
+        }
+        for n in self.engine.take_notices() {
+            self.link_notice = Some(n);
+        }
+        let st = self.engine.link_status().cloned();
+        if st != self.link_seen {
+            if let Some(s) = &st {
+                self.status = match (&self.link_notice, s.is_ready()) {
+                    // Ready again after a crash: keep saying what was lost.
+                    (Some(n), true) => format!("{n} The engine is ready again."),
+                    (Some(n), false) => format!("{n} {}", s.sentence()),
+                    (None, _) => s.sentence(),
+                };
+                if s.is_ready() {
+                    self.link_notice = None;
+                }
+            }
+            self.link_seen = st;
+            changed = true;
+        } else if let Some(n) = &self.link_notice {
+            if !self.status.starts_with(n.as_str()) {
+                self.status = n.clone();
+                changed = true;
+            }
+        }
+        changed
+    }
 }

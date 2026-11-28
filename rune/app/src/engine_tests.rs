@@ -15,19 +15,24 @@ use crate::command::Command;
 use crate::model::*;
 use crate::state::*;
 use crate::ui;
-use crate::zene::{self, Conn, TICK_SCALE, ZeneEngine};
+use crate::zene::{self, TICK_SCALE, ZeneEngine};
+use zene_link::transport::default_transport;
+use zene_link::{ConnOptions, Connection};
 
 const FRAME: f64 = 1.0 / 60.0;
 
 struct Rig {
     rt: Runtime<App>,
-    /// Independent read-back connection.
-    v: Conn,
+    /// Independent read-back connection (the link's, with its keep-alive).
+    v: Connection,
     checks: Vec<(bool, String)>,
 }
 
 fn socket() -> String {
     std::env::var("ZENE_SOCKET").expect("ZENE_SOCKET: the control socket of a running engine")
+}
+fn verifier(path: &str) -> Connection {
+    Connection::open(&*default_transport(), std::path::Path::new(path), ConnOptions::default()).expect("verifier")
 }
 fn out_dir() -> String {
     std::env::var("ZENE_OUT").unwrap_or_else(|_| "/tmp".into())
@@ -42,7 +47,7 @@ impl Rig {
         let mut rt = Runtime::new(app, ui::view, (1366.0, 768.0), Env { system_dark: true, scale: 1.0 });
         rt.on_key = Some(crate::on_key);
         rt.poll = Some(crate::poll);
-        let mut r = Rig { rt, v: Conn::connect(&path).expect("verifier"), checks: Vec::new() };
+        let mut r = Rig { rt, v: verifier(&path), checks: Vec::new() };
         r.frames(6);
         r
     }
@@ -108,11 +113,11 @@ impl Rig {
 
     fn q(&mut self, cmd: &str, args: Value) -> Value {
         // The engine retires a connection that has been idle for its timeout: reconnect once.
-        match self.v.call(cmd, args.clone()) {
+        match self.v.call(cmd, args.clone(), Duration::from_secs(30)) {
             Ok(v) => v,
             Err(_) => {
-                self.v = Conn::connect(&socket()).expect("verifier reconnect");
-                self.v.call(cmd, args).unwrap_or_else(|e| panic!("{e}"))
+                self.v = verifier(&socket());
+                self.v.call(cmd, args, Duration::from_secs(30)).unwrap_or_else(|e| panic!("{e}"))
             }
         }
     }

@@ -1,33 +1,40 @@
-//! Phase 0 spike (S1/S2): the `Engine` boundary implemented over a real Zene Studio control socket.
+//! The `Engine` boundary implemented over a real Zene Studio engine, on top of the engine link
+//! crate (`rune/link`, `zene_link`): the session there starts or attaches to the engine, keeps the
+//! connection alive, reconnects, restarts and reports status; this module turns the UI model into
+//! control-surface commands and the engine's project into the UI model.
 //!
-//! Shape of the link, which is what the spike is here to judge:
+//! Shape (Phase 0, ported onto the link by Q050-506):
 //!
-//! - **Commands** go out on one connection, synchronously, from the UI thread, and every round
-//!   trip is timed (`LinkLog::calls`). The UI edits its own model first (optimistic) and this
-//!   module turns the difference between the model it last sent and the model it sees now into
-//!   control-surface commands (`sync`). That covers buttons, keys, scripts, pointer drags (one
-//!   command per frame while the drag moves) and the UI's undo/redo with one mechanism.
-//! - **Telemetry** (transport position, playing flag, strip meters) is polled on a second
-//!   connection by a background thread and read once per frame; the UI thread never waits for it.
-//! - **Events** (`events.subscribe`) arrive on a third connection; their arrival times are kept so
-//!   the subscription lag behind a command's reply can be measured.
+//! - **Commands** go out on the session's connection. They still WAIT for their reply
+//!   (`ZeneEngine::call`, `Connection::call`), from the UI thread, as the Phase 0 spike did: the UI
+//!   edits its own model first (optimistic) and `sync` sends the difference. Q050-507 replaces these
+//!   blocking calls (in `sync`, `load`, `reconcile`, `peaks`) with `Connection::send` and replies
+//!   drained per frame; nothing else here blocks a frame. While the session is not ready nothing is
+//!   sent: edits wait in the model and go out when the connection is back.
+//! - **Telemetry** (transport position, playing flag, strip meters) is polled by a background thread
+//!   on the same connection (blocking calls off the UI thread) and read once per frame.
+//! - **Events** reach the session (unsaved-change tracking) and are handed on here, where their
+//!   arrival times are kept for the S2 lag measurement.
+//! - On every new `Ready` the project is read again: after a reconnect to the same engine the UI's
+//!   unsent edits go out first; after a restart (a new engine process) the engine's project replaces
+//!   the UI's (`take_reload`).
 //! - `reconcile` rereads the engine and lists every field where it disagrees with the UI model.
 //!
 //! Units: the UI counts 480 ticks a beat, the engine 48, so ticks cross the boundary through
 //! `TICK_SCALE`. Faders are decibels here and linear gain (0..2) there. Note velocity is 1..127
 //! here and 0..200 there with 100 as the default.
 //!
-//! Nothing here plays sound by itself: the engine decides its audio device. Unix sockets only
-//! (the engine uses a named pipe on Windows, `ControlServerWin32.cpp`; not part of this spike).
+//! Nothing here plays sound by itself: the engine decides its audio device. Unix sockets only until
+//! the link's named-pipe transport (Q050-524).
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
-use std::os::unix::net::UnixStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
+use zene_link::session::ReadyKind;
+use zene_link::{Connection, ExitCheck, ExitChoice, ExitOutcome, LinkError, Session, Status};
 
 use crate::demo;
 use crate::engine::{Engine, EngineCommand, EngineSnapshot, meter_scale};
@@ -38,6 +45,8 @@ pub const TICK_SCALE: i64 = 10;
 pub const CH_BASE: u32 = 5_000_000;
 /// Ids the UI invents for new objects start here, clear of anything the engine assigns.
 pub const LOCAL_BASE: u32 = 10_000_000;
+/// How long a blocking command may take before the link reports it (Q050-507 removes the wait).
+const CALL_TIMEOUT: Duration = Duration::from_secs(30);
 
 fn id_num(id: &str) -> u32 {
     id.rsplit('-').next().and_then(|n| n.parse().ok()).unwrap_or(0)
@@ -58,58 +67,6 @@ fn vel_from_engine(v: i64) -> u8 {
     ((v as f64 * 127.0 / 100.0).round() as i64).clamp(1, 127) as u8
 }
 
-/// One line-delimited JSON-RPC connection: `{"id","cmd","args","proto":1}` out, one line back.
-pub struct Conn {
-    r: BufReader<UnixStream>,
-    w: UnixStream,
-    next: u64,
-    line: String,
-    /// Lines that arrived without an id (events), with their arrival time.
-    pub unsolicited: Vec<(Instant, Value)>,
-}
-
-impl Conn {
-    pub fn connect(path: &str) -> Result<Conn, String> {
-        let s = UnixStream::connect(path).map_err(|e| format!("{path}: {e}"))?;
-        s.set_read_timeout(Some(Duration::from_secs(60))).ok();
-        let w = s.try_clone().map_err(|e| e.to_string())?;
-        Ok(Conn { r: BufReader::with_capacity(1 << 16, s), w, next: 0, line: String::new(), unsolicited: Vec::new() })
-    }
-
-    pub fn send(&mut self, cmd: &str, args: &Value) -> Result<u64, String> {
-        self.next += 1;
-        let mut out = serde_json::to_vec(&json!({"id": self.next, "cmd": cmd, "args": args, "proto": 1})).map_err(|e| e.to_string())?;
-        out.push(b'\n');
-        self.w.write_all(&out).map_err(|e| format!("{cmd}: {e}"))?;
-        Ok(self.next)
-    }
-
-    /// The next line from the engine, parsed.
-    pub fn read(&mut self) -> Result<Value, String> {
-        self.line.clear();
-        let n = self.r.read_line(&mut self.line).map_err(|e| e.to_string())?;
-        if n == 0 {
-            return Err("the engine closed the connection".into());
-        }
-        serde_json::from_str(&self.line).map_err(|e| format!("bad reply: {e}"))
-    }
-
-    /// Send and wait for the matching reply. `Ok` is the `result` object; `Err` is the typed error.
-    pub fn call(&mut self, cmd: &str, args: Value) -> Result<Value, String> {
-        let id = self.send(cmd, &args)?;
-        loop {
-            let mut v = self.read()?;
-            if v.get("id").and_then(Value::as_u64) != Some(id) {
-                if v.get("id").is_none() {
-                    self.unsolicited.push((Instant::now(), v));
-                }
-                continue;
-            }
-            return if v["ok"].as_bool() == Some(true) { Ok(v["result"].take()) } else { Err(format!("{cmd} {args}: {}", v["error"])) };
-        }
-    }
-}
-
 #[derive(Clone, Debug, Default)]
 pub struct Telemetry {
     pub playing: bool,
@@ -124,10 +81,10 @@ pub struct Telemetry {
     pub samples: u64,
 }
 
-/// Everything the spike measures about the link. Shared with the worker threads.
+/// Everything the spike measures about the link. Shared with the telemetry thread.
 #[derive(Default)]
 pub struct LinkLog {
-    /// Every command round trip: (command id, milliseconds, sent while a pointer drag was moving).
+    /// Every command round trip: (command id, milliseconds).
     pub calls: Vec<(String, f32)>,
     pub errors: Vec<String>,
     /// Things the control surface could not express and the link had to emulate or drop.
@@ -136,7 +93,7 @@ pub struct LinkLog {
     pub cycles: Vec<f32>,
     /// Reply times of mutating commands by name, for pairing with events.
     pub acks: Vec<(String, Instant)>,
-    /// Event arrivals: (command named by the event, when).
+    /// Event arrivals: (command named by the event, when the UI saw it).
     pub events: Vec<(String, Instant)>,
     /// How old the telemetry sample was each time a frame read it, milliseconds.
     pub staleness: Vec<f32>,
@@ -148,8 +105,18 @@ struct TrackRef {
     ch: Option<String>,
 }
 
+/// The connection the telemetry thread uses: replaced on every new `Ready`, `None` while down.
+type ConnSlot = Arc<Mutex<Option<Connection>>>;
+
 pub struct ZeneEngine {
-    conn: Conn,
+    pub session: Session,
+    /// The session's connection of the generation this model was loaded from.
+    conn: Option<Connection>,
+    loaded_generation: u64,
+    /// A new model read after a (re)connect, for the UI to take.
+    reload: Option<Project>,
+    notices: Vec<String>,
+    tele_conn: ConnSlot,
     snap: EngineSnapshot,
     tele: Arc<Mutex<Telemetry>>,
     /// Channels the telemetry thread reads meters for.
@@ -182,65 +149,158 @@ pub struct ZeneEngine {
     stream_clips: bool,
 }
 
-/// Connect, read the engine's project into the UI model, and start the worker threads.
+/// The model shown while no engine project has been read (start failed, engine unreachable).
+pub fn empty_project() -> Project {
+    Project { name: "No engine".into(), tempo: 120.0, tracks: Vec::new(), clips: Vec::new(), length: 8 * BAR, next_id: LOCAL_BASE }
+}
+
+/// How long start-up waits for the engine before the window opens anyway (status shows the rest).
+pub const STARTUP_WAIT: Duration = Duration::from_secs(20);
+
+/// Attach to a running engine at `path` (it is never stopped by this UI). For the engine tests.
+#[cfg(test)]
 pub fn connect(path: &str) -> Result<(Project, ZeneEngine), String> {
-    let mut conn = Conn::connect(path)?;
-    let ping = conn.call("control.ping", json!({}))?;
-    if ping["engine_ready"].as_bool() != Some(true) {
-        return Err("engine not ready".into());
+    let e = ZeneEngine::start(Session::attach(path, zene_link::SessionOptions::default()));
+    match e.session.status() {
+        Status::Ready { .. } => {}
+        s => return Err(s.sentence()),
     }
-    let log = Arc::new(Mutex::new(LinkLog::default()));
-    let tele = Arc::new(Mutex::new(Telemetry::default()));
-    let meter_channels = Arc::new(Mutex::new(Vec::new()));
-    let stop = Arc::new(AtomicBool::new(false));
-    let mut e = ZeneEngine {
-        conn,
-        snap: EngineSnapshot::default(),
-        tele: tele.clone(),
-        meter_channels: meter_channels.clone(),
-        stop: stop.clone(),
-        log: log.clone(),
-        shadow: Project { name: String::new(), tempo: 120.0, tracks: Vec::new(), clips: Vec::new(), length: 8 * BAR, next_id: LOCAL_BASE },
-        tracks: HashMap::new(),
-        clips: HashMap::new(),
-        notes: HashMap::new(),
-        clip_paths: HashMap::new(),
-        library_audio: Vec::new(),
-        last_advance: None,
-        seen_sample: 0,
-        sample_at: None,
-        base_position: 0.0,
-        pending_peaks: Vec::new(),
-        in_gesture: false,
-        overlap_before: None,
-        stream_clips: std::env::var("ZENE_STREAM_CLIPS").is_ok_and(|v| v == "1"),
-    };
-    if !e.stream_clips {
-        // The UI applies its own overlap rule when a gesture ends and sends each resulting trim
-        // as a command, so the engine must not trim a second time on its own.
-        e.overlap_before = e.conn.call("arrangement.modes", json!({})).ok().and_then(|m| m["overlap"].as_str().map(String::from));
-        e.conn.call("arrangement.modes", json!({"overlap": "free"}))?;
-    }
-    let project = e.load(true)?;
-    e.shadow = project.clone();
-    e.publish_meter_channels();
-    // Real files behind the browser's audio items.
-    if let Ok(q) = e.conn.call("browser.query", json!({"kind": "audio", "root": "factory-samples", "limit": 64})) {
-        e.library_audio = q["items"].as_array().into_iter().flatten().filter_map(|i| i["path"].as_str().map(String::from)).collect();
+    let mut e = e;
+    let p = e.reload.take().unwrap_or_else(empty_project);
+    Ok((p, e))
+}
+
+impl ZeneEngine {
+    /// Wrap a session: wait for it at start-up (blocking, start-up only), read the project when it
+    /// is ready, and start the telemetry thread.
+    pub fn start(mut session: Session) -> ZeneEngine {
+        let _ = session.wait_ready(STARTUP_WAIT);
+        let log = Arc::new(Mutex::new(LinkLog::default()));
+        let tele = Arc::new(Mutex::new(Telemetry::default()));
+        let meter_channels = Arc::new(Mutex::new(Vec::new()));
+        let stop = Arc::new(AtomicBool::new(false));
+        let tele_conn: ConnSlot = Arc::new(Mutex::new(None));
+        let mut e = ZeneEngine {
+            session,
+            conn: None,
+            loaded_generation: 0,
+            reload: None,
+            notices: Vec::new(),
+            tele_conn: tele_conn.clone(),
+            snap: EngineSnapshot::default(),
+            tele: tele.clone(),
+            meter_channels: meter_channels.clone(),
+            stop: stop.clone(),
+            log: log.clone(),
+            shadow: empty_project(),
+            tracks: HashMap::new(),
+            clips: HashMap::new(),
+            notes: HashMap::new(),
+            clip_paths: HashMap::new(),
+            library_audio: Vec::new(),
+            last_advance: None,
+            seen_sample: 0,
+            sample_at: None,
+            base_position: 0.0,
+            pending_peaks: Vec::new(),
+            in_gesture: false,
+            overlap_before: None,
+            stream_clips: std::env::var("ZENE_STREAM_CLIPS").is_ok_and(|v| v == "1"),
+        };
+        let period = Duration::from_micros(std::env::var("ZENE_TELEMETRY_US").ok().and_then(|v| v.parse().ok()).unwrap_or(8000));
+        spawn_telemetry(tele_conn, tele, meter_channels, stop, log, period);
+        e.follow_session(None);
+        e
     }
 
-    // Telemetry: transport and meters, as fast as `ZENE_TELEMETRY_MS` asks (default 8 ms).
-    let period = Duration::from_micros(std::env::var("ZENE_TELEMETRY_US").ok().and_then(|v| v.parse().ok()).unwrap_or(8000));
-    let mut tconn = Conn::connect(path)?;
-    let (t_tele, t_ch, t_stop, t_log) = (tele, meter_channels, stop.clone(), log.clone());
-    std::thread::Builder::new().name("zene-telemetry".into()).spawn(move || {
-        while !t_stop.load(Ordering::Relaxed) {
+    /// Tick the session; on a new `Ready`, read the project again (see the module comment).
+    fn follow_session(&mut self, ui: Option<&Project>) {
+        self.session.tick();
+        self.notices.extend(self.session.take_notices());
+        for ev in self.session.take_events() {
+            self.log.lock().unwrap().events.push((ev["command"].as_str().unwrap_or("").to_string(), Instant::now()));
+        }
+        let Some(conn) = self.session.connection().cloned() else {
+            if self.conn.take().is_some() {
+                *self.tele_conn.lock().unwrap() = None;
+            }
+            return;
+        };
+        if self.session.generation() == self.loaded_generation {
+            return;
+        }
+        let kind = self.session.ready_kind();
+        self.conn = Some(conn.clone());
+        *self.tele_conn.lock().unwrap() = Some(conn);
+        if kind == ReadyKind::Reconnected {
+            // Same engine: what the UI changed while the connection was down goes out first.
+            if let Some(p) = ui {
+                self.sync(p);
+            }
+        } else {
+            self.clip_paths.clear();
+        }
+        if let Err(e) = self.on_ready() {
+            self.log.lock().unwrap().errors.push(format!("reading the project: {e}"));
+            self.notices.push(format!("The engine is connected but its project could not be read: {e}"));
+        }
+        self.loaded_generation = self.session.generation();
+    }
+
+    /// Engine setup and the project read, after every new `Ready` (blocking: Q050-507).
+    fn on_ready(&mut self) -> Result<(), String> {
+        if !self.stream_clips {
+            // The UI applies its own overlap rule when a gesture ends and sends each resulting trim
+            // as a command, so the engine must not trim a second time on its own. (A session
+            // setting: it is not saved with the project and is no project_changed edit.)
+            let before = self.rpc("arrangement.modes", json!({})).ok().and_then(|m| m["overlap"].as_str().map(String::from));
+            if self.overlap_before.is_none() {
+                self.overlap_before = before;
+            }
+            self.rpc("arrangement.modes", json!({"overlap": "free"}))?;
+        }
+        let project = self.load(true)?;
+        self.shadow = project.clone();
+        self.publish_meter_channels();
+        if self.library_audio.is_empty() {
+            if let Ok(q) = self.rpc("browser.query", json!({"kind": "audio", "root": "factory-samples", "limit": 64})) {
+                self.library_audio = q["items"].as_array().into_iter().flatten().filter_map(|i| i["path"].as_str().map(String::from)).collect();
+            }
+        }
+        self.reload = Some(project);
+        Ok(())
+    }
+
+    /// One blocking command on the current connection (start-up, load and the Phase 0 sync: Q050-507).
+    fn rpc(&self, cmd: &str, args: Value) -> Result<Value, String> {
+        let c = self.conn.as_ref().ok_or_else(|| format!("{cmd}: the engine is not connected"))?;
+        c.call(cmd, args.clone(), CALL_TIMEOUT).map_err(|e| match e {
+            LinkError::Remote { kind, message, .. } => format!("{cmd} {args}: {message} ({kind})"),
+            e => e.to_string(),
+        })
+    }
+}
+
+/// Telemetry: transport and meters on the session's current connection, as fast as
+/// `ZENE_TELEMETRY_US` asks (default 8 ms). Waits quietly while there is no connection.
+fn spawn_telemetry(slot: ConnSlot, tele: Arc<Mutex<Telemetry>>, chans: Arc<Mutex<Vec<String>>>, stop: Arc<AtomicBool>, log: Arc<Mutex<LinkLog>>, period: Duration) {
+    let t = Duration::from_secs(2);
+    let _ = std::thread::Builder::new().name("zene-telemetry".into()).spawn(move || {
+        while !stop.load(Ordering::Relaxed) {
             let t0 = Instant::now();
-            let Ok(tr) = tconn.call("transport.get_state", json!({})) else { break };
-            let chans: Vec<String> = t_ch.lock().unwrap().clone();
-            let mut levels = Vec::with_capacity(chans.len());
-            for ch in chans {
-                if let Ok(m) = tconn.call("mixer.strip_get", json!({"channel": ch})) {
+            let conn = slot.lock().unwrap().clone();
+            let Some(conn) = conn.filter(|c| c.is_open()) else {
+                std::thread::sleep(Duration::from_millis(50));
+                continue;
+            };
+            let Ok(tr) = conn.call("transport.get_state", json!({}), t) else {
+                std::thread::sleep(Duration::from_millis(50));
+                continue;
+            };
+            let list: Vec<String> = chans.lock().unwrap().clone();
+            let mut levels = Vec::with_capacity(list.len());
+            for ch in list {
+                if let Ok(m) = conn.call("mixer.strip_get", json!({"channel": ch}), t) {
                     let m = &m["meters"];
                     let l = m["rms_left"].as_f64().unwrap_or(0.0).max(m["rms_right"].as_f64().unwrap_or(0.0));
                     levels.push((ch, l as f32));
@@ -248,7 +308,7 @@ pub fn connect(path: &str) -> Result<(Project, ZeneEngine), String> {
             }
             let cycle = t0.elapsed().as_secs_f32() * 1000.0;
             {
-                let mut t = t_tele.lock().unwrap();
+                let mut t = tele.lock().unwrap();
                 t.playing = tr["playing"].as_bool().unwrap_or(false);
                 t.ticks = tr["position_ticks"].as_i64().unwrap_or(0);
                 t.tempo = tr["tempo"].as_f64().unwrap_or(120.0);
@@ -257,38 +317,23 @@ pub fn connect(path: &str) -> Result<(Project, ZeneEngine), String> {
                 t.cycle_ms = cycle;
                 t.samples += 1;
             }
-            t_log.lock().unwrap().cycles.push(cycle);
+            log.lock().unwrap().cycles.push(cycle);
             if let Some(rest) = period.checked_sub(t0.elapsed()) {
                 std::thread::sleep(rest);
             }
         }
-    }).map_err(|e| e.to_string())?;
-
-    // Events: one subscription, arrival times only.
-    let mut econn = Conn::connect(path)?;
-    econn.call("events.subscribe", json!({"queue_limit": 4096}))?;
-    let (e_stop, e_log) = (stop, log);
-    std::thread::Builder::new().name("zene-events".into()).spawn(move || {
-        econn.r.get_ref().set_read_timeout(Some(Duration::from_millis(200))).ok();
-        while !e_stop.load(Ordering::Relaxed) {
-            if let Ok(v) = econn.read() {
-                if v.get("event").is_some() {
-                    e_log.lock().unwrap().events.push((v["command"].as_str().unwrap_or("").to_string(), Instant::now()));
-                }
-            }
-        }
-    }).map_err(|e| e.to_string())?;
-
-    Ok((project, e))
+    });
 }
 
 /// What `reconcile` found: one line per field where the engine and the UI model disagree.
 pub type Mismatches = Vec<String>;
 
 impl ZeneEngine {
+    /// A blocking command from `sync` (Q050-507 sends these without waiting). `None` on failure,
+    /// which is logged; nothing is sent while the session is not ready.
     fn call(&mut self, cmd: &str, args: Value) -> Option<Value> {
         let t0 = Instant::now();
-        let r = self.conn.call(cmd, args);
+        let r = self.rpc(cmd, args);
         let ms = t0.elapsed().as_secs_f32() * 1000.0;
         let mut log = self.log.lock().unwrap();
         log.calls.push((cmd.to_string(), ms));
@@ -321,9 +366,9 @@ impl ZeneEngine {
     /// the master directly (or shares a channel) is given a mixer channel of its own, because a
     /// strip with a fader and a meter needs one; each such change is counted in `gaps`.
     pub fn load(&mut self, own_channels: bool) -> Result<Project, String> {
-        let state = self.conn.call("project.get_state", json!({}))?;
-        let mut overview = self.conn.call("track.overview", json!({}))?;
-        let mut mixer = self.conn.call("mixer.get_state", json!({}))?;
+        let state = self.rpc("project.get_state", json!({}))?;
+        let mut overview = self.rpc("track.overview", json!({}))?;
+        let mut mixer = self.rpc("mixer.get_state", json!({}))?;
         if own_channels {
             let mut uses: HashMap<String, usize> = HashMap::new();
             for t in overview["tracks"].as_array().into_iter().flatten() {
@@ -334,17 +379,17 @@ impl ZeneEngine {
             for t in overview["tracks"].as_array().cloned().unwrap_or_default() {
                 let (ty, ch, id) = (t["type"].as_str().unwrap_or(""), t["channel"].as_str().unwrap_or(""), t["id"].as_str().unwrap_or(""));
                 if matches!(ty, "instrument" | "sample") && (ch.is_empty() || ch == master || uses.get(ch).copied().unwrap_or(0) > 1) {
-                    let new = self.conn.call("mixer.add_channel", json!({}))?;
+                    let new = self.rpc("mixer.add_channel", json!({}))?;
                     let new = new["id"].as_str().or(new["channel"].as_str()).unwrap_or("").to_string();
-                    self.conn.call("mixer.rename_channel", json!({"channel": new, "name": t["name"]})).ok();
-                    self.conn.call("track.set_mixer_channel", json!({"track": id, "channel": new}))?;
+                    self.rpc("mixer.rename_channel", json!({"channel": new, "name": t["name"]})).ok();
+                    self.rpc("track.set_mixer_channel", json!({"track": id, "channel": new}))?;
                     changed += 1;
                 }
             }
             if changed > 0 {
                 self.gap(&format!("load: {changed} track(s) fed the master or shared a channel and were given their own mixer channel (no per-track fader or meter exists on the surface)"));
-                overview = self.conn.call("track.overview", json!({}))?;
-                mixer = self.conn.call("mixer.get_state", json!({}))?;
+                overview = self.rpc("track.overview", json!({}))?;
+                mixer = self.rpc("mixer.get_state", json!({}))?;
             }
         }
         let tempo = state["tempo"].as_f64().unwrap_or(120.0) as f32;
@@ -418,14 +463,14 @@ impl ZeneEngine {
         let mut other = 0;
         for t in tracks.iter().filter(|t| matches!(t.kind, TrackKind::Audio | TrackKind::Instrument)) {
             let trk = self.tracks[&t.id].trk.clone().unwrap_or_default();
-            let list = self.conn.call("clip.list", json!({"track": trk, "limit": 500}))?;
+            let list = self.rpc("clip.list", json!({"track": trk, "limit": 500}))?;
             for c in list["clips"].as_array().into_iter().flatten() {
                 let cid = c["clip"].as_str().unwrap_or("").to_string();
                 let id = id_num(&cid);
                 let len = c["length"].as_i64().unwrap_or(0) * TICK_SCALE;
                 let kind = match c["kind"].as_str().unwrap_or("") {
                     "midi" => {
-                        let nl = self.conn.call("note.list", json!({"clip": cid}))?;
+                        let nl = self.rpc("note.list", json!({"clip": cid}))?;
                         let mut notes = Vec::new();
                         for n in nl["notes"].as_array().into_iter().flatten() {
                             let nid = n["note"].as_str().unwrap_or("").to_string();
@@ -491,7 +536,7 @@ impl ZeneEngine {
     /// Send the engine whatever differs between the model it was last told and `project`.
     /// Returns how many commands went out.
     pub fn sync(&mut self, project: &Project) -> usize {
-        if *project == self.shadow {
+        if self.conn.is_none() || !self.session.status().is_ready() || *project == self.shadow {
             return 0;
         }
         // While a gesture is moving, clips keep the geometry the engine already has: only what is
@@ -864,7 +909,7 @@ impl ZeneEngine {
 
     /// Run any command on the link's own connection (tests and the bench use it for renders).
     pub fn raw(&mut self, cmd: &str, args: Value) -> Result<Value, String> {
-        self.conn.call(cmd, args)
+        self.rpc(cmd, args)
     }
     pub fn engine_clip(&self, id: ClipId) -> Option<&str> {
         self.clips.get(&id).map(String::as_str)
@@ -887,9 +932,13 @@ fn flat_peaks(len: i64) -> Peaks {
 impl Drop for ZeneEngine {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Relaxed);
-        if let Some(mode) = self.overlap_before.take() {
-            self.conn.call("arrangement.modes", json!({"overlap": mode})).ok();
+        if self.conn.as_ref().is_some_and(|c| c.is_open()) {
+            if let Some(mode) = self.overlap_before.take() {
+                self.rpc("arrangement.modes", json!({"overlap": mode})).ok();
+            }
         }
+        // `session` drops after this: an engine this UI started is stopped only if nothing is
+        // unsaved (zene_link::session, rule 4); an attached engine is never stopped.
     }
 }
 
@@ -918,7 +967,11 @@ impl Engine for ZeneEngine {
 
     fn advance(&mut self, now: f64, project: &Project) -> bool {
         let before = self.snap.clone();
-        self.sync(project);
+        self.follow_session(Some(project));
+        // A fresh read waits for the UI to take it; until then the old model must not be pushed.
+        if self.reload.is_none() {
+            self.sync(project);
+        }
         let dt = self.last_advance.map_or(0.0, |l| (now - l).clamp(0.0, 0.25)) as f32;
         self.last_advance = Some(now);
 
@@ -985,6 +1038,40 @@ impl Engine for ZeneEngine {
 
     fn gesture(&mut self, active: bool) {
         self.in_gesture = active;
+    }
+
+    fn link_status(&self) -> Option<&Status> {
+        Some(self.session.status())
+    }
+
+    fn take_reload(&mut self) -> Option<Project> {
+        self.reload.take()
+    }
+
+    fn take_notices(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.notices)
+    }
+
+    fn exit_check(&mut self) -> ExitCheck {
+        self.session.exit_check()
+    }
+
+    fn exit(&mut self, choice: ExitChoice) -> Result<ExitOutcome, LinkError> {
+        let r = self.session.exit(choice);
+        self.notices.extend(self.session.take_notices());
+        r
+    }
+
+    fn stop_if_clean(&mut self) -> Result<ExitOutcome, LinkError> {
+        self.session.stop_if_clean()
+    }
+
+    fn reconnect(&mut self) {
+        self.session.reconnect();
+    }
+
+    fn restart(&mut self) {
+        self.session.restart();
     }
 
     fn as_any(&mut self) -> &mut dyn std::any::Any {

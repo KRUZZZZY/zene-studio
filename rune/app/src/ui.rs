@@ -125,6 +125,10 @@ pub fn view(s: &App, cx: &mut Cx<App>) -> El {
     if let Some(p) = &s.palette {
         root = root.child(scrim(Some(t.scrim))).child(palette(s, &t, p));
     }
+    if let Some(p) = &s.exit_prompt {
+        // Modal: the scrim takes presses without closing anything; only a choice ends it.
+        root = root.child(el().key("exit-scrim").pin(Some(0.0), Some(0.0), Some(0.0), Some(0.0)).hit().fill(t.scrim)).child(exit_dialog(&t, p));
+    }
     root
 }
 
@@ -138,7 +142,7 @@ fn scrim(fill: Option<rune::Color>) -> El {
     }
 }
 
-const MENUS: [(MenuId, &str); 5] = [(MenuId::File, "menu-file"), (MenuId::Edit, "menu-edit"), (MenuId::View, "menu-view"), (MenuId::Transport, "menu-transport"), (MenuId::Help, "menu-help")];
+const MENUS: [(MenuId, &str); 6] = [(MenuId::File, "menu-file"), (MenuId::Edit, "menu-edit"), (MenuId::View, "menu-view"), (MenuId::Transport, "menu-transport"), (MenuId::Engine, "menu-engine"), (MenuId::Help, "menu-help")];
 
 fn menu_bar(s: &App, t: &Theme) -> El {
     let mut bar = row().center_y().w_full().h(MENU_H).px(8.0).gap(2.0).fill(t.bar).border_sides([0.0, 0.0, 1.0, 0.0], t.line)
@@ -221,10 +225,58 @@ fn status(s: &App, t: &Theme) -> El {
         .child(icon(&icons::INFO, 13.0).color(t.text_faint))
         .child(text(IDLE_HINT).live_text(&s.live.hint).font(T_LABEL).color(t.text_dim).w(560.0).h(16.0))
         .child(row().grow(1.0).min_w(0.0).justify_end().child(label(s.status.clone(), T_LABEL, t.text).key("status").truncate()))
-        .child(row().center_y().gap(5.0).h(18.0).px(6.0).radius(4.0).border(1.0, t.line)
-            .help(s.engine.describe())
-            .child(icon(&icons::VOLUME_X, 13.0).color(t.text_dim))
-            .child(label(s.engine.label(), T_SMALL, t.text_dim)))
+        .child(engine_chip(s, t))
+}
+
+/// The engine chip at the right of the status bar: the simulation's label, or the engine link's
+/// status (its full sentence is the tooltip and the accessible description).
+fn engine_chip(s: &App, t: &Theme) -> El {
+    let chip = row().key("engine-status").center_y().gap(5.0).h(18.0).px(6.0).radius(4.0).border(1.0, t.line);
+    match s.engine.link_status() {
+        None => chip.help(s.engine.describe()).child(icon(&icons::VOLUME_X, 13.0).color(t.text_dim)).child(label(s.engine.label(), T_SMALL, t.text_dim)),
+        Some(st) => {
+            let (ic, color): (&'static Icon, rune::Color) = match st.severity() {
+                zene_link::status::Severity::Ok => (&icons::PLUG, t.text_dim),
+                zene_link::status::Severity::Busy => (&icons::TIMER, t.solo),
+                zene_link::status::Severity::Problem => (&icons::CABLE, t.mute),
+            };
+            let chip = if st.severity() == zene_link::status::Severity::Problem { chip.border(1.0, t.mute) } else { chip };
+            chip.help(st.sentence()).label(st.sentence()).child(icon(ic, 13.0).color(color)).child(label(st.label(), T_SMALL, color))
+        }
+    }
+}
+
+/// The question before closing with unsaved changes in an engine this window started.
+fn exit_dialog(t: &Theme, p: &ExitPrompt) -> El {
+    let what = match (&p.file, p.known) {
+        (Some(f), true) => format!("The project {} has changes that are not saved.", f.display()),
+        (None, true) => "This project has never been saved and has changes.".to_string(),
+        (_, false) => "The engine could not be asked whether the project has unsaved changes, so Zene assumes it has.".to_string(),
+    };
+    let after = "The engine keeps no autosave: Discard loses these changes for good.";
+    let choice = |key: &str, name: &str, c: Command, primary: bool| {
+        let b = button(t).key(key).h(32.0).px(14.0).label(name);
+        let b = if primary { b.fill(t.accent).child(label(name, T_STRONG, t.on_accent)) } else { b.border(1.0, t.line).child(label(name, T_STRONG, t.text)) };
+        on_cmd(b, c)
+    };
+    let mut buttons = row().gap(8.0).justify_end().w_full();
+    if p.file.is_some() || !p.known {
+        buttons = buttons.child(choice("exit-save", "Save and close", Command::ExitSave, true));
+    }
+    buttons = buttons.child(choice("exit-discard", "Discard changes and close", Command::ExitDiscard, false))
+        .child(choice("exit-cancel", "Cancel", Command::ExitCancel, p.file.is_none() && p.known));
+    let mut body = col().w(520.0).padding(16.0).gap(10.0).radius(9.0).fill(t.panel).border(1.0, t.line)
+        .shadow(10.0, 30.0, rune::Color::BLACK.alpha(0.4)).role("dialog").label("Unsaved changes")
+        .child(row().center_y().gap(8.0).child(icon(&icons::SAVE, 18.0).color(t.accent)).child(label("Close Zene with unsaved changes?", T_STRONG, t.text)))
+        .child(text(what).font(T_BODY).color(t.text).w_full().wrap())
+        .child(text(after).font(T_BODY).color(t.text_dim).w_full().wrap());
+    if p.file.is_none() && p.known {
+        body = body.child(text("Save needs a file, and this window has no Save As yet: Cancel and save the project from another control client, or discard.").font(T_SMALL).color(t.text_dim).w_full().wrap());
+    }
+    if let Some(problem) = &p.problem {
+        body = body.child(text(problem.clone()).font(T_BODY).color(t.mute).w_full().wrap().key("exit-problem"));
+    }
+    row().key("exit-dialog").pin(Some(0.0), Some(140.0), Some(0.0), None).justify_center().child(body.child(buttons))
 }
 
 // ---- menus -----------------------------------------------------------------------------
@@ -251,6 +303,8 @@ fn available(s: &App, c: &Command) -> bool {
         Command::SplitAtPlayhead | Command::ToggleClipMute => !s.sel.clips().is_empty(),
         Command::ToggleMute | Command::ToggleSolo => s.focus_track().is_some(),
         Command::AddSelectedItem => s.browse_sel.is_some(),
+        Command::EngineReconnect => matches!(s.engine.link_status(), Some(zene_link::Status::Disconnected { .. } | zene_link::Status::Reconnecting { .. })),
+        Command::EngineRestart => matches!(s.engine.link_status(), Some(zene_link::Status::EngineExited { restarting: false, .. } | zene_link::Status::StartFailed { .. })),
         _ => true,
     }
 }

@@ -43,7 +43,7 @@ mod unix {
     }
 
     fn alive(pid: u32) -> bool {
-        Command::new("kill").args(["-0", &pid.to_string()]).status().is_ok_and(|s| s.success())
+        Command::new("kill").args(["-0", &pid.to_string()]).stderr(std::process::Stdio::null()).status().is_ok_and(|s| s.success())
     }
     fn kill9(pid: u32) {
         Command::new("kill").args(["-9", &pid.to_string()]).status().unwrap();

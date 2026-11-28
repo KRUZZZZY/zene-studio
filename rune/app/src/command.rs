@@ -75,6 +75,16 @@ pub enum Command {
     OpenMenu(MenuId),
     CloseOverlays,
     ResetDemo,
+    // engine and window lifetime (Q050-506)
+    /// Close the window: asks first when an engine this window started has unsaved changes.
+    Quit,
+    ExitSave,
+    /// Save to this path, then quit (headless and scripts; the dialog has no file picker yet).
+    ExitSaveAs(String),
+    ExitDiscard,
+    ExitCancel,
+    EngineReconnect,
+    EngineRestart,
 }
 
 /// A key a command is bound to. `primary` is Ctrl (Cmd on macOS).
@@ -166,6 +176,9 @@ use MenuId as M;
 
 pub static ACTIONS: &[Action] = &[
     act("file.reset_demo", "Reset Demo Project", M::File, None, "Throw away every edit and reload the demo project", C::ResetDemo),
+    div(act("file.quit", "Quit", M::File, ctrl('q'), "Close Zene. If this window started the engine and the project has unsaved changes, you choose to save, discard or cancel first", C::Quit)),
+    act("engine.reconnect", "Reconnect", M::Engine, None, "Connect to the engine again after the connection was lost", C::EngineReconnect),
+    act("engine.restart", "Restart Engine", M::Engine, None, "Start the engine again after it stopped; it reopens the project's last saved file", C::EngineRestart),
     act("control.undo", "Undo", M::Edit, ctrl('z'), "Undo the last edit", C::Undo),
     act("control.redo", "Redo", M::Edit, ctrl_shift('z'), "Redo the edit you just undid", C::Redo),
     div(act("clip.duplicate", "Duplicate", M::Edit, ctrl('d'), "Copy the selected clips or notes directly after themselves", C::DuplicateSelection)),
@@ -213,6 +226,7 @@ pub fn menu_title(m: MenuId) -> &'static str {
         M::Edit => "Edit",
         M::View => "View",
         M::Transport => "Transport",
+        M::Engine => "Engine",
         M::Help => "Help",
         M::Snap => "Edit > Grid",
     }
@@ -237,6 +251,13 @@ pub fn parse(line: &str) -> Result<Command, String> {
     };
     Ok(match id {
         "transport.play" => C::Play,
+        "file.quit" => C::Quit,
+        "exit.save" => C::ExitSave,
+        "exit.save_as" => C::ExitSaveAs(rest.trim().to_string()),
+        "exit.discard" => C::ExitDiscard,
+        "exit.cancel" => C::ExitCancel,
+        "engine.reconnect" => C::EngineReconnect,
+        "engine.restart" => C::EngineRestart,
         "transport.stop" => C::Stop,
         "transport.seek" => C::Seek(n(0)?),
         "transport.set_tempo" => C::SetTempo(f(0)?),
@@ -568,6 +589,16 @@ impl App {
                 self.menu = None;
                 self.context = None;
                 self.palette = None;
+            }
+            C::Quit => self.request_exit(),
+            C::ExitSave => self.finish_exit(zene_link::ExitChoice::Save),
+            C::ExitSaveAs(path) => self.finish_exit(zene_link::ExitChoice::SaveAs(path.into())),
+            C::ExitDiscard => self.finish_exit(zene_link::ExitChoice::Discard),
+            C::ExitCancel => self.finish_exit(zene_link::ExitChoice::Cancel),
+            C::EngineReconnect => self.engine.reconnect(),
+            C::EngineRestart => self.engine.restart(),
+            C::ResetDemo if self.engine.link_status().is_some() => {
+                self.status = "Reset Demo Project only applies to the demo; the engine's project was not changed".into();
             }
             C::ResetDemo => {
                 let fresh = demo::project();
