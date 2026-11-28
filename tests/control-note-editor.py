@@ -27,7 +27,15 @@ a user does. This driver starts the REAL `zene` binary headless and proves:
      track.input_transform_set / get change what a track does to live MIDI (one undo step);
   8. (Q050-291.1) clip.controllers_to_automation / _from_automation convert a CC lane to a device parameter's automation
      and back (read through automation.get_state / clip.controllers_get; one undo each; an unnamed parameter or a
-     pitch-bend lane is refused and changes nothing).
+     pitch-bend lane is refused and changes nothing);
+  9. (Q050-211) Step input over the socket: note.step_input lands a note (or a chord) at the clip's step cursor and
+     advances it by the grid step, the step's notes are the selection, ONE control.undo takes a step back, a transport
+     stop under a step writes nothing and leaves the cursor where it was, and a step that cannot be entered is refused
+     typed and changes nothing.
+ 10. (Q050-211) Live recording over the socket: note.record_on opens a note where the playhead is (or at a named
+     position) and note.record_off closes it where the key came up, ONE control.undo takes the whole take back, a
+     key held across transport.stop is kept one step long and the stop ends the take, and disarming Record writes
+     nothing more.
 
 Usage:  QT_QPA_PLATFORM=offscreen python3 tests/control-note-editor.py <zene> [<screenshot dir>]
 Exit 0 only when every check held.
@@ -37,6 +45,7 @@ import os
 import sys
 
 import control_socket_harness as H
+from control_note_editor_entry import check_recording, check_step_input
 from freeze_bounce_evidence import Recorder, Session, report_results
 
 
@@ -452,6 +461,8 @@ def main(argv):
         check_controller_lanes(session, recorder)
         check_controller_conversion(session, recorder)
         check_input_transform(session, recorder)
+        check_step_input(session, recorder, new_clip)
+        check_recording(session, recorder, new_clip)
     report_results(recorder)
     if recorder.problems:
         transcript.dump()

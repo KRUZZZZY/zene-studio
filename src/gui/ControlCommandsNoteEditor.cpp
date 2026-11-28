@@ -98,8 +98,9 @@ void applyChoices(gui::NoteEditor* editor, const QJsonObject& args)
 	if (const int color = choice(args, "color_mode", kColors); color >= 0) { editor->setColorMode(static_cast<gui::NoteColor>(color)); }
 }
 
-//! The view's flags and numbers: grid, ghosts, keep-in-scale, the controller lane, the new note, the audio behind.
-void applyView(gui::NoteEditor* editor, const QJsonObject& args)
+//! The view's own flags and numbers: grid, ghosts, keep-in-scale, the controller lane, the new note, the
+//! audio behind.
+void applyDisplay(gui::NoteEditor* editor, const QJsonObject& args)
 {
 	if (args.contains(QStringLiteral("grid"))) { editor->setGridTicks(args.value(QStringLiteral("grid")).toInt()); }
 	if (args.contains(QStringLiteral("ghosts"))) { editor->setGhosts(args.value(QStringLiteral("ghosts")).toBool()); }
@@ -111,6 +112,25 @@ void applyView(gui::NoteEditor* editor, const QJsonObject& args)
 			args.value(QStringLiteral("new_velocity")).toInt(editor->state().lastVelocity));
 	}
 	if (args.contains(QStringLiteral("audio_behind"))) { editor->setAudioBehind(args.value(QStringLiteral("audio_behind")).toString()); }
+}
+
+//! The entry modes: Step input and its cursor, and Record.
+void applyEntryModes(gui::NoteEditor* editor, const QJsonObject& args)
+{
+	// Q050-211: arming puts the cursor at the playhead, so it comes first and an explicit
+	// `step_cursor` in the same call still wins.
+	if (args.contains(QStringLiteral("step_input"))) { editor->setStepInput(args.value(QStringLiteral("step_input")).toBool()); }
+	if (args.contains(QStringLiteral("step_cursor"))) { editor->setStepCursor(args.value(QStringLiteral("step_cursor")).toInt()); }
+	// Q050-211: Record - what a MIDI keyboard plays is written as it is played (note.record_on / _off),
+	// one undo step per take. Exclusive with Step input, which the editor turns off when this goes on.
+	if (args.contains(QStringLiteral("record"))) { editor->setRecord(args.value(QStringLiteral("record")).toBool()); }
+}
+
+//! The view's flags and numbers, then the entry modes the header's buttons show.
+void applyView(gui::NoteEditor* editor, const QJsonObject& args)
+{
+	applyDisplay(editor, args);
+	applyEntryModes(editor, args);
 }
 
 //! The zoom: pixels per tick, then a fit to the clip or (FL's Z) to the selected notes.
@@ -176,8 +196,14 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		"gets; `audio_behind` draws an audio clip's waveform behind the notes (a clip id, auto - the first one sounding with the "
 		"clip - or empty); `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes "
 		"(after the panel is shown); `zoom_to_selection` fits the selected notes, or the clip when none is (the Z key); `reveal` (default true) brings the note editor "
-		"panel into view. Interface state, not project state: nothing is journalled - the notes themselves "
-		"are edited through note.*. Refused `requires` in a process with no interface.");
+		"panel into view; `step_input` arms Step input, where a MIDI key or a computer key enters one "
+		"`note.step_input` step and the step cursor moves on by `grid`, and `step_cursor` (ticks) puts that cursor "
+		"somewhere else - edit state, not project state, so arming, moving it and disarming take no undo step; "
+		"`record` arms live recording, where the clip track's MIDI key opens a note at the playhead snapped to "
+		"`grid` and the key-up closes it (`note.record_on` / `note.record_off`), ONE undo step per take, ended by "
+		"`note.record_end` when the transport stops, when `record` goes off or when another clip opens. "
+		"Interface state, not project state: nothing is journalled - the notes themselves are edited through "
+		"note.*. Refused `requires` in a process with no interface.");
 	cmd.argsSchema = objectSchema({
 		{QStringLiteral("clip"), stringProperty()},
 		{QStringLiteral("tool"), enumProperty(kTools)},
@@ -191,6 +217,9 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		{QStringLiteral("new_length"), integerProperty(0, 192 * 16)},
 		{QStringLiteral("new_velocity"), integerProperty(1, 200)},
 		{QStringLiteral("audio_behind"), stringProperty()},
+		{QStringLiteral("step_input"), booleanProperty()},
+		{QStringLiteral("step_cursor"), integerProperty(0, 192 * 9999)},
+		{QStringLiteral("record"), booleanProperty()},
 		{QStringLiteral("zoom"), numberProperty()},
 		{QStringLiteral("reveal"), booleanProperty()},
 		{QStringLiteral("fit"), booleanProperty()},
@@ -206,6 +235,9 @@ void registerNoteEditorWindowCommands(ControlRegistry& registry)
 		{QStringLiteral("controller_lane"), stringProperty()},
 		{QStringLiteral("new_length"), integerProperty(0, 192 * 16)}, {QStringLiteral("new_velocity"), integerProperty(1, 200)},
 		{QStringLiteral("audio_behind"), stringProperty()},
+		{QStringLiteral("step_input"), booleanProperty()},
+		{QStringLiteral("step_cursor"), integerProperty(0, 192 * 9999)},
+		{QStringLiteral("record"), booleanProperty()},
 		{QStringLiteral("scroll_ticks"), numberProperty()}, {QStringLiteral("scroll_y"), integerProperty(0, 1 << 20)},
 		{QStringLiteral("row_height"), integerProperty(6, 40)},
 		{QStringLiteral("top_key"), integerProperty(-1, 127)}, {QStringLiteral("bottom_key"), integerProperty(-1, 127)},

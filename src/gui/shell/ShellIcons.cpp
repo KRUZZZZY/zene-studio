@@ -87,6 +87,8 @@ const std::map<QString, QString>& shellTable()
 	{"scale", "music"},
 	{"select", "mouse-pointer-2"},
 	{"slice", "scissors"},
+	{"step", "footprints"},  // Q050-211: the note editor's Step input mode
+	{"record", "circle-dot"},  // Q050-211: the note editor's live Record mode
 	{"stop", "square"}
 	};
 	return table;

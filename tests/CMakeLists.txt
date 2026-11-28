@@ -1372,6 +1372,9 @@ set(LMMS_TESTS
 	src/gui/LadspaDescriptionTest.cpp
 	# 0.5.0 theme 1: the note editor follows FL Studio's piano roll.
 	src/gui/NoteEditorFlTest.cpp
+	# Q050-211: Step input mode - the toolbar button, a MIDI key and a computer key each entering one
+	# note.step_input step on the editor's grid and length, one undo step each, and the stop paths.
+	src/gui/NoteEditorStepInputTest.cpp
 	# 0.5.0 lane 3: the shell selection, the Inspector and the Device panel's cards and
 	# modulators over a real engine (the build's plugin modules).
 	src/gui/DevicePanelTest.cpp
@@ -4380,6 +4383,7 @@ set_tests_properties(RackDeferredLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLA
 set_tests_properties(EffectEditorTeardownTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(LinkedModelGroupViewLifetimeTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(NoteEditorFlTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+set_tests_properties(NoteEditorStepInputTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(MixerSendsOnFadersTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArrangerTimelineTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 set_tests_properties(ArrangerZoomBoundTest PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")

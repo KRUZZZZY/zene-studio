@@ -339,6 +339,7 @@ include/ControlMasteringSupport.h
 include/ControlMeterSupport.h
 include/ControlMixerSupport.h
 include/ControlModulationSupport.h
+include/ControlNoteRecord.h
 include/ControlNoteShared.h
 include/ControlProjectAssets.h
 include/ControlProjectMedia.h
@@ -357,6 +358,7 @@ include/ControlScaleShared.h
 include/ControlServer.h
 include/ControlStemSource.h
 include/ControlStemSupport.h
+include/ControlStepInput.h
 include/ControlStructuralSupport.h
 include/ControlTrackCreation.h
 include/ControlTrackRole.h
@@ -1794,12 +1796,14 @@ src/core/ControlCommandsNoteMoves.cpp
 src/core/ControlCommandsNotePlayback.cpp
 src/core/ControlCommandsNoteProbability.cpp
 src/core/ControlCommandsNoteRandom.cpp
+src/core/ControlCommandsNoteRecord.cpp
 src/core/ControlCommandsNoteSelect.cpp
 src/core/ControlCommandsNoteShape.cpp
 src/core/ControlCommandsNoteShared.h
 src/core/ControlCommandsNoteSlide.cpp
 src/core/ControlCommandsNoteStep.cpp
 src/core/ControlCommandsNoteStepFill.cpp
+src/core/ControlCommandsNoteStepInput.cpp
 src/core/ControlCommandsNoteTools.cpp
 src/core/ControlCommandsNoteTransform.cpp
 src/core/ControlCommandsNotes.cpp
@@ -1953,6 +1957,7 @@ src/core/ControlHardwareIoSupport.cpp
 src/core/ControlMasteringSupport.cpp
 src/core/ControlMixerSupport.cpp
 src/core/ControlModulationSupport.cpp
+src/core/ControlNoteRecord.cpp
 src/core/ControlNoteShared.cpp
 src/core/ControlProjectAssets.cpp
 src/core/ControlProjectAssetsDocument.cpp
@@ -2033,6 +2038,7 @@ src/core/ControlStemModel.cpp
 src/core/ControlStemSource.cpp
 src/core/ControlStemSupport.cpp
 src/core/ControlStemWav.cpp
+src/core/ControlStepInput.cpp
 src/core/ControlStructuralSupport.cpp
 src/core/ControlTrackCreation.cpp
 src/core/ControlTrackRoleLinks.cpp
@@ -2692,6 +2698,7 @@ src/gui/noteeditor/NoteLaneKeys.cpp
 src/gui/noteeditor/NoteLanePaint.cpp
 src/gui/noteeditor/NoteLanes.cpp
 src/gui/noteeditor/NoteProperties.cpp
+src/gui/noteeditor/NoteStepInput.cpp
 src/gui/noteeditor/StepGridCanvas.cpp
 src/gui/noteeditor/StepGridPanel.cpp
 src/gui/shell/BrowserPanel.cpp
@@ -3533,6 +3540,7 @@ tests/src/gui/MpeInputActionTest.cpp
 tests/src/gui/NStateButtonActivationTest.cpp
 tests/src/gui/NoteBackgroundAudioTest.cpp
 tests/src/gui/NoteEditorFlTest.cpp
+tests/src/gui/NoteEditorStepInputTest.cpp
 tests/src/gui/NoteEditorTest.cpp
 tests/src/gui/NoteGridTest.cpp
 tests/src/gui/NoteMelodyTest.cpp

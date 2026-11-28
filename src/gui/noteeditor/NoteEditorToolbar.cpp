@@ -177,6 +177,40 @@ void NoteEditor::addToolButtons(QWidget* bar, QHBoxLayout* row)
 		row->addWidget(toolButton(bar, action));
 	}
 	setTool(m_state.tool);
+	// Q050-211: Step input - one key, one note (docs/NOTE-EDITOR.md §3a). It arms through the same
+	// registered command an agent on the socket calls, and the button follows a command that changes
+	// the mode from elsewhere (a second click, window.note_editor_set).
+	QAction* step = checkable(this, QStringLiteral("step"), tr("Step input"),
+		tr("Enter notes one step at a time: a MIDI key or a computer key (Z S X D C ..., Q 2 W 3 ...) puts a note at the "
+			"step cursor and moves the cursor on by the grid - one note.step_input and one undo step per key"));
+	step->setProperty("controlCommand", QStringLiteral("window.note_editor_set"));
+	connect(step, &QAction::triggered, this, [this](bool on) {
+		run(QStringLiteral("window.note_editor_set"), {{QStringLiteral("step_input"), on}});
+	});
+	connect(this, &NoteEditor::stateChanged, step, [this, step]() {
+		if (step->isChecked() == m_state.stepInput) { return; }
+		const QSignalBlocker quiet(step);
+		step->setChecked(m_state.stepInput);
+	});
+	row->addWidget(toolButton(bar, step));
+	// Q050-211: Record - what the MIDI keyboard plays is written as it is played (docs/NOTE-EDITOR.md §3b).
+	// Armed and disarmed through the same registered command an agent calls, and the button follows a
+	// command that changes the mode from elsewhere. Step input and Record are exclusive: arming one
+	// turns the other off in the editor, and both buttons follow.
+	QAction* record = checkable(this, QStringLiteral("record"), tr("Record"),
+		tr("Record what the MIDI keyboard plays: a key opens a note at the playhead on the grid and its release "
+			"closes it where the key came up - one note.record_on / note.record_off pair and ONE undo step for the "
+			"whole take, which the transport's stop ends"));
+	record->setProperty("controlCommand", QStringLiteral("window.note_editor_set"));
+	connect(record, &QAction::triggered, this, [this](bool on) {
+		run(QStringLiteral("window.note_editor_set"), {{QStringLiteral("record"), on}});
+	});
+	connect(this, &NoteEditor::stateChanged, record, [this, record]() {
+		if (record->isChecked() == m_state.record) { return; }
+		const QSignalBlocker quiet(record);
+		record->setChecked(m_state.record);
+	});
+	row->addWidget(toolButton(bar, record));
 	row->addSpacing(tokens::space::md);
 }
 
@@ -384,6 +418,14 @@ bool NoteEditor::handlesKey(const QKeyEvent* event)
 
 void NoteEditor::keyPressEvent(QKeyEvent* event)
 {
+	// Q050-211: Step input owns the piano keys while it is on. They are the tool letters too (P, B,
+	// D, T, C, E, Y and 1..7 all play a note), and a key the user pressed to enter a step must not
+	// silently switch the tool instead; with the mode off the letters are the tools, as before.
+	if (stepInputKey(event))
+	{
+		event->accept();
+		return;
+	}
 	NoteTool tool = NoteTool::Draw;
 	if (toolForKey(event, &tool)) { setTool(tool); }
 	else if (event->modifiers() == Qt::NoModifier && event->key() == Qt::Key_Z) { zoomToSelection(); }

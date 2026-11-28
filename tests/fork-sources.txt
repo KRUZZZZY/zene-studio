@@ -53,6 +53,18 @@
 # browser.preview decoding an entire file before limiting it to 30 seconds (it now reads only the window
 # through SampleDecoder::decodeLimited()). Its own binary because LibraryBrowserTest.cpp, which covers the
 # preview playing and stopping, is at the file-length ratchet. Emitted in the sorted source list below.
+# 2026-11-26 (Q050-211): five fork-NEW sources for step input in the note editor - the per-clip step
+# cursor (include/ControlStepInput.h, src/core/ControlStepInput.cpp), the note.step_input command
+# (src/core/ControlCommandsNoteStepInput.cpp), the editor's MIDI/computer-key step entry
+# (src/gui/noteeditor/NoteStepInput.cpp) and its regression test (tests/src/gui/NoteEditorStepInputTest.cpp).
+# Emitted in the sorted source list below; no other entry changed.
+# 2026-11-26 (Q050-211, round 2): three fork-NEW sources for live recording in the note editor - the take
+# state and its one undo step (include/ControlNoteRecord.h, src/core/ControlNoteRecord.cpp) and the
+# note.record_on / note.record_off / note.record_end commands (src/core/ControlCommandsNoteRecord.cpp).
+# Emitted in the sorted source list below; no other entry changed.
+# 2026-11-26 (Q050-211, round 2, gate fix): tests/control_note_editor_entry.py is the step-input and recording half
+# of tests/control-note-editor.py, split out so neither file passes the code-line target (the driver was at 537).
+# Every check moved verbatim; the driver imports the two orchestrators and passes its own new_clip.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -117,7 +129,7 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
-#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py ; \
+#   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py tests/control_note_editor_entry.py ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/ExprSynthAllocationTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/SlicerTWaveformTest.cpp ; \
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/MpeConsumerProbe.h tests/src/plugins/MpeTestConsumer.cpp ; \
@@ -220,7 +232,7 @@
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-livecode-commands.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-surface-hardening.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-shell.py ; \
-# git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py ; \
+# git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-note-editor.py tests/control_note_editor_entry.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/control-tempo-map-persistence.py ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/SlicerTWaveformTest.cpp ; \
 # git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/src/plugins/MpeConsumerProbe.h tests/src/plugins/MpeTestConsumer.cpp ; \
@@ -748,6 +760,13 @@
 #   git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- tests/warp-docs-agree.py ; \
 
 # Train 29: retain independently accepted Linux Qt5 compile/scanner regressions and MinGW no-gestures regression.
+include/ControlNoteRecord.h
+include/ControlStepInput.h
+src/core/ControlCommandsNoteRecord.cpp
+src/core/ControlCommandsNoteStepInput.cpp
+src/core/ControlNoteRecord.cpp
+src/core/ControlStepInput.cpp
+src/gui/noteeditor/NoteStepInput.cpp
 tests/qt5-signal-overload-check.py
 tests/qt5-signal-overload-arm-check.py
 tests/arranger-zoom-no-gestures-check.py
@@ -821,6 +840,7 @@ include/AbletonLinkBridge.h
 include/AbletonLinkSession.h
 include/Accessibility.h
 # Train 40: retain the independently accepted direct-source plug-in export audit and its report.
+tests/src/gui/NoteEditorStepInputTest.cpp
 tests/src/plugins/PluginExportBranchTest.cpp
 docs/qwen-fixes-2026-10/cluster-ci-64c5b539b5120b17.md
 docs/qwen-fixes-2026-10/sol-train-30-export-integration.md
@@ -2629,6 +2649,7 @@ tests/control-workflow-bindings.py
 tests/control-workflow-models.py
 tests/control_detect_fixtures.py
 tests/control_instance_diagnosis.py
+tests/control_note_editor_entry.py
 tests/control_pipe_client.py
 tests/control_socket_flows.py
 tests/control_clock_capture_checks.py

@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-11-16T09:57:16Z",
+  "captured_at": "2026-11-26T14:41:42Z",
   "commands": [
     {
       "args_schema": {
@@ -18462,6 +18462,195 @@
         "properties": {
           "clip": {
             "type": "string"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "End a live recording take: every note still held is kept (one step long, so the key you pressed is not lost) and the take's undo step is closed, so the next note starts a new one. The note editor calls it when the transport stops, when Record is switched off and when another clip is opened; an agent calls it to end a take it started. Writes inside the take's MidiClip checkpoint.",
+      "group": "note",
+      "id": "note.record_end",
+      "mutating": false,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "closed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "count": {
+            "maximum": 65536,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "take_ended": {
+            "type": "boolean"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "key"
+        ],
+        "type": "object"
+      },
+      "description": "Live recording's note-off: close the note `key` is holding where the playhead is (snapped down to `step`), so its length is the time between the two edges. It writes inside the take's MidiClip checkpoint - no new undo step - so `control.undo` still takes the whole take back. A key-up with nothing open (a stray release, or a stop or undo that ended the take) writes nothing and answers closed: false.",
+      "group": "note",
+      "id": "note.record_off",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "closed": {
+            "type": "boolean"
+          },
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "select": {
+            "type": "boolean"
+          },
+          "step": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip",
+          "key"
+        ],
+        "type": "object"
+      },
+      "description": "Live recording's note-on: put one note at the playhead (snapped down to `step`, a sixteenth by default) and hold it until `note.record_off` closes it, so its length is what was played. The first note of a take takes the clip's MidiClip journal checkpoint and the rest of the take writes inside it - ONE undo step per take, not per note. The note editor's Record button sends this for every MIDI key it hears; an agent records the same way by sending the two edges. Reversible through the ProjectJournal (one MidiClip checkpoint per take).",
+      "group": "note",
+      "id": "note.record_on",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "held": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "take_started": {
+            "type": "boolean"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
           },
           "note": {
             "type": "string"
@@ -19137,6 +19326,110 @@
             "type": "integer"
           },
           "steps": {
+            "type": "integer"
+          }
+        },
+        "required": [],
+        "type": "object"
+      }
+    },
+    {
+      "args_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "key": {
+            "maximum": 127,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "keys": {
+            "items": {
+              "maximum": 127,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "select": {
+            "type": "boolean"
+          },
+          "step": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clip"
+        ],
+        "type": "object"
+      },
+      "description": "Step entry: put one note - or a chord, with `keys` - at the step cursor and move the cursor on by the grid step, so a phrase is entered one key at a time. `key` is one MIDI pitch (0..127) and `keys` a chord of up to 32 distinct pitches (one of the two, never both); `position` (ticks) starts the step somewhere else than the cursor and becomes the cursor; `length` is the note's length (default: the step); `step` is how far the cursor advances (default 12, a sixteenth note); `velocity` 0..200; `select` (default true) makes the new notes the selection. The cursor is edit state, not project state: it is not saved and `control.undo` does not move it, it takes the step's notes back. The note editor's Step input mode calls this command for a MIDI key and for a computer key alike, with its own grid and note length. Reversible through the ProjectJournal (one MidiClip checkpoint per step).",
+      "group": "note",
+      "id": "note.step_input",
+      "mutating": true,
+      "requires": [],
+      "result_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "clip": {
+            "type": "string"
+          },
+          "cursor": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "length": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "note_count": {
+            "maximum": 16777216,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "position": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "selected": {
+            "type": "boolean"
+          },
+          "step": {
+            "maximum": 1919808,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "velocity": {
+            "maximum": 200,
+            "minimum": 0,
             "type": "integer"
           }
         },
@@ -26066,7 +26359,7 @@
         ],
         "type": "object"
       },
-      "description": "Start a journalled capture: write the take journal (<take>.rec-journal) that makes a recording recoverable if this process dies before the capture stops cleanly. `take` must be absolute (a relative path names a different file in the next process). Write the journal, then arm the recorder against the same path, then keep it current with record.journal_update. Reversible: the recorded inverse is the paired command (record.recovery_discard when no journal existed, record.journal_begin with the previous contents when one did), which control.undo dispatches.",
+      "description": "Start a journalled capture: write the take journal (<take>.rec-journal) that makes a recording recoverable if this process dies before the capture stops cleanly. `take` must be absolute (a relative path names a different file in the next process). Write the journal, then arm the recorder against the same path, then keep it current with record.journal_update. REFUSED when a journal is already there and still protects an interrupted capture (or exists but cannot be read): starting over it would erase that recovery offer, so retire it first with record.journal_finish (a clean stop) or record.recovery_discard (keep the take's WAV, drop the offer). Reversible: the recorded inverse is the paired command record.recovery_discard, which control.undo dispatches to remove the journal this call created.",
       "group": "record",
       "id": "record.journal_begin",
       "mutating": true,
@@ -39141,7 +39434,18 @@
             "minimum": 1,
             "type": "integer"
           },
+          "record": {
+            "type": "boolean"
+          },
           "reveal": {
+            "type": "boolean"
+          },
+          "step_cursor": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step_input": {
             "type": "boolean"
           },
           "tool": {
@@ -39166,7 +39470,7 @@
         "required": [],
         "type": "object"
       },
-      "description": "Drive the note editor's VIEW - what the editor's header and keys set - and answer its state (the same object window.get_state reports as `note_editor`). Every field is optional: `clip` opens that MIDI clip in the editor (what double-clicking it does); `tool` is one of FL Studio's piano-roll tools - draw (P), select (E), slice (C), erase (the Delete tool, D), audition (the Play tool, Y), paint (B: drag to lay a note on every grid cell) or mute (T); `grid` the snap in ticks (1 = off); `fold` none, scale, used or drums (the keys the track names - key_names.* - and the used ones); `lane` the expression lane (velocity, pan, chance, timbre, pressure, pitch, release, spread, repeats); `ghosts` shows the track's other clips; `color_mode` colours notes by velocity, pitch or track; `keep_in_scale` moves drawn and dragged notes to the nearest key of the scale; `controller_lane` (cc:<n>, pitchbend, aftertouch, program; empty for the note lane) shows that controller curve of the clip under the notes (clip.controllers_set edits it); `new_length` (ticks; 0 the last drawn) and `new_velocity` are what a clicked note gets; `audio_behind` draws an audio clip's waveform behind the notes (a clip id, auto - the first one sounding with the clip - or empty); `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes (after the panel is shown); `zoom_to_selection` fits the selected notes, or the clip when none is (the Z key); `reveal` (default true) brings the note editor panel into view. Interface state, not project state: nothing is journalled - the notes themselves are edited through note.*. Refused `requires` in a process with no interface.",
+      "description": "Drive the note editor's VIEW - what the editor's header and keys set - and answer its state (the same object window.get_state reports as `note_editor`). Every field is optional: `clip` opens that MIDI clip in the editor (what double-clicking it does); `tool` is one of FL Studio's piano-roll tools - draw (P), select (E), slice (C), erase (the Delete tool, D), audition (the Play tool, Y), paint (B: drag to lay a note on every grid cell) or mute (T); `grid` the snap in ticks (1 = off); `fold` none, scale, used or drums (the keys the track names - key_names.* - and the used ones); `lane` the expression lane (velocity, pan, chance, timbre, pressure, pitch, release, spread, repeats); `ghosts` shows the track's other clips; `color_mode` colours notes by velocity, pitch or track; `keep_in_scale` moves drawn and dragged notes to the nearest key of the scale; `controller_lane` (cc:<n>, pitchbend, aftertouch, program; empty for the note lane) shows that controller curve of the clip under the notes (clip.controllers_set edits it); `new_length` (ticks; 0 the last drawn) and `new_velocity` are what a clicked note gets; `audio_behind` draws an audio clip's waveform behind the notes (a clip id, auto - the first one sounding with the clip - or empty); `zoom` is pixels per tick; `fit` zooms to the clip and centres its notes (after the panel is shown); `zoom_to_selection` fits the selected notes, or the clip when none is (the Z key); `reveal` (default true) brings the note editor panel into view; `step_input` arms Step input, where a MIDI key or a computer key enters one `note.step_input` step and the step cursor moves on by `grid`, and `step_cursor` (ticks) puts that cursor somewhere else - edit state, not project state, so arming, moving it and disarming take no undo step; `record` arms live recording, where the clip track's MIDI key opens a note at the playhead snapped to `grid` and the key-up closes it (`note.record_on` / `note.record_off`), ONE undo step per take, ended by `note.record_end` when the transport stops, when `record` goes off or when another clip opens. Interface state, not project state: nothing is journalled - the notes themselves are edited through note.*. Refused `requires` in a process with no interface.",
       "group": "window",
       "id": "window.note_editor_set",
       "mutating": false,
@@ -39218,6 +39522,9 @@
             "minimum": 1,
             "type": "integer"
           },
+          "record": {
+            "type": "boolean"
+          },
           "row_height": {
             "maximum": 40,
             "minimum": 6,
@@ -39241,6 +39548,14 @@
             "maximum": 1048576,
             "minimum": 0,
             "type": "integer"
+          },
+          "step_cursor": {
+            "maximum": 1919808,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step_input": {
+            "type": "boolean"
           },
           "tool": {
             "type": "string"
@@ -40257,23 +40572,23 @@
       }
     }
   ],
-  "count": 935,
+  "count": 939,
   "instance": {
-    "binary": null,
-    "binary_bytes": null,
-    "binary_sha256": null,
-    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/zene-feat-q050-183.1/tools/zene-pa-agentctl",
+    "binary": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-Q050-211/build/zene",
+    "binary_bytes": 36688712,
+    "binary_sha256": "5dbd7a20ad39c5781f597eb35a3438073c407254147ba9a40e8515d8722d26e9",
+    "lane": "/home/kruzzzzy/Documents/AI_KOS_PROJECT/projects/zene-studio-program/kads-Q050-211/tools/zene-pa-agentctl",
     "lane_head": null,
     "proto": 1,
-    "source_socket": "/tmp/zctl-run-q4_sbeyz/zene.sock",
-    "version": "0.4.0-alpha.7163+6828471"
+    "source_socket": "/tmp/zctl-run-1xms0yhx/zene.sock",
+    "version": "0.4.0-alpha.8356+5f6d0e4"
   },
   "kind": "zene-control-command-list",
   "proto": 1,
   "schema": 1,
   "surface": {
     "group_count": 78,
-    "id_count": 935,
-    "ids_sha256": "fc62eb9f915262a9a888ac3ee986dc17fba54227a7daf914bca2096f5ecbf38c"
+    "id_count": 939,
+    "ids_sha256": "68cf5843be367f2f0719e7a19d506f950af2998de1474bafb388d479f2e3a155"
   }
 }

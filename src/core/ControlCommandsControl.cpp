@@ -31,6 +31,7 @@
 #include "AudioEngine.h"
 #include "AudioEngineWorkerThread.h"
 
+#include "ControlNoteRecord.h"
 #include "ControlRegistry.h"
 #include "ControlReversibility.h"
 #include "ControlStructuralSupport.h"
@@ -456,6 +457,7 @@ ControlResult undoRecordedJournalStep(const ControlRegistry::Transaction& record
  */
 ControlResult undoLastCommand(ControlRegistry& registry)
 {
+	endAllRecordTakes();  // a take's checkpoint must not be undone under it (ControlNoteRecord.h)
 	const ControlRegistry::Transaction* top = registry.lastTransaction();
 	if (top == nullptr)
 	{
@@ -567,6 +569,7 @@ void registerRedoCommand(ControlRegistry& registry)
 		auto* journal = Engine::projectJournal();
 		bool redone = false;
 		QString declined;
+		endAllRecordTakes();  // as control.undo: a redo must not land inside an open take
 		clearStructuralRestoreFailure();  // as control.undo: only THIS step's failure is reported
 		clearActionRestoreFailure();
 		if (journal != nullptr && journal->canRedo())

@@ -404,6 +404,16 @@ set(LMMS_SRCS
 	core/ControlCommandsNoteStep.cpp
 	# note.step_fill (Q050-294.3): a seeded shape or random fill of a clip's step columns, in the active scale.
 	core/ControlCommandsNoteStepFill.cpp
+	# note.step_input (Q050-211): step entry - one note or chord per call at the clip's step
+	# cursor, the cursor advancing by the grid step, and the cursor store itself
+	# (ControlStepInput.h): edit state, not project state.
+	core/ControlCommandsNoteStepInput.cpp
+	core/ControlStepInput.cpp
+	# note.record_on / note.record_off / note.record_end (Q050-211): live recording's two MIDI
+	# edges and the end of a take, with the take's held notes and its one undo step
+	# (ControlNoteRecord.h).
+	core/ControlCommandsNoteRecord.cpp
+	core/ControlNoteRecord.cpp
 	# The 0.3.0 note/scale/device wave (board task #648; feature-list rows 11, 66 and
 	# 81): the note randomisation verbs (note.random_seed_get/_set, note.randomize),
 	# the slide verbs (note.slide_set / note.slide_clear), the three note transforms,
