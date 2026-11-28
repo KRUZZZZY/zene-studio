@@ -335,6 +335,44 @@ private slots:
 		QCOMPARE(static_cast<qulonglong>(queue.overflowCount()), 1ull);
 	}
 
+	//! Q3244: the finding's case. A note-on went through and a burst filled the queue; the note-off of that
+	//! sounding note arrives while the queue is full and used to be refused, so the receiver kept the note
+	//! held - nothing ever sends a second note-off for it, and a counter is not a recovery. The queue keeps
+	//! its last Capacity slots for note-offs, in the same ring, so the release survives the burst and still
+	//! leaves in production order.
+	void FullQueue_StillTakesTheNoteOffOfASoundingNote()
+	{
+		MidiOutQueue queue;
+		const TimePos time;
+		const MidiEvent noteOff(lmms::MidiNoteOff, 0, 60, 0);
+		for (std::size_t i = 0; i < MidiOutQueue::Capacity; ++i) { QVERIFY(queue.push(makeMidiEvent(static_cast<std::uint8_t>(i & 0x7f)), time, nullptr)); }
+		QVERIFY2(queue.push(noteOff, time, nullptr),
+			"the queue refused a note-off while full: the receiver keeps that note held");
+		int drained = 0;
+		bool sawNoteOff = false;
+		MidiOutQueue::Command command;
+		while (queue.pop(command)) { ++drained; if (command.event.type() == lmms::MidiNoteOff) { sawNoteOff = true; } }
+		QCOMPARE(drained, static_cast<int>(MidiOutQueue::Capacity + 1));
+		QVERIFY2(sawNoteOff, "the note-off never reached the consumer");
+		QCOMPARE(static_cast<qulonglong>(queue.overflowCount()), 0ull);
+	}
+
+	//! The room kept for note-offs is bounded and belongs to note-offs only: an ordinary event is still
+	//! refused at Capacity, and a note-off that arrives with even the reserve full is counted, not
+	//! overwritten into a slot the consumer has not read.
+	void NoteOffRoom_IsBoundedAndReservedForNoteOffs()
+	{
+		MidiOutQueue queue;
+		const TimePos time;
+		const MidiEvent noteOff(lmms::MidiNoteOff, 0, 64, 0);
+		std::size_t accepted = 0;
+		while (accepted < 4 * MidiOutQueue::Capacity && queue.push(noteOff, time, nullptr)) { ++accepted; }
+		QVERIFY2(accepted > MidiOutQueue::Capacity, "no room is reserved for note-offs");
+		QVERIFY2(accepted < 4 * MidiOutQueue::Capacity, "the ring took more than it can hold");
+		QCOMPARE(static_cast<qulonglong>(queue.overflowCount()), 1ull);
+		QVERIFY2(!queue.push(makeMidiEvent(65), time, nullptr), "an ordinary event took a note-off's slot");
+	}
+
 	void ProducerConsumer_PreservesOrder()
 	{
 		MidiOutQueue queue;

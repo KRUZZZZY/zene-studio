@@ -27,7 +27,24 @@ class MidiPort;
 class MidiOutQueue
 {
 public:
+	//! How many events the producer may have outstanding before push() refuses an ordinary one. This is the
+	//! limit the queue has always had: a producer of note-ons, controllers, clock or sysex sees no change.
 	static constexpr std::size_t Capacity = 1024;
+
+	/*! Q3244: slots past Capacity that only a note-off may take. A refused note-off is the one refusal the
+	 *  receiver cannot undo by itself: it holds the note until something releases it, and nothing ever sends a
+	 *  second note-off for it, so a burst that fills the output queue used to leave that note sounding until
+	 *  the device was reset. The reserve is note-off priority: with the ordinary slots full a note-off still
+	 *  enters, in the SAME ring and therefore still in production order - a note-off can never overtake an
+	 *  event produced after it, nor be overtaken by one produced before it. Only when the reserve is full too
+	 *  is a note-off refused, and push() counts that; that needs Capacity pending note-offs, which at any real
+	 *  event rate is a stall of seconds rather than a burst. */
+	static constexpr std::size_t NoteOffReserve = Capacity;
+
+	//! The ring's real size: the ordinary slots plus the note-off reserve. A power of two, so the slot index
+	//! stays a mask on the audio thread.
+	static constexpr std::size_t Slots = Capacity + NoteOffReserve;
+	static_assert( ( Slots & ( Slots - 1 ) ) == 0, "MidiOutQueue needs a power-of-two ring" );
 
 	struct Command
 	{
@@ -47,12 +64,15 @@ public:
 	{
 		const auto write = m_write.load(std::memory_order_relaxed);
 		const auto read = m_read.load(std::memory_order_acquire);
-		if (write - read >= Capacity)
+		// Q3244: a note-off may also use the reserve, so a full queue (and the burst behind it) costs no note
+		// its release. Every other event stops at Capacity, exactly as before.
+		const std::size_t limit = event.type() == MidiNoteOff ? Slots : Capacity;
+		if (write - read >= limit)
 		{
 			m_overflow.fetch_add(1, std::memory_order_relaxed);
 			return false;
 		}
-		m_slots[write & (Capacity - 1)] = Command{event, time, port, dueNs};
+		m_slots[write & (Slots - 1)] = Command{event, time, port, dueNs};
 		m_write.store(write + 1, std::memory_order_release);
 		return true;
 	}
@@ -79,18 +99,20 @@ public:
 	{
 		const auto read = m_read.load(std::memory_order_relaxed);
 		if (read == m_write.load(std::memory_order_acquire)) { return false; }
-		command = m_slots[read & (Capacity - 1)];
+		command = m_slots[read & (Slots - 1)];
 		m_read.store(read + 1, std::memory_order_release);
 		return true;
 	}
 
+	//! How many events the queue refused: an ordinary event past Capacity, a note-off past Capacity plus the
+	//! note-off reserve. A refusal is the only event the queue cannot deliver.
 	std::uint64_t overflowCount() const noexcept
 	{
 		return m_overflow.load(std::memory_order_relaxed);
 	}
 
 private:
-	std::array<Command, Capacity> m_slots{};
+	std::array<Command, Slots> m_slots{};
 	alignas(64) std::atomic<std::uint64_t> m_write{0};
 	alignas(64) std::atomic<std::uint64_t> m_read{0};
 	std::atomic<std::uint64_t> m_overflow{0};
