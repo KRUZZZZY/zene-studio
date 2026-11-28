@@ -24,7 +24,10 @@
  *
  */
 
+#include <QCoreApplication>
 #include <QDomElement>
+#include <QThread>
+#include <QTimer>
 
 #include <vector>
 
@@ -50,12 +53,66 @@ AudioEngine::RequestChangesGuard controllerChangeGuard()
 		: engine->requestChangesGuard();
 }
 
+
+/*! How often the control thread reports a controller value the render thread published
+ *  (cluster new-p12-56). It is the throttle the notification did not have: a period is
+ *  5.8 ms long at 44.1 kHz / 256 frames and 23 ms at 1024 frames, while a screen repaints
+ *  at 60 Hz (16.7 ms), so one tick per 10 ms loses nothing a user can see and bounds the
+ *  work to one signal per controller per tick however fast the engine runs. Coarse (not
+ *  VeryCoarse: Qt rounds a very coarse interval to whole seconds). */
+constexpr int frameNotificationIntervalMs = 10;
+
+/*! The control thread's half of the per-period controller notification (cluster new-p12-56).
+ *  Controller::triggerFrameCounter() runs on the render thread inside the realtime scope, so it
+ *  may only publish an atomic; this object owns the timer that turns what it published into
+ *  Controller::valueChanged(), on a thread that is allowed to allocate, lock and post events.
+ *  Created on the control thread with the first controller and parented to the application, so
+ *  it dies with it and can never outlive the controllers it walks. The timer is a QObject child
+ *  of this object and carries an object name, which is how this directory's tests fire it
+ *  without waiting for the clock (see Song's automationWriteDrainTimer). */
+class FrameNotificationDispatcher final : public QObject
+{
+public:
+	explicit FrameNotificationDispatcher( QObject* parent ) : QObject( parent )
+	{
+		m_timer = new QTimer( this );
+		m_timer->setObjectName( QStringLiteral( "controllerFrameNotificationTimer" ) );
+		m_timer->setTimerType( Qt::CoarseTimer );
+		m_timer->setInterval( frameNotificationIntervalMs );
+		QObject::connect( m_timer, &QTimer::timeout, this, [] {
+			Controller::dispatchFrameNotifications();
+		} );
+		m_timer->start();
+	}
+
+	FrameNotificationDispatcher( const FrameNotificationDispatcher& ) = delete;
+	FrameNotificationDispatcher& operator=( const FrameNotificationDispatcher& ) = delete;
+
+private:
+	QTimer* m_timer = nullptr;
+};
+
+//! The dispatcher, or nullptr until a controller is constructed on the control thread.
+FrameNotificationDispatcher* s_frameNotificationDispatcher = nullptr;
+
+//! Arms the dispatcher. A controller is constructed on the control thread (the GUI, project
+//! load, a test), which is the only thread whose event loop can run its timer, so this is
+//! called from there and does nothing at all on any other thread.
+void ensureFrameNotificationDispatcher()
+{
+	if( s_frameNotificationDispatcher != nullptr ) { return; }
+	QCoreApplication* const app = QCoreApplication::instance();
+	if( app == nullptr || QThread::currentThread() != app->thread() ) { return; }
+	s_frameNotificationDispatcher = new FrameNotificationDispatcher( app );
+}
+
 } // namespace
 
 
 static_assert(std::atomic<f_cnt_t>::is_always_lock_free,
 	"the render thread must never take a lock for the period counter");
 std::atomic<f_cnt_t> Controller::s_periods{0};
+std::atomic<f_cnt_t> Controller::s_notifiedPeriod{0};
 std::vector<Controller*> Controller::s_controllers;
 
 
@@ -72,6 +129,9 @@ Controller::Controller( ControllerType _type, Model * _parent,
 	auto changeGuard = controllerChangeGuard();
 	if( _type != ControllerType::Dummy && _type != ControllerType::Midi )
 	{
+		// A registered controller is one the render thread publishes periods for, so the
+		// control thread needs its notification timer from here on (cluster new-p12-56).
+		ensureFrameNotificationDispatcher();
 		s_controllers.push_back(this);
 		// Determine which name to use
 		for ( uint i=s_controllers.size(); ; i++ )
@@ -203,17 +263,48 @@ float Controller::runningTime()
 void Controller::triggerFrameCounter()
 {
 	auto changeGuard = controllerChangeGuard();
-	for (Controller * controller : s_controllers)
+	// Publishing the period is all the render thread may do (cluster new-p12-56): the signal
+	// this function used to emit here is delivered to the GUI thread through a chain of direct
+	// connections that ends at a widget slot in that thread, so Qt queued it - and allocated a
+	// QMetaCallEvent, plus room in the GUI thread's event queue, on the audio thread once per
+	// controller per period. The notification is Controller::dispatchFrameNotifications()'s,
+	// run by the control thread's own timer.
+	s_periods ++;
+}
+
+
+
+void Controller::dispatchFrameNotifications()
+{
+	// The render thread never notifies, even if something calls this from inside the realtime
+	// scope: queuing an event there is the allocation this function exists to keep off it. The
+	// period stays pending and the next control-thread tick reports it.
+	if( RealtimeScope::isActive() ) { return; }
+
+	const f_cnt_t published = s_periods.load( std::memory_order_acquire );
+	if( published == s_notifiedPeriod.load( std::memory_order_relaxed ) ) { return; }
+	// Stamped before the notifications go out: a receiver that calls back in must not make the
+	// walk re-enter itself, and the values it reads are the ones being reported.
+	s_notifiedPeriod.store( published, std::memory_order_relaxed );
+
+	// The live controllers, taken under the change guard and then notified outside it. The
+	// guard is what every other reader and writer of s_controllers takes (the constructor, the
+	// destructor, resetFrameCounter); it excludes a controller being registered or destroyed
+	// while the walk runs. The slots are GUI work and must not run while the render thread is
+	// waiting for that guard, so the walk itself is all that holds it. This thread may
+	// allocate, so the copy is a control-thread allocation, not an audio-thread one.
+	ControllerVector controllers;
 	{
-		// This signal is for updating values for both stubborn knobs and for
-		// painting.  If we ever get all the widgets to use or at least check
-		// currentValue() then we can throttle the signal and only use it for
-		// GUI.
+		auto changeGuard = controllerChangeGuard();
+		controllers.assign( s_controllers.begin(), s_controllers.end() );
+	}
+	for( Controller* controller : controllers )
+	{
+		// This signal is for updating values for both stubborn knobs and for painting; both
+		// read currentValue(), so one notification per tick shows the latest value. It used to
+		// be emitted per period from the render thread.
 		emit controller->valueChanged();
 	}
-
-	s_periods ++;
-	//emit s_signaler.triggerValueChanged();
 }
 
 
