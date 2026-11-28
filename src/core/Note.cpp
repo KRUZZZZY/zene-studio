@@ -49,6 +49,28 @@ qint64 readNoteInteger( const QDomElement& element, const char* name )
 }
 
 
+//! The note volume or panning an optional document attribute spells, CLAMPED
+//! AS AN INTEGER before it is ever narrowed into the member that holds it:
+//! volume_t is uint8_t and panning_t int8_t, so assigning the parsed int
+//! straight into the member narrowed before it bounded - <note vol="300">
+//! loaded as volume 44, <note vol="-1"> as 255 (past MaxVolume), <note
+//! pan="200"> as -56. Out of range is audible, not cosmetic:
+//! panningToVolumeVector() returns a NEGATIVE gain for |panning| >
+//! PanningRight, panningToMidi() leaves the MIDI range, and a plugin that
+//! scales by getVolume() / DefaultVolume goes past unity.
+//!
+//! Text the file cannot express - the attribute absent, or not a number - is
+//! the documented neutral default, not what QString::toInt() yields on failure
+//! (0): volume zero is a silent note, and a note that exists must be audible.
+int noteRangeValue( const QDomElement& element, const char* attribute, int fallback,
+							int minimum, int maximum )
+{
+	bool ok = false;
+	const int value = element.attribute( QLatin1String( attribute ) ).toInt( &ok );
+	return std::clamp( ok ? value : fallback, minimum, maximum );
+}
+
+
 qint64 legacyNoteKey( const QDomElement& element )
 {
 	const qint64 tone = readNoteInteger( element, "tone" );
@@ -645,8 +667,13 @@ void Note::loadSettings( const QDomElement & _this )
 {
 	const qint64 loadedKey = std::max( legacyNoteKey( _this ), readNoteInteger( _this, "key" ) );
 	setKey( static_cast<int>( std::clamp( loadedKey, qint64{ 0 }, qint64{ NumKeys - 1 } ) ) );
-	m_volume = _this.attribute( "vol" ).toInt();
-	m_panning = _this.attribute( "pan" ).toInt();
+	// Volume and panning take the same route as every other edit to the note -
+	// the clamping setters - so a project cannot put a value in the members
+	// that no setter would accept (see noteRangeValue above).
+	setVolume( static_cast<volume_t>( noteRangeValue( _this, "vol", DefaultVolume,
+		MinVolume, MaxVolume ) ) );
+	setPanning( static_cast<panning_t>( noteRangeValue( _this, "pan", DefaultPanning,
+		PanningLeft, PanningRight ) ) );
 	const qint64 position = std::clamp( readNoteInteger( _this, "pos" ), qint64{ 0 },
 		static_cast<qint64>( MaxSongLength - 1 ) );
 	const qint64 maximumLength = static_cast<qint64>( MaxSongLength ) - position;
