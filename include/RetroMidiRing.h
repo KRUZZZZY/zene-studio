@@ -101,6 +101,27 @@ constexpr std::uint8_t RetroMidiFlagSysExDropped = 1u << 1;  //!< reserved SysEx
 class RetroMidiRing
 {
 public:
+	//! True when this target serves a \a T atomic lock-free. The producer path
+	//! below (push()) touches a 64-bit head, a 64-bit publication sequence, three
+	//! 64-bit counters, two 64-bit slot words, a 32-bit snapshot epoch and
+	//! acknowledgement, and a pending flag; where any of those is not lock-free,
+	//! the standard library may serve the operation with an internal lock - and
+	//! push() runs on the MIDI thread (cluster new-p10-333).
+	template <typename T>
+	static constexpr bool atomicOfTypeIsLockFree() noexcept
+	{
+		return std::atomic<T>::is_always_lock_free;
+	}
+
+	//! True when every atomic the producer path touches is lock-free. Checked by
+	//! the static_assert after this class, so a target that would lock on the
+	//! MIDI thread does not build.
+	static constexpr bool producerCountersAreLockFree() noexcept
+	{
+		return atomicOfTypeIsLockFree<std::uint64_t>() && atomicOfTypeIsLockFree<std::uint32_t>()
+				&& atomicOfTypeIsLockFree<bool>();
+	}
+
 	//! Allocates storage for at least \a minCapacityEvents events, rounded up
 	//! to a power of two. Must run off the MIDI thread and off the audio thread.
 	explicit RetroMidiRing(std::size_t minCapacityEvents) :
@@ -274,6 +295,17 @@ private:
 	std::atomic<std::uint32_t> m_writerAck{0};
 	std::atomic<bool> m_snapshotPending{false};
 };
+
+
+//! cluster new-p10-333: the ring's realtime guarantee, machine-checked. A target
+//! that serves one of the producer path's atomics with an internal lock would
+//! put that lock on the MIDI thread inside push(), so refuse to build there
+//! rather than ship dropouts. A class-scope static_assert cannot call a member
+//! function (GCC: "called in a constant expression before its definition is
+//! complete"), which is why the check sits after the class.
+static_assert(RetroMidiRing::producerCountersAreLockFree(),
+		"RetroMidiRing: this target does not serve a producer-path atomic lock-free, so push() "
+		"would take an internal lock on the MIDI thread (cluster new-p10-333)");
 
 
 } // namespace lmms

@@ -41,6 +41,7 @@
 #include <QtTest>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstddef>
@@ -94,6 +95,29 @@ class RetroAudioCaptureTest : public QObject
 	Q_OBJECT
 
 private slots:
+
+	//! cluster new-p10-333: push() runs on the audio thread, so every atomic it
+	//! touches must be lock-free - where a 64-bit atomic is served with an
+	//! internal lock, that lock lands on the audio thread. The header machine
+	//! checks the premise after the class; this pins the check, and shows that
+	//! it is a check and not a constant.
+	void theProducerCountersAreLockFree()
+	{
+		QVERIFY(RetroAudioRing::producerCountersAreLockFree());
+		QVERIFY(RetroAudioRing::atomicOfTypeIsLockFree<std::uint64_t>());
+		QVERIFY(RetroAudioRing::atomicOfTypeIsLockFree<std::uint32_t>());
+		QVERIFY(RetroAudioRing::atomicOfTypeIsLockFree<bool>());
+
+		// The capture's own audio-thread atomics (the arm flag and the 64-bit
+		// rate tag) are the same premise, checked in its header.
+		QVERIFY(RetroAudioCapture::producerCountersAreLockFree());
+
+		// A type this target cannot serve lock-free answers false: that is the
+		// answer the header refuses to build with, so the check discriminates.
+		struct NeedsALock { char bytes[64]; };
+		QVERIFY(!RetroAudioRing::atomicOfTypeIsLockFree<NeedsALock>());
+		QVERIFY(!RetroAudioCapture::atomicOfTypeIsLockFree<NeedsALock>());
+	}
 
 	//! OFF BY DEFAULT: the mode is the only thing that makes this cost anything,
 	//! and while it is off the window stays empty however much audio goes past.
