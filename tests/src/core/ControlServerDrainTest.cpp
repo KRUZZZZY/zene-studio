@@ -120,6 +120,28 @@ WriteResult writeUntilWouldBlock(int fd)
 	return result;
 }
 
+void receiveUntilEof(int fd, QByteArray& received, bool& sawEof, int& receiveError)
+{
+	for (int i = 0; i < MaxActivations && !sawEof && receiveError == 0; ++i)
+	{
+		QCoreApplication::processEvents(QEventLoop::AllEvents);
+		char buffer[4096];
+		const ssize_t n = ::recv(fd, buffer, sizeof(buffer), 0);
+		if (n > 0)
+		{
+			received.append(buffer, static_cast<qsizetype>(n));
+		}
+		else if (n == 0)
+		{
+			sawEof = true;
+		}
+		else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
+		{
+			receiveError = errno;
+		}
+	}
+}
+
 #endif
 
 } // namespace
@@ -223,24 +245,7 @@ void ControlServerDrainTest::drainIsBoundedPerActivation()
 	QByteArray received;
 	bool sawEof = false;
 	int receiveError = 0;
-	for (int i = 0; i < MaxActivations && !sawEof && receiveError == 0; ++i)
-	{
-		QCoreApplication::processEvents(QEventLoop::AllEvents);
-		char buffer[4096];
-		const ssize_t n = ::recv(client.fd, buffer, sizeof(buffer), 0);
-		if (n > 0)
-		{
-			received.append(buffer, static_cast<qsizetype>(n));
-		}
-		else if (n == 0)
-		{
-			sawEof = true;
-		}
-		else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
-		{
-			receiveError = errno;
-		}
-	}
+	receiveUntilEof(client.fd, received, sawEof, receiveError);
 	QVERIFY2(receiveError != ECONNRESET, "the server reset the connection instead of closing it cleanly");
 	QVERIFY2(receiveError == 0, qPrintable(QStringLiteral("recv failed with errno %1").arg(receiveError)));
 	QVERIFY2(sawEof, "the server never closed the connection after the peer's FIN");

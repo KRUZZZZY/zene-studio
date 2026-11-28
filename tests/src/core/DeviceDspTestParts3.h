@@ -27,6 +27,35 @@
 namespace
 {
 
+void checkSilentChannel(const std::array<std::vector<double>, 2>& output, int impulseChannel,
+	int frames, QStringList& failures)
+{
+	const int silent = 1 - impulseChannel;
+	for (int n = 0; n < frames; ++n)
+	{
+		if (std::abs(output[silent][n]) > 1e-12)
+		{
+			failures << QStringLiteral("silent channel %1 frame %2 got %3")
+				.arg(silent).arg(n).arg(output[silent][n], 0, 'g', 17);
+		}
+	}
+}
+
+void seedDelayHistories(StereoCombFeedback& clamped, StereoCombFeedback& integer)
+{
+	// Seed both histories identically so a sub-sample read that lands in an unwritten slot
+	// exposes a stale sample instead of the clamped one-frame output.
+	for (int n = 0; n < 8; ++n)
+	{
+		const double in = (n == 0) ? 1.0 : (n == 1 ? -0.5 : (n == 2 ? 0.25 : 0.0));
+		for (int c = 0; c < 2; ++c)
+		{
+			clamped.update(in, static_cast<ch_cnt_t>(c));
+			integer.update(in, static_cast<ch_cnt_t>(c));
+		}
+	}
+}
+
 //! Feed a unit impulse on @a impulseChannel and zeros after it, for @a frames frames, and check
 //! @a expected on that channel while the other channel must stay silent.  The same scenario runs
 //! with the impulse on each channel in turn, so both channels must produce the same response.
@@ -63,15 +92,7 @@ void verifyFractionalImpulse(const QString& label, int frames, const std::vector
 			}
 		}
 
-		const int silent = 1 - impulseChannel;
-		for (int n = 0; n < frames; ++n)
-		{
-			if (std::abs(output[silent][n]) > 1e-12)
-			{
-				failures << QStringLiteral("silent channel %1 frame %2 got %3")
-					.arg(silent).arg(n).arg(output[silent][n], 0, 'g', 17);
-			}
-		}
+		checkSilentChannel(output, impulseChannel, frames, failures);
 
 		QVERIFY2(failures.isEmpty(),
 			qPrintable(QStringLiteral("%1: channel %2: %3; actual response [%4]")
@@ -150,17 +171,7 @@ void DeviceDspTest::combFeedbackSubSampleClampedToOne()
 		clamped.setDelay(2.0);
 		integer.setDelay(2.0);
 
-		// Seed both histories identically so a sub-sample read that lands in an unwritten slot
-		// exposes a stale sample instead of the clamped one-frame output.
-		for (int n = 0; n < 8; ++n)
-		{
-			const double in = (n == 0) ? 1.0 : (n == 1 ? -0.5 : (n == 2 ? 0.25 : 0.0));
-			for (int c = 0; c < 2; ++c)
-			{
-				clamped.update(in, static_cast<ch_cnt_t>(c));
-				integer.update(in, static_cast<ch_cnt_t>(c));
-			}
-		}
+		seedDelayHistories(clamped, integer);
 
 		clamped.setDelay(0.5);
 		integer.setDelay(1.0);
