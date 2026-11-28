@@ -300,6 +300,35 @@ private slots:
 		QVERIFY(run(QStringLiteral("track.remove"), {{QStringLiteral("track"), third}}).ok);
 	}
 
+	/*! The handle's lifetime is the track's: deleting a monitoring track takes its monitor
+	 *  handle out of the engine's lists under the model-change guard, so the next period
+	 *  cannot render through the freed track (cluster new-p9-201: the patrol read the
+	 *  persistent handle as keeping an unguarded track pointer). The guard held here is the
+	 *  synchronization seam - the audio device cannot begin a period between the handle's
+	 *  registration and the delete - so the slot needs no timing. */
+	void deletingAMonitoredTrackRemovesItsHandle()
+	{
+		auto* engine = Engine::audioEngine();
+		const auto guard = engine->requestChangesGuard();
+		const QString id = addTrack(QStringLiteral("sample"));
+		ControlResult error;
+		auto* track = dynamic_cast<SampleTrack*>(control::resolveTrack(id, &error));
+		QVERIFY(track != nullptr);
+		const ControlResult set = run(QStringLiteral("track.set_monitor"),
+			{{QStringLiteral("track"), id}, {QStringLiteral("mode"), QStringLiteral("in")}});
+		QVERIFY2(set.ok, qPrintable(set.errorMessage));
+		PlayHandle* pending = const_cast<InputMonitorHandle*>(track->monitorHandle());
+		QVERIFY(pending != nullptr);
+		const ControlResult removed = run(QStringLiteral("track.remove"), {{QStringLiteral("track"), id}});
+		QVERIFY2(removed.ok, qPrintable(removed.errorMessage));
+		// track.remove frees the track here; from now on only the handle's pointer is read.
+		engine->renderNextPeriod();
+		const bool survived = engine->playHandles().contains(pending);
+		std::printf("DELETION_EVIDENCE the monitor handle %s the render list after track.remove\n",
+			survived ? "SURVIVED in" : "was removed from");
+		QVERIFY2(!survived, "the monitor handle outlived its track in the render list");
+	}
+
 private:
 	static std::uint64_t passedDuring(const SampleTrack* track, int ms)
 	{
