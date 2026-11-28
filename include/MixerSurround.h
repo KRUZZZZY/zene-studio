@@ -56,7 +56,7 @@ class MixerRoute;
  *  layout (up to 64 channels) grows that buffer when the format is set - on the control thread, under the
  *  change lock, never on the audio path - and it never shrinks, so going back to a narrower format does not
  *  allocate. Its devices process L/R only; the side channels pass by them with the channel's trim, VCA
- *  gain, its pan as a balance on each left/right pair, its fader and mute.
+ *  gain, its pan as a balance on each left/right pair, its crossfader gain, its fader and mute.
  *
  *  - Formats: stereo (the default), LCR, quad, 5.1, 7.1, in the WAVE channel order
  *    (L R C LFE Ls Rs; 7.1: L R C LFE Lrs Rrs Ls Rs), mono (one M role) and discrete-2..discrete-64,

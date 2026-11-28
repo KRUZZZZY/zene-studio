@@ -163,7 +163,9 @@ std::array<float, 2> sendLevel(MixerRoute& route)
 }
 
 //! MX-172: a channel on the crossfader takes its side's gain (MixerOptions' balance gains of the position); skipped
-//! while it is on neither side, or at full gain.
+//! while it is on neither side, or at full gain. Luna cluster new-p10-256: the speakers beyond the pair are the
+//! same channel output and take the gain too (the side planes, read after this stage by the panner's receivers,
+//! by the direct out and by the master mix).
 void applyCrossfade(MixerChannel& channel, f_cnt_t frames)
 {
 	const int side = channel.m_crossfadeSideModel.value();
@@ -177,6 +179,14 @@ void applyCrossfade(MixerChannel& channel, f_cnt_t frames)
 	{
 		channel.m_buffer[f][0] *= gain;
 		channel.m_buffer[f][1] *= gain;
+	}
+	ChannelSurround& s = channel.m_surround;
+	if (!s.isSurround() || !s.written()) { return; }
+	const f_cnt_t n = std::min(frames, s.frames());
+	for (int c = 2; c < surround::channelCount(s.format()); ++c)
+	{
+		float* plane = s.plane(c);
+		for (f_cnt_t f = 0; f < n; ++f) { plane[f] *= gain; }
 	}
 }
 

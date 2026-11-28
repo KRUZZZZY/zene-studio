@@ -31,7 +31,9 @@
  *  - 64 distinct constants on the source's channels cross a discrete-64 bus and reach outputs 1..64 in
  *    order, at the route's send level, and nowhere else; a narrower receiver drops the channels it
  *    lacks, and a narrower sender leaves the bus's other channels silent;
- *  - the master mix with that graph allocates nothing. */
+ *  - the master mix with that graph allocates nothing;
+ *  - a channel on a crossfader side takes that side's gain on its side channels too (Luna cluster
+ *    new-p10-256), and that stage allocates nothing. */
 
 #include <QtTest>
 
@@ -141,13 +143,19 @@ float masterSideLevel(int c)
 	return 0.1f * static_cast<float>(c + 1);
 }
 
-//! Channel @a index's side channels (2 ..) at their own level, then one mixer period.
-void sidesPeriod(Mixer& mixer, int index)
+//! Channel @a index's side channels (2 ..) at their own level.
+void fillSides(Mixer& mixer, int index)
 {
 	ChannelSurround& sides = mixer.mixerChannel(index)->m_surround;
 	const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
 	for (int c = 2; c < surround::channelCount(sides.format()); ++c) { std::fill_n(sides.plane(c), fpp, masterSideLevel(c)); }
 	sides.markWritten();
+}
+
+//! Channel @a index's side channels (2 ..) at their own level, then one mixer period.
+void sidesPeriod(Mixer& mixer, int index)
+{
+	fillSides(mixer, index);
 	period(mixer);
 }
 
@@ -443,6 +451,104 @@ private slots:
 			}
 		}
 		QVERIFY2(wrong.isEmpty(), qPrintable(wrong.join(QStringLiteral("; "))));
+		QVERIFY(format(2, QStringLiteral("stereo")));
+	}
+
+	/*! Luna cluster new-p10-256: a channel on a crossfader side takes that side's gain on the speakers
+	 *  beyond its pair too. applyCrossfade() (src/core/MixerStrip.cpp) scaled only the stereo buffer, so a
+	 *  5.1 bus on side A faded its L/R and left its centre, LFE and surrounds at full level. */
+	void theCrossfaderReachesTheSideChannels()
+	{
+		Mixer& mixer = *Engine::mixer();
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+		clearedMixer(mixer);
+		QVERIFY(format(2, QStringLiteral("5.1")));
+		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("output"), QStringLiteral("1/2")}}));
+		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(0)}, {QStringLiteral("output"), QStringLiteral("127/128")}}));
+		mixer.mixerChannel(1)->m_volumeModel.setValue(1.f);
+		mixer.mixerChannel(2)->m_volumeModel.setValue(1.f);
+		// Channel 2's six speakers: its pair, then centre, LFE and the surrounds at their own levels.
+		const std::vector<float> full{0.25f, -0.125f, 0.3f, 0.4f, 0.5f, 0.6f};
+		std::vector<SampleFrame> pair(fpp, SampleFrame(full[0], full[1]));
+		const auto crossfader = [&](double position, const char* side) {
+			return ok(QStringLiteral("mixer.crossfader"), {{QStringLiteral("position"), position},
+				{QStringLiteral("channel"), ch(2)}, {QStringLiteral("side"), QString::fromLatin1(side)}});
+		};
+		//! One period with channel 2 fed: outputs 1-6 against the six levels times @a gain.
+		const auto wrongAt = [&](float gain) {
+			SampleFrame* buffers[1] = {pair.data()};
+			mixer.mixToChannel(AudioBus{buffers, 1, fpp}, 2);
+			sidesPeriod(mixer, 2);
+			QStringList bad;
+			for (std::size_t c = 0; c < full.size(); ++c)
+			{
+				const float seen = outputLevel(static_cast<int>(c));
+				const float expected = full[c] * gain;
+				if (!(std::abs(seen - expected) < 1e-5f))
+				{
+					bad << QStringLiteral("output %1: %2, expected %3").arg(c + 1).arg(seen).arg(expected);
+				}
+			}
+			return bad.join(QStringLiteral("; "));
+		};
+
+		QVERIFY(crossfader(0.5, "none"));  // on neither side: no gain, whatever the position
+		QString seen = wrongAt(1.f);
+		QVERIFY2(seen.isEmpty(), qPrintable(QStringLiteral("no side: ") + seen));
+		QVERIFY(crossfader(0.5, "A"));  // halfway to B: side A at -6 dB on every speaker, not just the pair
+		seen = wrongAt(0.5f);
+		QVERIFY2(seen.isEmpty(), qPrintable(QStringLiteral("side A at half: ") + seen));
+		QVERIFY(crossfader(-0.5, "A"));  // the far end of the travel: side A full, side B at -6 dB
+		seen = wrongAt(1.f);
+		QVERIFY2(seen.isEmpty(), qPrintable(QStringLiteral("side A at full: ") + seen));
+		QVERIFY(crossfader(0.5, "B"));  // the other side of the same position: no gain there
+		seen = wrongAt(1.f);
+		QVERIFY2(seen.isEmpty(), qPrintable(QStringLiteral("side B at half: ") + seen));
+		QVERIFY(crossfader(1.0, "A"));  // crossfaded away entirely: every speaker silent, not just the pair
+		seen = wrongAt(0.f);
+		QVERIFY2(seen.isEmpty(), qPrintable(QStringLiteral("side A crossfaded away: ") + seen));
+		QVERIFY(crossfader(0.5, "A"));  // a discrete layout fades the same way
+		QVERIFY(format(2, QStringLiteral("discrete-6")));
+		seen = wrongAt(0.5f);
+		QVERIFY2(seen.isEmpty(), qPrintable(QStringLiteral("discrete-6 on side A at half: ") + seen));
+		QVERIFY(crossfader(0.0, "none"));
+		QVERIFY(format(2, QStringLiteral("stereo")));
+	}
+
+	/*! The crossfade gain on the side channels runs on the channel's worker (applyCrossfade): the planes
+	 *  are the channel's own and the gain is one number, so nothing allocates. */
+	void theCrossfadedMixAllocatesNothing()
+	{
+		Mixer& mixer = *Engine::mixer();
+		const f_cnt_t fpp = Engine::audioEngine()->framesPerPeriod();
+		clearedMixer(mixer);
+		QVERIFY(format(2, QStringLiteral("5.1")));
+		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(2)}, {QStringLiteral("output"), QStringLiteral("1/2")}}));
+		QVERIFY(ok(QStringLiteral("mixer.hardware_output"), {{QStringLiteral("channel"), ch(0)}, {QStringLiteral("output"), QStringLiteral("127/128")}}));
+		QVERIFY(ok(QStringLiteral("mixer.crossfader"), {{QStringLiteral("position"), 0.5}, {QStringLiteral("channel"), ch(2)},
+			{QStringLiteral("side"), QStringLiteral("A")}}));
+		std::vector<SampleFrame> pair(fpp, SampleFrame(0.25f, -0.125f));
+		std::vector<SampleFrame> out(fpp);
+		SampleFrame* buffers[1] = {pair.data()};
+		mixer.mixToChannel(AudioBus{buffers, 1, fpp}, 2);
+		sidesPeriod(mixer, 2);  // the format settles
+
+		bus().swap();
+		feedSource(mixer);
+		mixer.mixToChannel(AudioBus{buffers, 1, fpp}, 2);
+		fillSides(mixer, 2);
+		mixer.prepareMasterMix();
+		test::resetAllocationCount();
+		test::tlCountAllocations = true;
+		mixer.masterMix(out.data());
+		test::tlCountAllocations = false;
+		bus().swap();
+		AutomatableModel::incrementPeriodCounter();
+		QCOMPARE(static_cast<qulonglong>(test::tlAllocationCount), 0ull);
+		const float centre = outputLevel(2);
+		QVERIFY2(std::abs(centre - masterSideLevel(2) * 0.5f) < 1e-5f, qPrintable(QString::number(centre)));
+		QVERIFY(ok(QStringLiteral("mixer.crossfader"), {{QStringLiteral("position"), 0.0}, {QStringLiteral("channel"), ch(2)},
+			{QStringLiteral("side"), QStringLiteral("none")}}));
 		QVERIFY(format(2, QStringLiteral("stereo")));
 	}
 
