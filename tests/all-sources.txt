@@ -3681,6 +3681,7 @@ tests/src/plugins/OrganicZeroOscTest.cpp
 tests/src/plugins/OscilloscopeControlsPersistenceTest.cpp
 tests/src/plugins/PartialInitFailureLadspa.cpp
 tests/src/plugins/PatmanLoadTest.cpp
+tests/src/plugins/PatmanTestSupport.h
 tests/src/plugins/PeakControllerEffectZeroFrameTest.cpp
 tests/src/plugins/PluginExportBranchTest.cpp
 tests/src/plugins/PluginPortsHarness.h

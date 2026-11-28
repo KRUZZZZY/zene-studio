@@ -110,6 +110,71 @@ private slots:
 		QVERIFY(ExportRenderSettings::setSrcQuality(SrcQuality::Linear));
 	}
 
+	// A quality change arrives while voices hold converter slots. These holders
+	// are not states the engine's per-handle hook can walk, so the pool's own
+	// prepare/adopt pass is the only path that reaches them. Each held slot must
+	// carry the new converter and convert like one built for it, capacity the
+	// engine grows after the change must be created in the selected mode, and a
+	// released slot must come back in that mode.
+	void heldSlotsFollowTheQualityChange()
+	{
+		QVERIFY(ExportRenderSettings::setSrcQuality(SrcQuality::Linear));
+		const std::size_t capacity = AudioResampler::realtimeVoiceConverterCapacityForTest();
+		const std::size_t freeBefore = AudioResampler::freeRealtimeVoiceConvertersForTest();
+		QCOMPARE(freeBefore, capacity);
+
+		// Hold the first slots the pool hands out, slot 0 included.
+		std::vector<AudioResampler> held;
+		held.reserve(3);
+		for (int i = 0; i < 3; ++i) { held.emplace_back(AudioResampler::RealtimeVoiceTag{}); }
+		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), freeBefore - 3);
+
+		QVERIFY(ExportRenderSettings::setSrcQuality(SrcQuality::SincBest));
+		for (const AudioResampler& voice : held) { QCOMPARE(voice.mode(), AudioResampler::Mode::SincBest); }
+
+		// The mode is not only reported: an adopted slot must convert like a
+		// converter built for SincBest from the start.
+		std::array<float, 1024> input;
+		for (std::size_t i = 0; i < input.size(); ++i) { input[i] = std::sin(i * 0.11); }
+		std::array<float, 128> expected{};
+		AudioResampler reference(AudioResampler::Mode::SincBest);
+		const auto result = reference.process({input.data(), 2, 512}, {expected.data(), 2, 64});
+		std::array<float, 128> output{};
+		const auto actual = held.front().process({input.data(), 2, 512}, {output.data(), 2, 64});
+		QCOMPARE(actual.outputFramesGenerated, result.outputFramesGenerated);
+		QCOMPARE(std::memcmp(output.data(), expected.data(), sizeof(output)), 0);
+
+		// Capacity the engine grows after the change is created in the pool's
+		// mode, not in the mode of whatever slot happened to be handed out first.
+		QVERIFY(AudioResampler::ensureRealtimeVoiceConverterPoolCapacity(capacity + 1));
+		const std::size_t grown = AudioResampler::realtimeVoiceConverterCapacityForTest();
+		QVERIFY(grown > capacity);
+		{
+			const AudioResampler overflow(AudioResampler::RealtimeVoiceTag{});
+			QCOMPARE(overflow.mode(), AudioResampler::Mode::SincBest);
+		}
+
+		// Give one held slot back and take it again at once: with the other two
+		// still held, that released slot is the only free one, so the voice that
+		// claims it is claiming one of the released holders, in the pool's mode.
+		const std::size_t freeWithHeld = AudioResampler::freeRealtimeVoiceConvertersForTest();
+		held.pop_back();
+		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), freeWithHeld + 1);
+		{
+			const AudioResampler reacquired(AudioResampler::RealtimeVoiceTag{});
+			QCOMPARE(reacquired.mode(), AudioResampler::Mode::SincBest);
+		}
+		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), freeWithHeld + 1);
+
+		held.clear();
+		QCOMPARE(AudioResampler::freeRealtimeVoiceConvertersForTest(), grown);
+
+		// The pool still follows the setting after those releases.
+		QVERIFY(ExportRenderSettings::setSrcQuality(SrcQuality::Linear));
+		const AudioResampler released(AudioResampler::RealtimeVoiceTag{});
+		QCOMPARE(released.mode(), AudioResampler::Mode::Linear);
+	}
+
 	void resetAndStreamingMatchSystemLibrary_data()
 	{
 		QTest::addColumn<int>("converter");

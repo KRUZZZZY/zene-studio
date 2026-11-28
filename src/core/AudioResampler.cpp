@@ -43,7 +43,25 @@ namespace {
 std::atomic<int> s_allocationsBeforeFailure{0};
 std::atomic<int> s_failuresToInject{0};
 std::atomic<std::uint64_t> s_realtimeConverterAllocations{0};
+std::atomic<std::uint64_t> s_realtimeConverterDeletions{0};
+#endif
 
+//! Drops one converter state. Every pool and resampler release goes through
+//! here so the test counter sees the whole render path; outside LMMS_TESTING
+//! this is a plain src_delete with no count, allocation, lock or log.
+void deleteConverterState(SRC_STATE* state) noexcept
+{
+	if (state == nullptr) { return; }
+#ifdef LMMS_TESTING
+	if (RealtimeScope::isActive())
+	{
+		s_realtimeConverterDeletions.fetch_add(1, std::memory_order_relaxed);
+	}
+#endif
+	src_delete(state);
+}
+
+#ifdef LMMS_TESTING
 bool converterAllocationMustFailForTest() noexcept
 {
 	if (s_allocationsBeforeFailure.load(std::memory_order_relaxed) > 0)
@@ -146,7 +164,11 @@ public:
 		{
 			for (Slot& slot : chunk->items)
 			{
-				if (slot.inUse.load(std::memory_order_acquire)) { continue; }
+				// A slot a voice is holding is prepared too. Skipping it left the
+				// holder on the old converter, and nothing ever revisited the slot:
+				// after release, acquire() handed the next voice the old quality.
+				// The swap happens under the engine's change guard, which excludes
+				// the render thread, exactly as it does for a held Patman note.
 				if (!prepareSlot(&slot, mode))
 				{
 					discardAll();
@@ -154,6 +176,7 @@ public:
 				}
 			}
 		}
+		m_preparedMode = mode;
 		return true;
 	}
 
@@ -163,10 +186,10 @@ public:
 		{
 			for (Slot& slot : chunk->items) { adoptSlot(&slot); }
 		}
-		if (m_head.load(std::memory_order_relaxed) != nullptr)
-		{
-			m_mode = m_head.load(std::memory_order_relaxed)->items[0].mode;
-		}
+		// The pool's mode is the one just adopted, not the mode of whichever slot
+		// happens to be first: a held first slot kept the old mode here, and every
+		// chunk appended after the change was then built for the old quality.
+		m_mode = m_preparedMode;
 	}
 
 	void discardAll() noexcept
@@ -255,7 +278,7 @@ public:
 		if (!slot.hasPrepared) { return; }
 		if (slot.prepared != nullptr)
 		{
-			src_delete(slot.state);
+			deleteConverterState(slot.state);
 			slot.state = slot.prepared;
 			slot.prepared = nullptr;
 		}
@@ -307,14 +330,14 @@ private:
 			slot.mode = mode;
 		}
 		if (initialized == chunk->items.size()) { return chunk; }
-		for (std::size_t i = 0; i < initialized; ++i) { src_delete(chunk->items[i].state); }
+		for (std::size_t i = 0; i < initialized; ++i) { deleteConverterState(chunk->items[i].state); }
 		delete chunk;
 		return nullptr;
 	}
 
 	static void discard(Slot& slot) noexcept
 	{
-		if (slot.prepared != nullptr) { src_delete(slot.prepared); }
+		if (slot.prepared != nullptr) { deleteConverterState(slot.prepared); }
 		slot.prepared = nullptr;
 		slot.hasPrepared = false;
 	}
@@ -326,8 +349,8 @@ private:
 			Chunk* const next = chunk->next;
 			for (Slot& slot : chunk->items)
 			{
-				if (slot.prepared != nullptr) { src_delete(slot.prepared); }
-				if (slot.state != nullptr) { src_delete(slot.state); }
+				if (slot.prepared != nullptr) { deleteConverterState(slot.prepared); }
+				if (slot.state != nullptr) { deleteConverterState(slot.state); }
 			}
 			delete chunk;
 			chunk = next;
@@ -362,6 +385,7 @@ private:
 	std::atomic<Chunk*> m_head{nullptr};
 	std::size_t m_capacity = 0;
 	AudioResampler::Mode m_mode = AudioResampler::Mode::Linear;
+	AudioResampler::Mode m_preparedMode = AudioResampler::Mode::Linear;
 	std::atomic<bool> m_initialized{false};
 };
 
@@ -616,6 +640,16 @@ void AudioResampler::resetRealtimeConverterAllocationsForTest() noexcept
 	s_realtimeConverterAllocations.store(0, std::memory_order_relaxed);
 }
 
+auto AudioResampler::realtimeConverterDeletionsForTest() noexcept -> std::uint64_t
+{
+	return s_realtimeConverterDeletions.load(std::memory_order_relaxed);
+}
+
+void AudioResampler::resetRealtimeConverterDeletionsForTest() noexcept
+{
+	s_realtimeConverterDeletions.store(0, std::memory_order_relaxed);
+}
+
 auto AudioResampler::realtimeVoiceConverterCapacityForTest() noexcept -> std::size_t
 {
 	return realtimeVoiceConverterPool().capacity();
@@ -625,7 +659,7 @@ auto AudioResampler::freeRealtimeVoiceConvertersForTest() noexcept -> std::size_
 {
 	return realtimeVoiceConverterPool().freeSlots();
 }
-#endif
+#endif // LMMS_TESTING
 
 auto AudioResampler::modeForSrcQuality(SrcQuality quality) noexcept -> Mode
 {
@@ -649,7 +683,7 @@ auto AudioResampler::modeForCurrentSrcQuality() noexcept -> Mode
 
 void AudioResampler::StateDeleter::operator()(void* state)
 {
-	src_delete(static_cast<SRC_STATE*>(state));
+	deleteConverterState(static_cast<SRC_STATE*>(state));
 }
 
 } // namespace lmms
