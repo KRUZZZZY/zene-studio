@@ -39,6 +39,12 @@
 #include <memory>
 #include <thread>
 #include <vector>
+
+//! BUG 15: the accept thread is a body that can finish on its own (the loop
+//! stops when CreateNamedPipeW fails), so it is owned by a thread that joins the
+//! finished body before starting the next one. A plain std::thread cannot hold
+//! that pair: assigning over a joinable one calls std::terminate.
+#include "RestartableThread.h"
 #endif
 
 #include "ControlRegistry.h"
@@ -257,7 +263,11 @@ private:
 	std::atomic<bool> m_win32Listening{false};
 	void* m_win32QuitEvent = nullptr;    // HANDLE, manual-reset
 	void* m_win32ConnectEvent = nullptr; // HANDLE, manual-reset, the accept wait
-	std::thread m_acceptThread;
+	//! The accept loop's thread. Joins the body it ran last before starting
+	//! another one: the loop can return on its own (CreateNamedPipeW failed) and
+	//! clear m_win32Listening, and a retried listen() must not assign over the
+	//! joinable thread it leaves behind (BUG 15).
+	RestartableThread m_acceptThread;
 	struct Win32ClientWorker
 	{
 		std::thread thread;

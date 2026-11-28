@@ -65,6 +65,11 @@
 # 2026-11-26 (Q050-211, round 2, gate fix): tests/control_note_editor_entry.py is the step-input and recording half
 # of tests/control-note-editor.py, split out so neither file passes the code-line target (the driver was at 537).
 # Every check moved verbatim; the driver imports the two orchestrators and passes its own new_clip.
+# 2026-11-26 (cluster 3118): include/RestartableThread.h enters the list - the thread owner that joins a
+# body which returned on its own before starting the next one (BUG 15: the Windows acceptor that gave up
+# on a pipe it could not create, then a retried listen() assigned over the joinable std::thread and called
+# std::terminate). It is under include/, so the recipe below derives it with no pathspec change; the entry
+# is emitted in the sorted source list and no other entry changed.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -1378,6 +1383,7 @@ include/RemoteControls.h
 include/RemotePluginAudioPorts.h
 include/RenderPresetMenu.h
 include/RenderQueue.h
+include/RestartableThread.h
 include/RetroAudioCapture.h
 include/RetroAudioRing.h
 include/RetroMidiCapture.h

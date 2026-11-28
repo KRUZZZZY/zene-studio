@@ -47,6 +47,20 @@
 
 #include "ControlRegistry.h"
 
+// BUG 15 (cluster 3118): the thread owner the Windows acceptor uses, so a body
+// that returned on its own is joined before the next one replaces it. When the
+// seam is not in the tree, the defect case below drives a plain std::thread over
+// the same sequence instead, so its run reports the abort the bug is rather than
+// stopping at a compile error.
+//
+// Included BEFORE the `private`->`public` seam below on purpose: ControlServer.h
+// pulls it in on Windows, and this header brings <functional> and <thread> with
+// it, which must not be preprocessed with `private` renamed.
+#if __has_include("RestartableThread.h")
+#	include "RestartableThread.h"
+#	define LMMS_HAVE_RESTARTABLE_THREAD 1
+#endif
+
 // The monotonic-deadline case reads the accepted client's stored deadline, which
 // is private state. The same `#define private public` seam the collab invite
 // tests use, undone right after this header.
@@ -60,6 +74,7 @@
 #include <QFile>
 #include <QJsonArray>
 #include <QRegularExpression>
+#include <QSemaphore>
 #include <QSignalSpy>
 #include <QSignalSpy>
 #include <QTemporaryDir>
@@ -82,8 +97,10 @@
 #include <string>
 #endif
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -416,6 +433,16 @@ private slots:
 	//! newest id) would leave the orphan behind - still capturing `this` - and
 	//! the forced-exit shutdown path would call close() on freed memory.
 	void aClosedListenerTakesItsHookWithItBeforeTheNextListen();
+
+	//! BUG 15 (cluster 3118): re-listening after the Windows acceptor stopped on
+	//! its own. The acceptor breaks out of its loop when CreateNamedPipeW fails
+	//! and clears m_win32Listening on the way out, so the server is "not
+	//! listening" while it still owns a joinable std::thread. The retried
+	//! listen() used to assign the new acceptor over it - std::terminate - so a
+	//! pipe that could not be created plus one retry killed the process.
+	//! RestartableThread owns the join; the case drives it through one retry, 64
+	//! restarts with no join between them, a double join and the destructor.
+	void aFinishedAcceptThreadIsJoinedBeforeTheNextStart();
 
 	//! Removal is targeted, ids are never reused, and running twice runs once:
 	//! the store is the process's, so a second pass must not re-run what the

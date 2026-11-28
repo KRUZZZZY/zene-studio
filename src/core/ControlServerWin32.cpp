@@ -340,6 +340,19 @@ ControlErrorKind ControlServer::listenWin32(const QString& path, QString* detail
 				"a Windows pipe name is at most %2)").arg(path.size()).arg(kMaxPipeNameChars));
 	}
 
+	// BUG 15: a previous acceptor can have stopped on its own. It breaks out of
+	// its loop when CreateNamedPipeW fails - the one failure listen() cannot
+	// report, because it has already returned by the time the pipe is created -
+	// and it clears m_win32Listening on the way out. This object then still owns
+	// that thread, its two events and its shutdown hook, so a retry has to retire
+	// them before it starts another acceptor: assigning a std::thread over the
+	// joinable one is std::terminate, and registering the hook again over an id
+	// that is never removed leaves a hook that calls close() on a destroyed
+	// server. close() is the ordinary teardown and does all three; its join cannot
+	// block, because the loop clears the flag only on its way out and closeWin32()
+	// joins whatever it started.
+	if (m_acceptThread.joinable()) { close(); }
+
 	void* quitEvent = createEvent();
 	void* connectEvent = createEvent();
 	if (quitEvent == nullptr || connectEvent == nullptr)
@@ -361,7 +374,7 @@ ControlErrorKind ControlServer::listenWin32(const QString& path, QString* detail
 	// adoptListener(), for the same reason - the hook closes THIS object's
 	// listener and must never outlive it (see ControlServer::~ControlServer()).
 	m_shutdownHookId = m_registry->addShutdownHook([this]() { close(); });
-	m_acceptThread = std::thread(&ControlServer::win32AcceptLoop, this);
+	m_acceptThread.start([this]() { win32AcceptLoop(); });
 	return ControlErrorKind::None;
 }
 
@@ -671,8 +684,10 @@ void ControlServer::closeWin32()
 	m_win32Listening.store(false);
 	m_pipeName.clear();
 
-	// Then the acceptor, so nothing can append to the client list below.
-	if (m_acceptThread.joinable()) { m_acceptThread.join(); }
+	// Then the acceptor, so nothing can append to the client list below. Its join
+	// retires a body that already returned and is a no-op on a server that never
+	// started one (BUG 15).
+	m_acceptThread.join();
 
 	// Then every client thread.  Each one exits on its own: the quit event
 	// cancels its pending read or write, and its wait for an answer from this
