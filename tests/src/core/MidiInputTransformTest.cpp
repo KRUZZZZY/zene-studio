@@ -144,6 +144,36 @@ private slots:
 		QCOMPARE(release.key(), 55);
 	}
 
+	//! Luna cluster new-p12-137: the release of a key that went down while the transform was the
+	//! identity has no entry in the held table - the live-input path skipped apply() for it - and
+	//! the channel filter enabled while it was held then swallowed that key's note-off, so the
+	//! note the track had started stayed sounding for ever. A release is not the channel filter's
+	//! to drop: the note it releases was played, and it is played at the key that arrived.
+	void anUntrackedNoteOffOutlivesANewChannelFilter()
+	{
+		MidiInputTransform transform;
+		QVERIFY2(!transform.active(), "the key goes down with no transform in force, so nothing is tracked for it");
+		QVERIFY(set(transform, {{QStringLiteral("channel"), 2}}));  // MIDI channel 2: the held key is on channel 1
+		MidiEvent off = noteOff(60, 0);
+		QVERIFY2(transform.apply(&off), "the release of a sounding note is passed, whatever the filter is now");
+		QCOMPARE(off.key(), 60);  // and at the key it was played at
+
+		// A note-on of velocity 0 is a release too.
+		MidiEvent release = noteOn(62, 0, 0);
+		QVERIFY2(transform.apply(&release), "a note-on of velocity 0 releases a note that was already sounding");
+		QCOMPARE(release.key(), 62);
+
+		// What the transform dropped itself is still dropped: that note never sounded.
+		MidiEvent dropped = noteOn(64, 100, 0);
+		QVERIFY(!transform.apply(&dropped));
+		MidiEvent droppedOff = noteOff(64, 0);
+		QVERIFY2(!transform.apply(&droppedOff), "a note-on the filter dropped starts no note, and its release goes too");
+
+		// Key pressure is not a release and cannot hang a note: the channel filter still holds.
+		MidiEvent pressure(MidiKeyPressure, 0, 66, 90);
+		QVERIFY2(!transform.apply(&pressure), "key pressure on an excluded channel is still filtered out");
+	}
+
 	//! A key range whose ends are swapped is a RANGE, and a range with no keys in
 	//! it is not a setting an instrument track may hold: checked key by key the
 	//! pair (100, 20) is two legal keys, and every note-on then fails the range
@@ -402,6 +432,30 @@ private slots:
 		off.setSource(MidiEvent::Source::External);
 		track->processInEvent(off, TimePos(0), 0);
 		Engine::audioEngine()->renderNextPeriod();
+	}
+
+	//! Luna cluster new-p12-137, through the live path: InstrumentTrack::handleInputTransform returns
+	//! before apply() while the transform is the identity, so a note-on played then is never tracked.
+	//! The channel filter enabled while that key was held then dropped its note-off, and the note the
+	//! track had started kept sounding - the release of a sounding note must reach it.
+	void aNoteHeldAcrossAChannelFilterIsStillReleased()
+	{
+		Song* song = Engine::getSong();
+		song->clearProject();
+		auto* track = dynamic_cast<InstrumentTrack*>(Track::create(Track::Type::Instrument, song));
+		QVERIFY(track != nullptr);
+		QVERIFY2(!track->inputTransform().active(), "the live-input path skips the transform while it is the identity");
+		MidiEvent on = noteOn(60, 100, 0);
+		on.setSource(MidiEvent::Source::External);
+		track->processInEvent(on, TimePos(0), 0);
+		QVERIFY2(track->playingNote(60) != nullptr, "the note-on started a note");
+		QVERIFY(run(QStringLiteral("track.input_transform_set"), {{QStringLiteral("track"), control::trackIdOf(track)},
+			{QStringLiteral("channel"), 2}}).ok);  // MIDI channel 2: the held key is on channel 1
+		MidiEvent off = noteOff(60, 0);
+		off.setSource(MidiEvent::Source::External);
+		track->processInEvent(off, TimePos(0), 0);
+		Engine::audioEngine()->renderNextPeriod();
+		QVERIFY2(track->playingNote(60) == nullptr, "the release of the held note reached it after the filter came in");
 	}
 
 	//! A forwarded external event re-enters the owner but must still get the layer track's own transform.
