@@ -49,6 +49,10 @@
 # 2026-11-23 (Q050-367): tests/src/gui/EffectEditorTeardownTest.cpp is fork-NEW - the regression for a device's own
 # editor being closed and detached before the device is removed (the rack's Remove this plugin entry and
 # plugin.unload) or its chain is cleared. Emitted in the sorted source list below; no other entry changed.
+# 2026-11-26 (cluster 102): tests/src/core/BrowserPreviewWindowTest.cpp is fork-NEW - the regression for
+# browser.preview decoding an entire file before limiting it to 30 seconds (it now reads only the window
+# through SampleDecoder::decodeLimited()). Its own binary because LibraryBrowserTest.cpp, which covers the
+# preview playing and stopping, is at the file-length ratchet. Emitted in the sorted source list below.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \
@@ -2769,6 +2773,7 @@ tests/src/core/BasicFiltersSampleRateTest.cpp
 tests/src/core/BrowserCatalogTest.cpp
 tests/src/core/BrowserFeaturesWindowTest.cpp
 tests/src/core/BrowserIndexStoreWriteTest.cpp
+tests/src/core/BrowserPreviewWindowTest.cpp
 tests/src/core/BrowserTestSupport.h
 tests/src/core/ClipEditsTest.cpp
 tests/src/core/ClipGainEnvelopeTest.cpp
