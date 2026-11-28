@@ -1,0 +1,10 @@
+--- a/include/MidiWinMMOutput.h
++++ b/include/MidiWinMMOutput.h
+@@ -185,7 +185,6 @@
+ 			}
+ 			else
+ 			{
+-				m_overflow.fetch_add( 1, std::memory_order_relaxed );
+ 			}
+ 		} );
+ 

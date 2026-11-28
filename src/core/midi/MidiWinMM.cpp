@@ -26,6 +26,11 @@
 
 #ifdef LMMS_HAVE_WINMM
 
+#include <cstdint>
+#include <utility>
+#include <vector>
+
+#include "MidiWinMMOutput.h"
 #include "MidiWinMMShortMessage.h"
 
 
@@ -35,10 +40,11 @@ namespace lmms
 
 MidiWinMM::MidiWinMM() :
 	MidiClient(),
+	m_outputSink(),
+	m_output( m_outputSink, true ),
 	m_inputDevices(),
 	m_outputDevices(),
-	m_inputSubs(),
-	m_outputSubs()
+	m_inputSubs()
 {
 	openDevices();
 }
@@ -58,26 +64,11 @@ void MidiWinMM::processOutEvent( const MidiEvent& event, const TimePos& time, co
 {
 	const DWORD shortMsg = static_cast<DWORD>( winmmShortMessage( event ) );
 
-	QStringList outDevs;
-	for( SubMap::ConstIterator it = m_outputSubs.begin(); it != m_outputSubs.end(); ++it )
-	{
-		for( MidiPortList::ConstIterator jt = it.value().begin(); jt != it.value().end(); ++jt )
-		{
-			if( *jt == port )
-			{
-				outDevs += it.key();
-				break;
-			}
-		}
-	}
-
-	for( QMap<HMIDIOUT, QString>::Iterator it = m_outputDevices.begin(); it != m_outputDevices.end(); ++it )
-	{
-		if( outDevs.contains( *it ) )
-		{
-			midiOutShortMsg( it.key(), shortMsg );
-		}
-	}
+	// Cluster new-p9-276: one atomic load, a scan of the published POD routing and a bounded
+	// push. The driver call - which Microsoft documents can wait for the device - happens on
+	// MidiWinMMOutput's worker, never here on the audio thread.
+	m_output.processOutEvent( port, static_cast<std::uint32_t>( shortMsg ) );
+	(void) time;
 }
 
 
@@ -97,10 +88,7 @@ void MidiWinMM::applyPortMode( MidiPort* port )
 
 	if( !port->isOutputEnabled() )
 	{
-		for( SubMap::Iterator it = m_outputSubs.begin(); it != m_outputSubs.end(); ++it )
-		{
-			it.value().removeAll( port );
-		}
+		m_output.applyPortMode( port, false );
 	}
 }
 
@@ -114,10 +102,7 @@ void MidiWinMM::removePort( MidiPort* port )
 		it.value().removeAll( port );
 	}
 
-	for( SubMap::Iterator it = m_outputSubs.begin(); it != m_outputSubs.end(); ++it )
-	{
-		it.value().removeAll( port );
-	}
+	m_output.removePort( port );
 
 	MidiClient::removePort( port );
 }
@@ -164,11 +149,7 @@ void MidiWinMM::subscribeWritablePort( MidiPort* port, const QString& dest, bool
 		return;
 	}
 
-	m_outputSubs[dest].removeAll( port );
-	if( subscribe )
-	{
-		m_outputSubs[dest].push_back( port );
-	}
+	m_output.subscribeWritablePort( port, dest, subscribe );
 }
 
 
@@ -247,7 +228,6 @@ void MidiWinMM::updateDeviceList()
 void MidiWinMM::closeDevices()
 {
 	m_inputSubs.clear();
-	m_outputSubs.clear();
 
 	QMapIterator<HMIDIIN, QString> i( m_inputDevices );
 
@@ -258,6 +238,10 @@ void MidiWinMM::closeDevices()
 		midiInReset( hInDev );
 		midiInClose( hInDev );
 	}
+
+	// Refuse new output, discard queued commands and wait out an in-flight driver call before
+	// any handle is closed (cluster new-p9-276).
+	m_output.clearDevices();
 
 	QMapIterator<HMIDIOUT, QString> o( m_outputDevices );
 	while( o.hasNext() )
@@ -302,6 +286,15 @@ void MidiWinMM::openDevices()
 			m_outputDevices[hm] = QString::fromWCharArray(c.szPname);
 		}
 	}
+
+	// QMap order is the order the old name search sent in, so keep it.
+	std::vector<std::pair<QString, std::uintptr_t>> outputs;
+	outputs.reserve( static_cast<std::size_t>( m_outputDevices.size() ) );
+	for( QMap<HMIDIOUT, QString>::ConstIterator it = m_outputDevices.begin(); it != m_outputDevices.end(); ++it )
+	{
+		outputs.emplace_back( it.value(), reinterpret_cast<std::uintptr_t>( it.key() ) );
+	}
+	m_output.setDevices( std::move( outputs ) );
 }
 
 

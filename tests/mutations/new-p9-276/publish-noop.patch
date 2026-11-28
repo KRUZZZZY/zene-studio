@@ -1,0 +1,10 @@
+--- a/include/MidiWinMMOutput.h
++++ b/include/MidiWinMMOutput.h
+@@ -233,6 +233,7 @@
+ private:
+ 	void publishRoutes()
+ 	{
++		return;
+ 		m_routing.publish( MidiWinMMOutRouting::buildRoutes( m_devices, m_subscriptions ) );
+ 	}
+ 

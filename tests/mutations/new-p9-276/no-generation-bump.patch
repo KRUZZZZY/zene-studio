@@ -1,0 +1,10 @@
+--- a/include/MidiWinMMOutput.h
++++ b/include/MidiWinMMOutput.h
+@@ -128,7 +128,6 @@
+ 	{
+ 		m_accepting.store( false, std::memory_order_seq_cst );
+ 		waitForSubmitToFinish();
+-		m_generation.fetch_add( 1, std::memory_order_seq_cst );
+ 		waitForWorkerToFinish();
+ 		m_devices.clear();
+ 		m_subscriptions.clear();
