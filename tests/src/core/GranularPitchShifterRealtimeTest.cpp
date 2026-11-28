@@ -159,6 +159,7 @@ private slots:
 	void initTestCase();
 	void cleanupTestCase();
 	void sampleRateHandoffDoesNotAllocateAndKeepsPitchShift();
+	void sampleRateHandoffCompletesBeforeTheNextBlock();
 	void retiredBuffersAreReclaimedWithoutAnotherUpdate();
 	void savedOutOfRangeValueIsBoundedByTheControlModel();
 
@@ -254,6 +255,61 @@ void GranularPitchShifterRealtimeTest::sampleRateHandoffDoesNotAllocateAndKeepsP
 		qPrintable(QStringLiteral("pitch render measured %1 Hz; expected near %2 Hz")
 			.arg(measuredFrequency).arg(ExpectedShiftedFrequency)));
 }
+
+void GranularPitchShifterRealtimeTest::sampleRateHandoffCompletesBeforeTheNextBlock()
+{
+	// The finding's ordering, without a device thread and without the event loop: the rate is
+	// injected and the blocks are rendered by hand, so a handoff that only reaches the effect
+	// through a queued call is still pending when the first new-rate block runs.
+	Engine::audioEngine()->setAudioDevice(
+		new FixedRateAudioDevice(Engine::audioEngine(), InitialRate), false);
+	QCOMPARE(Engine::audioEngine()->outputSampleRate(), InitialRate);
+
+	auto effect = std::unique_ptr<Effect>(
+		static_cast<Effect*>(m_pluginEntry(nullptr, nullptr)));
+	QVERIFY(effect != nullptr);
+	auto* granular = static_cast<GranularPitchShifterEffect*>(effect.get());
+
+	std::array<SampleFrame, RenderFrames> samples{};
+	renderOneBlock(granular, samples); // applies the constructor's state
+	QCOMPARE(granular->m_sampleRate, static_cast<float>(InitialRate));
+	QCOMPARE(granular->m_ringBuf.size(),
+		static_cast<std::size_t>(static_cast<double>(InitialRate) * RangeSeconds[0]));
+
+	// The device swap.  AudioEngine::setAudioDevice() and restoreAudioDevice() stop the
+	// backend, swap the device, announce the rate and only then let audio run again
+	// (src/core/AudioEngine.cpp:1420-1429 and :1446-1456); that is why every slot connected
+	// to sampleRateChanged must run in the emitting thread (src/core/ProjectRenderer.cpp:265).
+	Engine::audioEngine()->setAudioDevice(
+		new FixedRateAudioDevice(Engine::audioEngine(), ChangedRate), false);
+	QCOMPARE(Engine::audioEngine()->outputSampleRate(), ChangedRate);
+
+	// The first block after the announce is already governed by the new rate: the grain
+	// length (:145), the minimum latency (:132) and the glide coefficient (:141) are derived
+	// from it, and the ring buffer must cover the chosen range at the new rate.
+	renderOneBlock(granular, samples);
+	QCOMPARE(granular->m_sampleRate, static_cast<float>(ChangedRate));
+	QCOMPARE(granular->m_ringBuf.size(),
+		static_cast<std::size_t>(static_cast<double>(ChangedRate) * RangeSeconds[0]));
+
+	// Reconfiguration: two announces before the next block.  The pending state is replaced,
+	// not dropped, so the block still runs at the newest rate.
+	Engine::audioEngine()->setAudioDevice(
+		new FixedRateAudioDevice(Engine::audioEngine(), InitialRate), false);
+	Engine::audioEngine()->setAudioDevice(
+		new FixedRateAudioDevice(Engine::audioEngine(), ChangedRate), false);
+	renderOneBlock(granular, samples);
+	QCOMPARE(granular->m_sampleRate, static_cast<float>(ChangedRate));
+	QCOMPARE(granular->m_ringBuf.size(),
+		static_cast<std::size_t>(static_cast<double>(ChangedRate) * RangeSeconds[0]));
+
+	// Leave the shared device at the rate the other slots set up.
+	Engine::audioEngine()->setAudioDevice(
+		new FixedRateAudioDevice(Engine::audioEngine(), InitialRate), false);
+	renderOneBlock(granular, samples);
+	QCOMPARE(granular->m_sampleRate, static_cast<float>(InitialRate));
+}
+
 
 void GranularPitchShifterRealtimeTest::retiredBuffersAreReclaimedWithoutAnotherUpdate()
 {
