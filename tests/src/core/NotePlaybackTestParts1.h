@@ -178,6 +178,78 @@ void NotePlaybackTest::monstroConcurrentVoicesKeepIndependentModulation() {
 	QVERIFY2(monstroVoiceSetsMatch(serialVoices, parallelVoices),
 		"a voice was dropped or its modulation changed at engine render concurrency");
 }
+void NotePlaybackTest::monstroScratchPoolHoldsACallerOutsideARenderJob() {
+	// Cluster new-p20-86: the modulation scratch pool has one lease per render context PLUS one for
+	// the caller that is not on a render thread - the rule MixerChannel already follows over the same
+	// render slots (cluster new-p10-249). The lease probe holds every lease a render context may
+	// take, then renders one more voice from this thread. Without the reserved slot that call finds
+	// no scratch, returns before rendering, and leaves the voice silent with its state unadvanced.
+	const auto [referenceTrack, referenceInstrument] = createModulatedMonstroTrack();
+	QVERIFY(referenceTrack != nullptr && referenceInstrument != nullptr);
+	const auto [subjectTrack, subjectInstrument] = createModulatedMonstroTrack();
+	QVERIFY(subjectTrack != nullptr && subjectInstrument != nullptr);
+
+	const int renderContexts = Engine::audioEngine()->renderThreadCount();
+	QVERIFY(renderContexts >= 1);
+	const f_cnt_t frames = Engine::audioEngine()->framesPerPeriod();
+	const auto outsideVoice = static_cast<std::size_t>(renderContexts);
+	const auto voiceCount = outsideVoice + 1;
+	auto reference = createMonstroVoiceSet(referenceTrack, voiceCount, frames);
+	auto subject = createMonstroVoiceSet(subjectTrack, voiceCount, frames);
+	primeMonstroVoiceSet(referenceInstrument, reference);
+	primeMonstroVoiceSet(subjectInstrument, subject);
+
+	// Declared before the guard so they outlive it: a joinable std::thread terminates the process,
+	// and a failing assertion must not leave a holder blocked.
+	testsupport::Latch allHeld{renderContexts};
+	testsupport::Latch release{1};
+	struct HolderGuard
+	{
+		std::vector<std::thread> threads;
+		testsupport::Latch* release = nullptr;
+		~HolderGuard()
+		{
+			if (release != nullptr) { release->count_down(); }
+			for (auto& thread : threads) { if (thread.joinable()) { thread.join(); } }
+			Instrument::setVoiceScratchProbeForTesting(nullptr);
+		}
+	} holders;
+	holders.release = &release;
+	g_scratchLeaseHold.held.store(renderContexts);
+	g_scratchLeaseHold.leases.store(0);
+	g_scratchLeaseHold.allHeld = &allHeld;
+	g_scratchLeaseHold.release = &release;
+
+	Instrument::setVoiceScratchProbeForTesting(holdScratchLease);
+	holders.threads.reserve(static_cast<std::size_t>(renderContexts));
+	for (int context = 0; context < renderContexts; ++context) {
+		holders.threads.emplace_back([subjectInstrument, &subject, context] {
+			const auto voice = static_cast<std::size_t>(context);
+			subjectInstrument->playNote(subject.handles[voice], subject.outputs[voice]);
+		});
+	}
+	allHeld.wait();
+	// The caller outside a render job, rendered while every render context holds its lease.
+	subjectInstrument->playNote(subject.handles[outsideVoice], subject.outputs[outsideVoice]);
+	release.count_down();
+	for (auto& thread : holders.threads) { if (thread.joinable()) { thread.join(); } }
+	holders.release = nullptr;
+	Instrument::setVoiceScratchProbeForTesting(nullptr);
+
+	// The same period, rendered serially on this thread: what the round above must reproduce.
+	primeMonstroVoiceSet(referenceInstrument, reference);
+
+	const auto& outsideOutput = reference.outputs[outsideVoice];
+	QVERIFY2(std::any_of(outsideOutput.begin(), outsideOutput.end(), [](const SampleFrame& frame) {
+		return frame.left() != 0.0f || frame.right() != 0.0f;
+	}), "the voice outside the render job is silent in the reference render, so a dropped render would not be visible" );
+	QVERIFY2(sameSamples(outsideOutput, subject.outputs[outsideVoice]),
+		"the voice rendered by a caller that is not on a render job was dropped");
+	QVERIFY2(monstroVoiceSetsMatch(reference, subject),
+		"a note rendered by a caller that is not on a render job was dropped or changed");
+	releaseMonstroVoiceSet(reference);
+	releaseMonstroVoiceSet(subject);
+}
 void NotePlaybackTest::monstroRandomLfoAtLowSampleRateRenders() {
 	// At 8 kHz the 0.1 ms LFO rate is 0.8 frames. The random LFO modes take the period as
 	// whole frames for their modulo, and it truncated to zero: a division by zero on the

@@ -40,6 +40,7 @@
 #include <QThread>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdlib>
 #include <cstdint>
 #include <cstring>
@@ -264,6 +265,30 @@ bool monstroVoiceSetsMatch(const MonstroVoiceSet& lhs, const MonstroVoiceSet& rh
 	return true;
 }
 
+/*! Cluster new-p20-86: the state of the scratch-lease probe. The first \a held leases stay held,
+ *  so the caller that renders after them meets a full pool - no timing, the test waits on the latch. */
+struct ScratchLeaseHold
+{
+	std::atomic<int> held{0};
+	std::atomic<int> leases{0};
+	testsupport::Latch* allHeld = nullptr;
+	testsupport::Latch* release = nullptr;
+};
+
+ScratchLeaseHold g_scratchLeaseHold;
+
+void holdScratchLease(bool leased)
+{
+	if (!leased) { return; }
+	if (g_scratchLeaseHold.leases.fetch_add(1, std::memory_order_acq_rel) >=
+		g_scratchLeaseHold.held.load(std::memory_order_acquire))
+	{
+		return;
+	}
+	g_scratchLeaseHold.allHeld->count_down();
+	g_scratchLeaseHold.release->wait();
+}
+
 std::pair<InstrumentTrack*, Instrument*> createParallelMonstroTrack(int renderContexts,
 	bool* affinityMismatchEstablished)
 {
@@ -432,6 +457,10 @@ private slots:
 	void plainAllocationsAreCounted();
 
 	void monstroConcurrentVoicesKeepIndependentModulation();
+
+	//! Cluster new-p20-86: the scratch pool holds one lease per render context plus the one caller
+	//! that is not on a render thread, so a voice rendered outside a render job is never dropped.
+	void monstroScratchPoolHoldsACallerOutsideARenderJob();
 
 	void monstroRandomLfoAtLowSampleRateRenders();
 

@@ -1048,8 +1048,13 @@ MonstroInstrument::MonstroInstrument( InstrumentTrack * _instrument_track ) :
 	connect( Engine::audioEngine(), SIGNAL( sampleRateChanged() ), this, SLOT( updateSamplerate() ) );
 
 	m_fpp = Engine::audioEngine()->framesPerPeriod();
+	// cluster new-p20-86: one scratch slot per render context, plus one for the caller that is not
+	// on a render thread - the control side and the tests. That is the rule MixerChannel already
+	// follows for the same render slots (m_inputPartials, cluster new-p10-249). With only one slot
+	// per render context, a voice rendered off a render job while every context held a lease found
+	// none, returned before rendering, and lost that period's audio and its state advance.
 	m_modulationScratchCount = static_cast<std::size_t>(
-		std::max(1, Engine::audioEngine()->renderThreadCount()));
+		std::max(1, Engine::audioEngine()->renderThreadCount())) + 1;
 	m_modulationScratch = std::make_unique<ModulationScratch[]>(m_modulationScratchCount);
 	for (std::size_t slot = 0; slot < m_modulationScratchCount; ++slot)
 	{
@@ -1086,6 +1091,8 @@ void MonstroInstrument::playNoteImpl(NotePlayHandle* nph, std::span<SampleFrame>
 			break;
 		}
 	}
+	// cluster new-p20-86: report the lease attempt to a probe a test installs (null in production).
+	if (auto probe = voiceScratchProbe()) { probe(scratch != nullptr); }
 	if (scratch == nullptr) { return; }
 
 	if (!nph->m_pluginData)

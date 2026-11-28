@@ -25,6 +25,7 @@
 #include "Instrument.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <numbers>
 
@@ -102,6 +103,22 @@ void Instrument::play( SampleFrame* )
 
 void Instrument::deleteNotePluginData( NotePlayHandle * )
 {
+}
+
+namespace
+{
+//! The test-installed render-workspace probe (cluster new-p20-86); null in production.
+std::atomic<Instrument::VoiceScratchProbe> s_voiceScratchProbe{ nullptr };
+} // namespace
+
+void Instrument::setVoiceScratchProbeForTesting( VoiceScratchProbe probe )
+{
+	s_voiceScratchProbe.store( probe, std::memory_order_release );
+}
+
+Instrument::VoiceScratchProbe Instrument::voiceScratchProbe() noexcept
+{
+	return s_voiceScratchProbe.load( std::memory_order_acquire );
 }
 
 
