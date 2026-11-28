@@ -1465,6 +1465,78 @@ private slots:
 		QCOMPARE(ports.buffers()->output().bufferPtr(0), outBefore.bufferPtr(0));
 	}
 
+	/*!
+	 * A client that connects while the shared audio block already exists - the
+	 * state a reinitialisation leaves behind - has to be told the block's key.
+	 *
+	 * Reinitialising a plugin object after a client failure keeps the block: the
+	 * channel counts and the frame count do not change, so activation reaches
+	 * updateAudioBuffer()'s unchanged-dimensions short-circuit, which returns
+	 * without naming the block. The block is only ever named from that create
+	 * path, so a client that connects on top of it never attaches it and renders
+	 * nothing for as long as it lives.
+	 *
+	 * The state is driven directly instead of through a client death: the block
+	 * is the one a previous client left behind, and the client that connects on
+	 * top of it is a fresh one, which is exactly what a reinitialisation
+	 * produces. The period it answers proves the messages before it arrived - the
+	 * peer logs each message before it answers the next one.
+	 */
+	void clientConnectingToAnExistingBlockIsToldItsKey()
+	{
+		// The peer is mandatory here: this regression must fail, not silently pass,
+		// on a host that cannot run the socket-protocol stand-in.
+		const auto python = QStandardPaths::findExecutable(QStringLiteral("python3"));
+		QVERIFY2(!python.isEmpty(),
+			"python3 is required for the unix-socket client stand-in this regression drives");
+
+		QTemporaryDir dir;
+		QVERIFY(dir.isValid());
+		const auto peer = writeTestPeer(dir.path(), python);
+		QVERIFY(!peer.isEmpty());
+		const auto logPath = dir.filePath(QStringLiteral("peer.log"));
+
+		TestRemotePluginAudioPorts ports{false, nullptr};
+		RemotePlugin plugin{ports.controller()};
+
+		// Allocating the block writes its key to the client, so the object needs a
+		// connection for it: the same fd seam TestRemotePluginBase uses. It stands
+		// for the previous client's connection, which init() replaces below.
+		int previousClient[2];
+		QVERIFY(::socketpair(AF_UNIX, SOCK_STREAM, 0, previousClient) == 0);
+		plugin.m_socket = previousClient[0];
+
+		// The block a previous client left behind, at the dimensions this plugin
+		// object keeps across init().
+		ports.audioPortsModel().setChannelCounts(ch_cnt_t{2}, ch_cnt_t{2});
+		QVERIFY(ports.buffers()->initialized());
+		const auto* existingFirstPlane = ports.buffers()->input().bufferPtr(0);
+		QVERIFY(existingFirstPlane != nullptr);
+
+		// The replacement client, on the host's only connection point.
+		QVERIFY2(plugin.init(peer, false, {logPath, QStringLiteral("reply")}) == false,
+			"the host started a client that connects");
+		::close(previousClient[0]);
+		::close(previousClient[1]);
+		QVERIFY2(plugin.isRunning(), "the client stand-in did not start: this regression cannot pass without it");
+		QVERIFY(!plugin.failed());
+
+		// One period. The peer answers it only after reading (and logging) every
+		// message sent before it, so a completed period proves the messages this
+		// client was sent did arrive - the log is not raced.
+		QVERIFY2(plugin.process(), "the client stand-in did not answer the period");
+
+		const auto ids = peerLogIds(logPath);
+		QVERIFY2(ids.contains(IdSyncKey), "the peer logged nothing the host sent: the log proves nothing");
+		QVERIFY2(ids.contains(IdChangeSharedMemoryKey),
+			"the client that connected on top of the existing block was never told its key");
+		QCOMPARE(ids.count(IdChangeSharedMemoryKey), 1);
+
+		// And it is the same block: the dimensions did not change, so nothing
+		// re-created it and there is no second create-path key to lean on.
+		QCOMPARE(ports.buffers()->input().bufferPtr(0), existingFirstPlane);
+	}
+
 	//! A complete IdDebugMessage with no text in it. The host's handler indexed argument 0 of an empty message.
 	void zeroArgumentDebugMessageIsRefused()
 	{
