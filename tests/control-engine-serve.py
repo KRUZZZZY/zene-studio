@@ -208,6 +208,30 @@ def check_engine_commands(binary):
         names = [t.get("name") for t in session.result("track.list")["tracks"]]
         if "serve-proof" not in names:
             problems.append("project.open did not bring the track back: %r" % names)
+        problems += import_and_timeline_problems(session, instance.tmp)
+    return problems
+
+
+def import_and_timeline_problems(session, directory):
+    """Two defects the suite found in serve mode: a MIDI import died on its progress dialog, and a save
+    dropped the timeline (loop points, punch region) because only the window used to write it."""
+    problems = []
+    midi = os.path.join(directory, "serve.mid")
+    session.result("project.export_midi", {"path": midi})
+    before = len(session.result("track.list")["tracks"])
+    session.result("project.import", {"path": midi})
+    if len(session.result("track.list")["tracks"]) <= before and not session.instance.alive():
+        problems.append("project.import of a MIDI file took the engine down")
+    session.result("transport.punch_set", {"start": 96, "end": 288})
+    path = os.path.join(directory, "timeline.mmp")
+    session.result("project.save", {"path": path})
+    if "punch0pos" not in open(path, errors="replace").read():
+        problems.append("the saved project does not carry the punch region (no punch0pos in %s)" % path)
+    session.result("project.new")
+    session.result("project.open", {"path": path})
+    punch = session.result("transport.punch_get_state")
+    if (punch.get("punch_begin"), punch.get("punch_end")) != (96, 288):
+        problems.append("the punch region did not survive save and reopen: %r" % punch)
     return problems
 
 

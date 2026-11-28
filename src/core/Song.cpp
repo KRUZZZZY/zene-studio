@@ -2569,6 +2569,13 @@ void Song::buildProjectDocument( DataFile & dataFile )
 		getGUI()->pianoRoll()->saveState( dataFile, dataFile.content() );
 		getGUI()->automationEditor()->m_editor->saveState( dataFile, dataFile.content() );
 		getGUI()->getProjectNotes()->SerializingObject::saveState( dataFile, dataFile.content() );
+	}
+	// The timeline is not window state: its loop points and punch region are what the transport
+	// plays and records by. The application writes it here as it always has; a served engine
+	// (zene --engine, Q050-517) has no GUI and must write it too, or a save drops the loop and the
+	// punch region a front end just set. Other GUI-less runs (render, --run-script) are unchanged.
+	if( getGUI() != nullptr || lmms::isEngineServe() )
+	{
 		getTimeline(PlayMode::Song).saveState(dataFile, dataFile.content());
 	}
 
@@ -3016,6 +3023,13 @@ bool Song::restoreGuiSection(const QDomElement & element)
 {
 	using gui::getGUI;
 
+	// Q050-517: a served engine owns the timeline (see buildProjectDocument); the four window
+	// sections it still cannot read, so they stay preserved-and-reported as before.
+	if( getGUI() == nullptr && lmms::isEngineServe() && element.nodeName() == getTimeline(PlayMode::Song).nodeName() )
+	{
+		getTimeline(PlayMode::Song).restoreState( element );
+		return true;
+	}
 	if( getGUI() == nullptr ) { return false; }
 
 	const QString name = element.nodeName();

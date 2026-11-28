@@ -4220,3 +4220,4 @@ include/EngineServe.h
 src/core/EngineServe.cpp
 tests/control-engine-serve.py
 tests/serve-mode-suite.py
+tests/serve-mode-measure.py

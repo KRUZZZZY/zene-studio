@@ -29,6 +29,7 @@
 #include <QCoreApplication>
 #include <QSocketNotifier>
 
+#include "AudioEngine.h"
 #include "ConfigManager.h"
 #include "ControlRegistry.h"
 #include "CrashReporter.h"
@@ -69,6 +70,22 @@ void ensureWorkingDir()
 		std::fprintf(stderr, "engine: working-directory-error path=%s reason=create-failed\n",
 			qUtf8Printable(workingDir));
 	}
+	std::fflush(stderr);
+}
+
+//! The engine fell back to the dummy device: say so on the log, in the two lines the application's
+//! unattended start writes (MainWindow::finalize) - the sentence control.ping reports, and the
+//! structured line a log reader parses. There is nobody to show a dialog to.
+void announceAudioDeviceFailure()
+{
+	const AudioEngine* audio = Engine::audioEngine();
+	const QString requested = ConfigManager::inst()->value("audioengine", "audiodev");
+	const bool known = AudioEngine::isAudioDevNameValid(requested);
+	if (!audio->audioDevStartFailed() && known) { return; }
+	std::fprintf(stderr, "engine: audio device setup failed: %s\n", qUtf8Printable(audio->audioDevStartReason()));
+	std::fprintf(stderr, "engine: audio-device-setup backend=\"%s\" device_start_failed=%d name_known=%d "
+		"device=\"%s\" (unattended run: no dialog, the engine continues)\n", qUtf8Printable(requested),
+		audio->audioDevStartFailed() ? 1 : 0, known ? 1 : 0, qUtf8Printable(audio->audioDevName()));
 	std::fflush(stderr);
 }
 
@@ -206,7 +223,19 @@ bool start(const StartOptions& options, QString* error)
 	safestart::beginSession();
 
 	// Not render-only: a served engine opens the configured audio and MIDI devices, as the application does.
+	// A client that connects while the engine starts is answered (engine_ready:false, and why) rather
+	// than left waiting: the application pumps events at each init step for its splash screen, and a
+	// supervisor watching a served engine start needs the same honest answer.
+	QObject::connect(Engine::inst(), &Engine::initProgress, app, [] { QCoreApplication::processEvents(); });
 	Engine::init(false);
+	if (!ConfigManager::inst()->value("app", "configured").toInt())
+	{
+		// The application's first start shows its setup dialog; nothing here can, and the config is
+		// NOT marked configured, so the application still asks the first time a person starts it.
+		std::fprintf(stderr, "engine: unattended run: skipping the first-run setup dialog; configure audio "
+			"and MIDI in the --config file\n");
+	}
+	announceAudioDeviceFailure();
 	loadInitialProject(options);
 
 	QObject::connect(app, &QCoreApplication::aboutToQuit, app, [] { saveOnQuit(); });
