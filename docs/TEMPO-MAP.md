@@ -125,6 +125,13 @@ reader must never observe a half-written set and may neither allocate nor lock.
   calls `Engine::updateFramesPerTickForTempo()` — which writes
   `Engine::s_framesPerTick`, now a `std::atomic<float>` precisely because this is
   the one writer that is not the control thread.
+- **A map that was in force hands the engine's own rate back when it stops being
+  in force** (cleared, switched off, or replaced by a new project). The scalar the
+  follower wrote does not revert by itself, so without that the transport would
+  keep running at the last mapped tempo until some other writer touched it. The
+  hand-back happens once, in the first block that sees the map gone; a map that
+  was never applied writes nothing, which is what keeps the empty-map path
+  byte-identical.
 - **Changes take effect at the start of the audio block that contains them.**
   This is not sample-accurate tempo automation; that is a separate, still-open
   in-list item. The tempo is exact at tick granularity and block-quantised in

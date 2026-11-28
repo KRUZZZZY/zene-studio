@@ -1534,7 +1534,9 @@ void Song::followTempoMap()
 	// An empty OR inactive map is exactly today's engine, and the audio thread
 	// must pay nothing for it: no snapshot copy, no arithmetic, no write to the
 	// frame/tick scalar. This early return IS the byte-identity guarantee on the
-	// timing path, and TempoMapTest measures it.
+	// timing path, and TempoMapTest measures it. The ONE exception is the block
+	// that sees a map it had applied go inactive: that block hands the engine's
+	// own rate back (see below), once, because the scalar it wrote does not revert.
 	// The map is read pinned (include/TempoMap.h, TempoMapPublisher::withRealtimeMap): bounded, no lock, no
 	// allocation, no data race, and the active flag comes from the pinned map itself. A read that loses every
 	// attempt to a publication keeps the tempo already applied; the next block reads again.
@@ -1550,7 +1552,17 @@ void Song::followTempoMap()
 	if( !pinned ) { return; }
 	if( !active )
 	{
-		m_tempoMapAppliedTempo = -1;
+		// A map that has just been cleared or switched off must hand the engine's own
+		// rate back: the frame/tick scalar holds the tempo this follower last APPLIED,
+		// and nothing reverts it by itself, so dropping the map without this leaves
+		// playback at the old mapped tempo until some other writer touches the scalar
+		// (Luna 5385). -1 means no mapped tempo is applied, which is the byte-identity
+		// case: an empty or never-active map writes nothing at all.
+		if( m_tempoMapAppliedTempo.load( std::memory_order_relaxed ) != -1 )
+		{
+			m_tempoMapAppliedTempo.store( -1, std::memory_order_relaxed );
+			Engine::updateFramesPerTick();
+		}
 		return;
 	}
 	if( bpm == m_tempoMapAppliedTempo ) { return; }
@@ -1850,9 +1862,17 @@ void Song::clearProject()
 	m_notLoadedSections.clear();
 
 	// The tempo map is project state, so a new project starts with none: a map
-	// from one project must not retime the next (docs/TEMPO-MAP.md).
+	// from one project must not retime the next (docs/TEMPO-MAP.md). Dropping the
+	// follower's memo is what makes the next project's map apply from scratch, and
+	// it has to come with the engine's own rate, because the scalar may still hold
+	// the previous project's mapped tempo and no other writer runs on this path
+	// (Luna 5385).
 	m_tempoMap.edit([](TempoMap& map) { map.clear(); return true; });
-	m_tempoMapAppliedTempo = -1;
+	if( m_tempoMapAppliedTempo.load( std::memory_order_relaxed ) != -1 )
+	{
+		m_tempoMapAppliedTempo.store( -1, std::memory_order_relaxed );
+		Engine::updateFramesPerTick();
+	}
 
 	// The groove pool is project state too. A groove from one project must not
 	// be applicable to the next one's clips, and the pool is written to the

@@ -445,6 +445,106 @@ private slots:
 			"clearing the map did not restore the engine's timing scalar");
 	}
 
+	//! (4b) A map that WAS retiming the transport hands the ENGINE'S OWN RATE
+	//! back when it is cleared or switched off (Luna 5385). The frame/tick scalar
+	//! holds the tempo the follower last APPLIED and nothing reverts it by itself,
+	//! so dropping the map without restoring it leaves playback running at the old
+	//! mapped tempo until some other writer touches the scalar - a tempo change, a
+	//! Link release, a new sample rate. Every count below starts from the scalar AS
+	//! IT IS (advancePlayhead() resets it, which would hide exactly this defect).
+	void droppingAnAppliedMapRestoresTheEngineRate()
+	{
+		Song* song = Engine::getSong();
+		const sample_rate_t rate = engineSampleRate();
+		const int global = song->getTempo();
+		// Half the global tempo, so the mapped rate and the engine's own rate are
+		// far enough apart for the play head to tell them apart in 16 periods.
+		const int mapped = global / 2 >= TempoMapMinTempo ? global / 2 : global * 2;
+		QVERIFY2(mapped != global && mapped >= TempoMapMinTempo && mapped <= TempoMapMaxTempo,
+			qPrintable(QStringLiteral("no mapped tempo beside the global %1").arg(global)));
+		struct RestoreSongState
+		{
+			Song* song;
+			int tempo;
+			~RestoreSongState()
+			{
+				song->stop();
+				song->tempoMap().edit([](TempoMap& map) { map.clear(); return true; });
+				song->setTempo(tempo);
+				Engine::updateFramesPerTick();
+			}
+		} restore{song, global};
+
+		// The ticks the transport carries in `blocks` periods, from whatever the
+		// scalar holds when the run starts.
+		const auto ticksFromStart = [song](int blocks)
+		{
+			song->stop();
+			song->setPlayPos(0);
+			song->playSong();
+			for (int i = 0; i < blocks; ++i) { song->processNextBuffer(); }
+			const tick_t advanced = song->getPlayPos().getTicks();
+			song->stop();
+			return advanced;
+		};
+
+		// A project with no map: the scalar is the engine's own expression, and a
+		// run of the transport leaves it there.
+		song->stop();
+		QVERIFY(song->tempoMap().edit([](TempoMap& map) { map.clear(); return true; }));
+		Engine::updateFramesPerTick();
+		QVERIFY(Engine::framesPerTick() == legacyFramesPerTick(rate, global));
+		const tick_t unmappedTicks = ticksFromStart(16);
+		QVERIFY2(unmappedTicks > 0, "the transport did not advance at all");
+		QVERIFY2(Engine::framesPerTick() == legacyFramesPerTick(rate, global),
+			"an inactive map moved the engine's timing scalar");
+
+		// The same event with the map switched ON: the follower applies it, and the
+		// transport really runs at it - the precondition every check below needs.
+		TempoMapEvent event;
+		event.tick = 0;
+		event.hasTempo = true;
+		event.tempo = mapped;
+		QVERIFY(song->tempoMap().edit([&event](TempoMap& map) { return map.addEvent(event); }));
+		QVERIFY(song->tempoMap().edit([](TempoMap& map) { map.setActive(true); return true; }));
+		const tick_t mappedTicks = ticksFromStart(16);
+		QVERIFY2(Engine::framesPerTick() == legacyFramesPerTick(rate, mapped),
+			"the active map's tempo is not the rate the transport ran at");
+		QVERIFY2(mappedTicks < unmappedTicks,
+			qPrintable(QStringLiteral("the map did not retime the transport: %1 ticks mapped, "
+				"%2 unmapped").arg(mappedTicks).arg(unmappedTicks)));
+
+		// CLEARED while the mapped rate is the scalar, and NOTHING else writes it
+		// afterwards: the follower has to hand the engine's own rate back in the
+		// very block that sees the map gone.
+		QVERIFY(song->tempoMap().edit([](TempoMap& map) { map.clear(); return true; }));
+		const tick_t afterClearTicks = ticksFromStart(16);
+		QVERIFY2(Engine::framesPerTick() == legacyFramesPerTick(rate, global),
+			qPrintable(QStringLiteral("clearing the map left the engine at %1 frames/tick; "
+				"the global tempo %2 is %3").arg(Engine::framesPerTick()).arg(global)
+				.arg(legacyFramesPerTick(rate, global))));
+		QVERIFY2(afterClearTicks == unmappedTicks,
+			qPrintable(QStringLiteral("the transport carried %1 ticks in 16 periods after the "
+				"clear, %2 with no map").arg(afterClearTicks).arg(unmappedTicks)));
+
+		// ...and the same when the map is only SWITCHED OFF: its events stay
+		// project state, and the rate still comes back.
+		QVERIFY(song->tempoMap().edit([&event](TempoMap& map) { return map.addEvent(event); }));
+		QVERIFY(song->tempoMap().edit([](TempoMap& map) { map.setActive(true); return true; }));
+		(void)ticksFromStart(4);  // the follower applies the mapped tempo again
+		QVERIFY(Engine::framesPerTick() == legacyFramesPerTick(rate, mapped));
+		QVERIFY(song->tempoMap().edit([](TempoMap& map) { map.setActive(false); return true; }));
+		QCOMPARE(song->tempoMap().map().size(), 1);  // switched off, not cleared
+		song->setPlayPos(0);
+		song->playSong();
+		song->processNextBuffer();
+		QVERIFY2(Engine::framesPerTick() == legacyFramesPerTick(rate, global),
+			qPrintable(QStringLiteral("switching the map off left the engine at %1 frames/tick; "
+				"the global tempo %2 is %3").arg(Engine::framesPerTick()).arg(global)
+				.arg(legacyFramesPerTick(rate, global))));
+		song->stop();
+	}
+
 	//! The bounds are one rule in one place, a rejected event changes nothing,
 	//! and add-or-replace merges PER PROPERTY.
 	void invalidEventsAreRefusedAndChangeNothing()
