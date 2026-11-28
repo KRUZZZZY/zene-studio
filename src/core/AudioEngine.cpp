@@ -631,6 +631,8 @@ AudioEngine::~AudioEngine()
 	delete m_automatableModelRegistry.exchange(nullptr, std::memory_order_acq_rel);
 	// Q050-016 round 3: the workers are joined, so nothing can copy a stream now.
 	MpeStreamSnapshot::reclaimRetired();
+	// Cluster new-p15-181: the workers are joined, so no retired play handle is being touched now either.
+	SamplePlayHandle::reclaimRetired();
 }
 
 
@@ -1628,6 +1630,12 @@ void AudioEngine::serviceAudioBusHandlesOnControlThread()
 	// The single control-thread activation, free and port point (cluster new-p15-253). The order
 	// matters: registrations first, so a bus retired in the same tick is marked handled before it
 	// can be registered; retirements next, freeing only buses with no link left; port state last.
+	//
+	// Cluster new-p15-181: it is also where the play handles the render path retired are freed. A
+	// finished handle whose destruction would hand heap memory back to the allocator (a clip's
+	// comp-slip readers, its pre-fade or loop Sample snapshots) is not deleted on the audio thread;
+	// it waits on SamplePlayHandle's retire list for this tick.
+	SamplePlayHandle::reclaimRetired();
 	serviceRegistrations();
 	serviceRetirements();
 	servicePortUpdates();

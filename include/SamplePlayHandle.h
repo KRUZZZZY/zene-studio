@@ -29,6 +29,7 @@
 #include "Sample.h"
 #include <atomic>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <limits>
@@ -68,6 +69,27 @@ public:
 	 *  #611: docs/CLIP-CAPTURE-DESIGN.md §2.5, invariant I1). */
 	SamplePlayHandle( SampleClip* clip, const SampleWindow& window );
 	~SamplePlayHandle() override;
+
+	/*! Cluster new-p15-181: the engine frees a handle where it disposes it, and it disposes finished handles on
+	 *  the audio thread (AudioEngine::renderStageEffects). Destroying this handle is not free: it hands the clip's
+	 *  comp-slip readers (a heap object) and its pre-fade / loop Sample snapshots back to the allocator. A handle
+	 *  that owns such state therefore asks the engine NOT to delete it: it is pushed on a lock-free retire list
+	 *  (one compare-and-swap, no allocation, no lock, no wait) and deleted by reclaimRetired() on the control
+	 *  thread - the contract SampleVoicePool and MpeStreamSnapshot already use. A handle without that state -
+	 *  every handle of a clip with no comp slip, no pre-fades and no audio loop - returns false and is deleted
+	 *  exactly where it always was. See also PlayHandle::handOverToOwner(). */
+	bool handOverToOwner() noexcept override;
+
+	//! Whether destroying this handle frees heap memory: the comp-slip readers, or a Sample snapshot.
+	bool ownsHeapBackedState() const noexcept
+	{
+		return m_compSlip != nullptr || m_preFadeSample.has_value() || m_loopSample.has_value();
+	}
+
+	/*! Delete the handles the render path retired. Does nothing and frees nothing while a RealtimeScope is active;
+	 *  the list is kept for the next call. Returns how many handles it freed. Called by the engine's
+	 *  control-thread service point (AudioEngine::serviceAudioBusHandlesOnControlThread) and its destructor. */
+	static std::size_t reclaimRetired() noexcept;
 
 	inline bool affinityMatters() const override
 	{
@@ -316,6 +338,12 @@ private:
 	void snapshotAudioLoop(const SampleClip* clip, const SampleWindow& window);
 	std::optional<Sample> m_loopSample;
 	Sample::Loop m_loopMode = Sample::Loop::Off;
+
+	/*! Cluster new-p15-181: push this handle on the retire list (see handOverToOwner()). One compare-and-swap;
+	 *  the link lives in the handle, so a retire allocates nothing. */
+	bool retireSelf() noexcept;
+	//! The retire list's link: written only while the handle is unreachable to every other thread.
+	SamplePlayHandle* m_retiredNext = nullptr;
 } ;
 
 

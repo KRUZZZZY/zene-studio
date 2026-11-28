@@ -36,6 +36,7 @@
 #include "AudioStretcher.h"
 #include "Engine.h"
 #include "PatternTrack.h"
+#include "RealtimeScope.h"
 #include "SampleClip.h"
 #include "SampleTrack.h"
 
@@ -121,6 +122,13 @@ SamplePlayHandle::SamplePlayHandle( SampleClip* clip ) :
 
 namespace
 {
+
+/*! Cluster new-p15-181: the handles the render path retired, as an intrusive Treiber stack - pushed by the audio
+ *  thread, drained whole by the control thread. The link lives in the handle (m_retiredNext), so a retire is one
+ *  compare-and-swap with no allocation, no lock and no wait; the same shape as MpeStreamSnapshot's list. File
+ *  scope, not a static data member: MSVC rejects thread-relevant static data with a DLL interface on an exported
+ *  class (the note AudioEngine.cpp's LMMS_TESTING block makes about its own counter). */
+std::atomic<SamplePlayHandle*> s_retiredHandles{nullptr};
 
 //! Whether a clip's audio goes through the pitch-keeping stretcher: any
 //! pitch-preserving-mode clip whose rate varies, or (ED-038) a transposed
@@ -494,6 +502,52 @@ SamplePlayHandle::~SamplePlayHandle()
 		Engine::audioEngine()->destroyAudioBusHandle(bus);
 		delete m_sample;
 	}
+}
+
+
+
+
+bool SamplePlayHandle::handOverToOwner() noexcept
+{
+	// Nothing heap-backed to hand over: the engine deletes this handle where it always did. That is every
+	// handle of every clip with no comp slip, no pre-fades and no audio loop, so the common path is untouched.
+	if (!ownsHeapBackedState()) { return false; }
+	// Off the render path the caller's delete frees immediately; deferring it buys nothing.
+	if (!RealtimeScope::isActive()) { return false; }
+	return retireSelf();
+}
+
+
+
+
+bool SamplePlayHandle::retireSelf() noexcept
+{
+	SamplePlayHandle* head = s_retiredHandles.load(std::memory_order_relaxed);
+	do
+	{
+		m_retiredNext = head;
+	} while (!s_retiredHandles.compare_exchange_weak(head, this, std::memory_order_release,
+		std::memory_order_relaxed));
+	return true;
+}
+
+
+
+
+std::size_t SamplePlayHandle::reclaimRetired() noexcept
+{
+	// A RealtimeScope never frees: the list waits for a non-realtime thread.
+	if (RealtimeScope::isActive()) { return 0; }
+	SamplePlayHandle* handle = s_retiredHandles.exchange(nullptr, std::memory_order_acquire);
+	std::size_t freed = 0;
+	while (handle != nullptr)
+	{
+		SamplePlayHandle* const next = handle->m_retiredNext;
+		delete handle;
+		++freed;
+		handle = next;
+	}
+	return freed;
 }
 
 
