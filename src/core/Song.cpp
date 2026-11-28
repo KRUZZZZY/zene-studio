@@ -2854,10 +2854,25 @@ void Song::restoreKeymapStates(const QDomElement &element)
  *  this section the track ids resolve; a file that puts it earlier declines
  *  rather than half-loads. TakeLaneModel::loadSettings clears each model
  *  before filling it, so a section that names one track and not another leaves
- *  the other empty - reset-on-absence rides s4's rule, unchanged. */
+ *  the other empty - reset-on-absence rides s4's rule, unchanged.
+ *
+ *  The answer is ALL-OR-NOTHING (cluster 5390, BUG 16): every group is resolved
+ *  BEFORE the first model is written, because false means the walk keeps the
+ *  element verbatim as unclaimed and the next save re-emits it. Applying a
+ *  group on the way through left its lanes in memory beside that preserved
+ *  copy - the track half-loaded, and the writer's own <z:lanes> written next to
+ *  the file's original one. Nothing below the resolution pass can refuse: a
+ *  group whose track exists is loaded by TakeLaneModel::loadSettings, which
+ *  takes any element. */
 static bool loadLanesSection( const Song & song, const QDomElement & section )
 {
 	if( section.attribute( QStringLiteral( "v" ) ) != QLatin1String( "1" ) ) { return false; }
+	struct Target
+	{
+		QDomElement group;
+		Track * track;
+	};
+	QVector<Target> targets;
 	for( QDomNode node = section.firstChild(); ! node.isNull(); node = node.nextSibling() )
 	{
 		if( ! node.isElement() || node.nodeName() != QLatin1String( "z:tracklanes" ) )
@@ -2869,8 +2884,12 @@ static bool loadLanesSection( const Song & song, const QDomElement & section )
 		const int trackId = group.attribute( QStringLiteral( "track" ) ).toInt( & ok );
 		Track * track = ok ? song.findTrackById( trackId ) : nullptr;
 		if( track == nullptr ) { return false; }
-		track->takeLanes().loadSettings( group );
-		track->takeLanes().synchronizeTakePlayback( track->getClips() );
+		targets.append( Target{ group, track } );
+	}
+	for( const Target & target : targets )
+	{
+		target.track->takeLanes().loadSettings( target.group );
+		target.track->takeLanes().synchronizeTakePlayback( target.track->getClips() );
 	}
 	return true;
 }
