@@ -1,0 +1,4 @@
+# The pinned Rune checkout (fetch-rune.sh) and Cargo build output are never committed.
+/vendor/
+target/
+/ci-out/

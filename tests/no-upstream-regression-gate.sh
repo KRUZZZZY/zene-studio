@@ -42,6 +42,18 @@
 #     (tools/mcp-zene-control/{.gitignore,tests/data/agent-control-fixture.mmp,
 #     zene_control/commands_snapshot.json}); the class of defect, not those three paths,
 #     is what this rule fixes.
+#   - rune/**             -> allowed BY CONSTRUCTION, for the same reason as tools/** (added
+#     2026-11-28, Q050-525). rune/ is the Rust front end (Cargo crate, its assets and CI
+#     helpers); it does not exist upstream, so no path under it can be a divergence of
+#     inherited code. Verified for this commit, both printing nothing:
+#       git ls-tree -r --name-only 4e677cb6c6ab -- rune      # the upstream base commit
+#       upstream master 0c8c130dfda8 (2026-11-28): GET repos/LMMS/lmms/contents/rune -> 404
+#     The alternative, naming every rune/ path in tests/fork-sources.txt, is not available:
+#     that manifest is also the scope of the C/C++ ratchets (gates 4 and 7 read every entry),
+#     and lizard would measure the Rust sources against the C++ complexity baseline (measured:
+#     25 Rust functions over CCN 10, 5 files over 500 lines), so registering them there would
+#     turn those gates red for code they were never meant to judge. The Python and shell
+#     helpers under rune/ ARE registered there, and are measured like any fork script.
 #   - any other production source -> allowed ONLY if listed in
 #     tests/upstream-modifications.txt with a non-empty reason
 #
@@ -97,6 +109,7 @@ for f in "${CHANGED[@]}"; do
 		.github/*) verdict="CI config (allowed, non-runtime)" ;;
 		*.md) verdict="docs (allowed)" ;;
 		tools/*) verdict="fork tooling (allowed by construction: tools/ does not exist upstream)" ;;
+		rune/*) verdict="Rust front end (allowed by construction: rune/ does not exist upstream)" ;;
 		*)
 			if grep -qxF "$f" <<< "$FORK_NEW"; then
 				verdict="fork-NEW (allowed)"

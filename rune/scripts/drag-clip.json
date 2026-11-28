@@ -1,0 +1,8 @@
+[
+  {"t": 0.10, "type": "drag", "key": "clip-107", "dx": 168, "dy": 56, "dur": 1.0},
+  {"t": 1.30, "type": "wheel", "key": "lanes", "dx": 0, "dy": 60, "ctrl": true, "cmd": true},
+  {"t": 1.40, "type": "wheel", "key": "lanes", "dx": 0, "dy": 60, "ctrl": true, "cmd": true},
+  {"t": 1.50, "type": "wheel", "key": "lanes", "dx": 0, "dy": -40},
+  {"t": 1.60, "type": "wheel", "key": "lanes", "dx": 0, "dy": -120, "shift": true},
+  {"t": 1.70, "type": "mark", "name": "end"}
+]

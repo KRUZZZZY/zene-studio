@@ -70,6 +70,16 @@
 # on a pipe it could not create, then a retried listen() assigned over the joinable std::thread and called
 # std::terminate). It is under include/, so the recipe below derives it with no pathspec change; the entry
 # is emitted in the sorted source list and no other entry changed.
+# 2026-11-28 (Q050-525): rune/ is the Rust front end (a Cargo crate brought in from
+# side-projects/zene-rune-prototype, plus its assets and hosted-CI helpers; .github/workflows/rune.yml).
+# Its three Python helpers, its fetch script and its workflow are appended at the end of this list (fork-NEW,
+# measured by the complexity and file-length ratchets like any fork script; none is over CCN 10 or 500 lines). The Rust
+# sources, Cargo files and assets are deliberately NOT entries: this list is the scope the C/C++ ratchets
+# read entry by entry, and lizard would measure the Rust against the C++ complexity baseline (25 Rust
+# functions over CCN 10 and 5 files over 500 lines, measured), turning gates 4 and 7 red for code they
+# were never meant to judge. rune/ does not exist upstream, so Gate 6 allows every path under it by
+# construction, as it does tools/ (tests/no-upstream-regression-gate.sh); the crate's own checks are
+# `cargo test` and the hosted rune workflow (rune/README.md). No other entry changed.
 # Regenerate with (base = 4e677cb6c6ab, the upstream commit this fork is based on):
 #   { git diff --name-only --diff-filter=A 4e677cb6c6ab HEAD -- src include plugins tests/src/core tests/src/plugins tests/src/tracks \
 #       | grep -E '\.(cpp|c|h|hpp|cc|cxx)$' \

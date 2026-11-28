@@ -1,0 +1,44 @@
+[package]
+name = "zene-rune"
+version = "0.0.1"
+edition = "2024"
+license = "GPL-2.0-or-later"
+description = "Zene Studio: independent Rune UI prototype (simulated playback, demo data)"
+
+[[bin]]
+name = "zene-rune"
+path = "src/main.rs"
+
+[dependencies]
+# Rune pinned at b53fe7236ab11225108f6aee837c2d9942f63991 (vendor/rune, branch dev).
+rune = { path = "../vendor/rune/crates/rune" }
+rune-kit = { path = "../vendor/rune/crates/rune-kit" }
+# Phase 0 spike: the control-socket link (src/zene.rs). Already in the lock file through Rune.
+serde_json = "1"
+
+# Rune's own patched dependencies: an app that builds Rune must repeat them (vendor/rune/Cargo.toml).
+[patch.crates-io]
+wgpu-hal = { path = "../vendor/rune/vendor/wgpu-hal" }
+winit = { path = "../vendor/rune/vendor/winit" }
+parley_engine = { path = "../vendor/rune/vendor/parley_engine" }
+accesskit_windows = { path = "../vendor/rune/vendor/accesskit_windows" }
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+opt-level = 1
+
+[profile.release]
+codegen-units = 16
+incremental = true
+
+# Measurement profile, as Rune's own `perf`: release codegen without incremental.
+[profile.perf]
+inherits = "release"
+opt-level = 3
+codegen-units = 16
+lto = false
+debug = false
+incremental = false
