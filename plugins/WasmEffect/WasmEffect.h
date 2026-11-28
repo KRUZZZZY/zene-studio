@@ -86,9 +86,12 @@ public:
 
 	//! Total frames this effect adds to the signal path: the module's declared
 	//! latency (bounded to maxCompensatedLatency, the most the dry path delays)
-	//! plus the host's one-block collect-after-submit pipeline. When
-	//! the module declares latency the dry path is delayed to match, so this
-	//! figure stays constant even if the module traps and is quarantined.
+	//! plus the host's one-block collect-after-submit pipeline. The pipeline
+	//! period is counted whenever a module is ready, including one that
+	//! declares no latency; with nothing loaded the signal passes through
+	//! undelayed and this is 0. When the module declares latency the dry path
+	//! is delayed to match, so this figure stays constant even if the module
+	//! traps and is quarantined.
 	int latencyFrames() const override;
 
 	wasm::WasmWorker& worker() { return m_worker; }

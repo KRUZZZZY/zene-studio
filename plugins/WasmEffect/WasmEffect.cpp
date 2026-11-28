@@ -199,7 +199,13 @@ int WasmEffect::compensatedModuleLatency() const
 int WasmEffect::latencyFrames() const
 {
 	const int moduleFrames = compensatedModuleLatency();
-	if (moduleFrames == 0)
+	// A ready module always goes through the collect-after-submit pipeline
+	// below, so the host adds its period even when the module declares no
+	// latency of its own. With no module - or while one loads and none is
+	// being replaced - the dry signal passes through undelayed and the effect
+	// adds nothing.
+	const bool pipelineActive = m_worker.isReady() || moduleFrames > 0;
+	if (!pipelineActive)
 	{
 		return 0;
 	}
