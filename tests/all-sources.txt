@@ -155,6 +155,9 @@
 # 2026-10-25 (cluster new-p18-18): re-derived from the recipe above after the train snapshot
 # restored 1148 vendored plugins/SfzPlayer/sfizz paths excluded by that recipe. No path the
 # recipe produces was removed; the generated entry list now matches its declared scope.
+# 2026-11-25 (cluster new-p14-85): tests/src/plugins/DeEsserBypassTest.cpp - the fork-NEW
+# regression for a bypassed de-esser keeping the attenuation the loud signal before it left
+# behind - is a tracked source, so the recipe derives it and the entry list below lists it.
 # Gate 7 repair: measured product translation units and complete test method implementations.
 # Gate 7 repair: final measured test implementation headers.
 include/AafImport.h
@@ -3638,6 +3641,7 @@ tests/src/plugins/ClapTestInstrumentUnitTest.cpp
 tests/src/plugins/CompressorVisualizerTest.cpp
 tests/src/plugins/ConvolutionFftwPlanScopeTest.cpp
 tests/src/plugins/CrossoverEQMuteHistoryTest.cpp
+tests/src/plugins/DeEsserBypassTest.cpp
 tests/src/plugins/DelayControlsTest.cpp
 tests/src/plugins/DelayLfoAutomationTest.cpp
 tests/src/plugins/DispersionNonFiniteTest.cpp
