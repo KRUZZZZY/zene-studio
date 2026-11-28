@@ -122,3 +122,29 @@ void RevisionTimelineTest::anOversizedIdentitySidecarIsUnavailableNotRead() {
 	QVERIFY(!autosave.value(QStringLiteral("detail")).toString()
 		.contains(QStringLiteral("other.mmp")));
 }
+void RevisionTimelineTest::anAutosaveOfThisProjectIsFoundWhateverTheCaseOfItsPath() {
+	// BUG new-p16-175, the timeline's half. The identity sidecar records the path
+	// the launch that autosaved spelled; on a file system that compares names
+	// case-insensitively the next launch may be handed another spelling of the
+	// SAME file. Comparing the two as plain strings made the project's own
+	// autosave look like another project's revision, so it vanished from the
+	// timeline it belongs to. The case rule is injected: this host's file system
+	// is case-sensitive, so it cannot show the Windows rule itself.
+	const QString dir = path(QStringLiteral("casing"));
+	QVERIFY(QDir().mkpath(dir));
+	const QString project = dir + QStringLiteral("/Song.mmp");
+	const QString recovery = dir + QStringLiteral("/recover.mmp");
+	const QString recorded = dir + QStringLiteral("/song.mmp");
+	QVERIFY(writeBytes(project, documentWith(3)));
+	QVERIFY(writeBytes(recovery, documentWith(4)));
+	QVERIFY(writeBytes(recovery + QStringLiteral(".info"),
+		QByteArray("version=1\nproject=") + recorded.toUtf8()
+			+ QByteArray("\nsavedUTC=2026-09-15T10:00:00Z\n")));
+
+	const ScopedPathCaseRule rule("insensitive");
+	const QJsonObject state = revisionTimelineState(project, recovery, false);
+	const QJsonObject autosave = entryById(state, QStringLiteral("autosave"));
+	QVERIFY2(!autosave.isEmpty(),
+		"an autosave of THIS project was hidden because its path was spelled with another case");
+	QCOMPARE(autosave.value(QStringLiteral("source")).toString(), QStringLiteral("autosave"));
+}

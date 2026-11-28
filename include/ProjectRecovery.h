@@ -131,6 +131,40 @@ bool writeRecoveryIdentity(const QString& recoveryFile, const QString& sourcePro
 bool removeRecovery(const QString& recoveryFile);
 
 /**
+ * How a file system compares two paths that differ only in case: the rule that
+ * decides whether two spellings name the same project.
+ */
+enum class PathCase
+{
+	//! `Song.mmp` and `song.mmp` are two directory entries (POSIX file systems).
+	Sensitive,
+	//! `Song.mmp` and `song.mmp` are one file (Windows file systems).
+	Insensitive,
+};
+
+/**
+ * The case rule this file system compares paths with.
+ *
+ * It is a property of the MOUNT, not of the platform, and Qt has no API that
+ * answers it: Windows file systems compare names case-insensitively, POSIX ones
+ * case-sensitively, macOS volumes are usually - not always - case-insensitive,
+ * and a POSIX host can mount a FAT or CIFS share either way.
+ * `ZENE_PATH_CASE=sensitive|insensitive` names the rule for such a volume; any
+ * other value is ignored. It is read per decision, so a caller can name the rule
+ * for one case and let the platform rule stand again afterwards.
+ */
+PathCase platformPathCase();
+
+/**
+ * Whether two paths name the same project under \a rule: both are made absolute
+ * the way decideRecovery() compares them (symlinks NOT resolved, so a recovery
+ * is never refused because of a link) and compared under the file system's case
+ * rule. False when either path is empty - a project with no filename has no
+ * identity to compare.
+ */
+bool sameProjectPath(const QString& left, const QString& right, PathCase rule);
+
+/**
  * The whole recovery decision, as a pure function of its inputs: no file system
  * access and no GUI, so it is exercised headless in
  * tests/src/core/ProjectRecoveryTest.cpp.
@@ -140,11 +174,13 @@ bool removeRecovery(const QString& recoveryFile);
  *
  * A recovery file is offered only when it is this session's:
  * a recovery naming a DIFFERENT project is never offered as the recovery of the
- * project being opened, and one STRICTLY OLDER than the project file it came
- * from is stale (the saved project already holds more). Equal modification
- * times do not establish which write came later - a file system whose stamps
- * are coarser than the writes gives a save and the autosave after it the same
- * instant - so equality is treated as uncertain and the recovery is offered.
+ * project being opened - and two spellings of one path ARE that one project on a
+ * file system that compares names case-insensitively (platformPathCase()) - and
+ * one STRICTLY OLDER than the project file it came from is stale (the saved
+ * project already holds more). Equal modification times do not establish which
+ * write came later - a file system whose stamps are coarser than the writes gives
+ * a save and the autosave after it the same instant - so equality is treated as
+ * uncertain and the recovery is offered.
  */
 RecoveryDecision decideRecovery(const RecoveryInfo& recovery, const QString& projectBeingOpened);
 

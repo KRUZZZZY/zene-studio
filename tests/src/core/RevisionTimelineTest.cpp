@@ -112,6 +112,30 @@ QByteArray readBytes(const QString& path)
 	return file.readAll();
 }
 
+//! Name the file system's case rule for one scope and put the environment back
+//! afterwards, so a failing assertion cannot leak the rule into the cases after
+//! it. The rule is a property of the file system, and this host's is
+//! case-sensitive, so it cannot show the Windows rule without being injected.
+struct ScopedPathCaseRule
+{
+	explicit ScopedPathCaseRule(const char* value)
+		: m_hadValue(qEnvironmentVariableIsSet("ZENE_PATH_CASE"))
+		, m_previous(qgetenv("ZENE_PATH_CASE"))
+	{
+		qputenv("ZENE_PATH_CASE", value);
+	}
+	~ScopedPathCaseRule()
+	{
+		if (m_hadValue) { qputenv("ZENE_PATH_CASE", m_previous); }
+		else { qunsetenv("ZENE_PATH_CASE"); }
+	}
+	ScopedPathCaseRule(const ScopedPathCaseRule&) = delete;
+	ScopedPathCaseRule& operator=(const ScopedPathCaseRule&) = delete;
+
+	bool m_hadValue;
+	QByteArray m_previous;
+};
+
 //! The entries of a `revisions.list` result, by id.
 QJsonObject entryById(const QJsonObject& result, const QString& id)
 {
@@ -356,6 +380,12 @@ private slots:
 	//! parsed in full and the autosave is wrongly excluded from this timeline. The
 	//! padding is 1 MiB, well past the bound in ProjectRecovery.h.
 	void anOversizedIdentitySidecarIsUnavailableNotRead();
+
+	//! The SAME project's autosave, under a spelling of its path whose case
+	//! differs. On a file system that compares names case-insensitively the two
+	//! spellings are one file, so the autosave is this project's revision - the
+	//! timeline's own copy of the rule ProjectRecovery::decideRecovery applies.
+	void anAutosaveOfThisProjectIsFoundWhateverTheCaseOfItsPath();
 };
 
 #include "RevisionTimelineTestParts1.h"
