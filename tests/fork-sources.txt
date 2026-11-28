@@ -4231,3 +4231,4 @@ rune/ci/check_png.py
 rune/ci/summarize.py
 rune/ci/window_check.py
 rune/fetch-rune.sh
+.github/workflows/rune.yml

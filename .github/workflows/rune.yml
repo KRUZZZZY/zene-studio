@@ -1,0 +1,213 @@
+---
+# rune - platform CI for the Rune front end (rune/, Q050-525). Adapted from the prototype's Phase 0
+# S3 workflow (side-projects/zene-rune-prototype/ci/rune-phase0.yml), which was green on all three
+# hosted runners on 2026-11-25.
+#
+# Why a workflow of its own rather than jobs in build.yml:
+#  * the KADS CI watch lists every workflow run of a pushed sha whose branch starts with `ci/`
+#    (zene-queue crates/kads-train/src/ci_watch.rs parse_runs) and files any run that concluded
+#    `failure`, whatever its name, as an urgent CI unit; a red `rune` run is therefore filed like
+#    a red `build` run, and its signature carries the run name `rune`, so it is never mixed up
+#    with a C++ failure;
+#  * the release path reads only build, checks and quality-gates (release.yml `workflow_run`,
+#    tests/release-ci-evidence-gate.sh), so this workflow cannot change what a release needs.
+#
+# Every job runs the same four checks, each as its own step with continue-on-error, writes
+# rune/ci-out/summary.json, uploads rune/ci-out/ (logs, summary, snap PNG, window result) and ends
+# RED if any check failed (the "Verdict" step, which prints one `error:` line per failed check).
+#
+# Hosted runners have no GPU. What Rune needs for a software adapter, per OS (paths are in the
+# pinned Rune checkout, rune/vendor/rune):
+#  * Linux: wgpu's Vulkan backend (crates/rune/Cargo.toml:203-204); Rune sets the instance's
+#    backends itself (crates/rune/src/render.rs:607-617), so the switches are the Vulkan loader's
+#    and Rune's adapter pick. Mesa's lavapipe (mesa-vulkan-drivers) per crates/rune/README.md:2435-2447,
+#    selected with VK_ICD_FILENAMES and WGPU_ADAPTER_NAME=llvmpipe (crates/rune/src/gpu/pick.rs:19-21).
+#    Windowed runs also need libxkbcommon-x11 and run under Xvfb.
+#  * Windows: D3D12 only; with no hardware adapter Rune falls back to wgpu's request_adapter, which
+#    returns WARP (render.rs:577-581, pick.rs:127,185). Nothing is set.
+#  * macOS: Rune's own Metal backend on the runner's paravirtual device. One extra, non-gating snap
+#    runs with RUNE_GPU_BACKEND=wgpu to show whether wgpu's Metal backend works there too.
+# RUNE_GPU_LOG=1 prints the adapter Rune chose; summary.json carries it. With RUNE_READY_DIR set,
+# Rune writes $RUNE_READY_DIR/<exe>.<pid> after the first window's on_ready returned
+# (crates/rune/src/platform/ready_signal.rs:1-8); rune/ci/window_check.py waits for that file.
+name: rune
+
+'on':
+  push:
+    branches: ['ci/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: never
+  CARGO_INCREMENTAL: "0"
+  RUST_BACKTRACE: "1"
+  RUNE_GPU_LOG: "1"
+  MIN_TESTS: "26"
+
+jobs:
+  rune:
+    name: rune (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {name: ubuntu, runner: ubuntu-24.04, host: x86_64-unknown-linux-gnu, exe: ""}
+          - {name: windows, runner: windows-latest, host: x86_64-pc-windows-msvc, exe: ".exe"}
+          - {name: macos, runner: macos-latest, host: aarch64-apple-darwin, exe: ""}
+    defaults:
+      run:
+        shell: bash
+        working-directory: rune
+    env:
+      EXE: ${{ matrix.exe }}
+    steps:
+      # Windows runners default to CRLF conversion; keep checked-out text as committed.
+      - name: git settings
+        working-directory: .
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.longpaths true
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch Rune at the pinned revision (rune/fetch-rune.sh)
+        run: |
+          mkdir -p ci-out
+          sh fetch-rune.sh | tee ci-out/rune-rev.txt
+          echo "RUNE_REV=$(git -C vendor/rune rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Linux packages (build, Xvfb, XKB-X11, software Vulkan)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          # libxkbcommon-dev + libwayland-dev: build time (crates/rune/README.md:2427-2433).
+          # libxkbcommon-x11-0 + mesa-vulkan-drivers: windowed run on a GPU-less Vulkan (README.md:2435-2447).
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libxkbcommon-dev libwayland-dev libxkbcommon-x11-0 \
+            mesa-vulkan-drivers libvulkan1 vulkan-tools xvfb xauth
+          ICD=$(find /usr/share/vulkan/icd.d -name 'lvp_icd*.json' | sort | head -n 1)
+          echo "lavapipe ICD: $ICD"
+          echo "VK_ICD_FILENAMES=$ICD" >> "$GITHUB_ENV"
+          echo "WGPU_ADAPTER_NAME=llvmpipe" >> "$GITHUB_ENV"
+          vulkaninfo --summary > ci-out/vulkaninfo.txt 2>&1 || true
+          head -40 ci-out/vulkaninfo.txt
+
+      - name: Rust toolchain (the version rune/app/rust-toolchain.toml pins) and platform assertion
+        run: |
+          ver=$(sed -n 's/^channel *= *"\(.*\)"/\1/p' app/rust-toolchain.toml)
+          echo "pinned toolchain: $ver"
+          rustup toolchain install "$ver" --profile minimal
+          cd app
+          rustc -vV | tee ../ci-out/rustc.txt
+          cargo -V
+          host=$(rustc -vV | sed -n 's/^host: //p')
+          test "$host" = "${{ matrix.host }}" || { echo "host is $host, expected ${{ matrix.host }}"; exit 1; }
+
+      - name: Machine and GPU facts
+        continue-on-error: true
+        run: |
+          {
+            uname -a
+            case "$RUNNER_OS" in
+              Windows)
+                powershell -NoProfile -Command \
+                  "Get-CimInstance Win32_VideoController | Format-List Name,DriverVersion,AdapterCompatibility,Status"
+                powershell -NoProfile -Command \
+                  "Get-CimInstance Win32_OperatingSystem | Format-List Caption,Version,BuildNumber" ;;
+              macOS)   sw_vers; sysctl -n machdep.cpu.brand_string; system_profiler SPDisplaysDataType | head -40 ;;
+              Linux)   lsb_release -a 2>/dev/null; nproc; free -m ;;
+            esac
+          } > ci-out/machine.txt 2>&1 || true
+          cat ci-out/machine.txt
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+        with:
+          workspaces: rune/app
+          key: rune-${{ env.RUNE_REV }}
+          cache-on-failure: true
+
+      # --- the four checks ---------------------------------------------------------------------
+
+      - name: 1. cargo build --profile perf
+        id: build
+        continue-on-error: true
+        run: |
+          trap 'echo $SECONDS > ci-out/build.seconds' EXIT
+          (cd app && cargo build --locked --profile perf) 2>&1 | tee ci-out/build.log
+
+      - name: 2. cargo test --locked (headless interaction and model tests)
+        id: test
+        continue-on-error: true
+        run: |
+          trap 'echo $SECONDS > ci-out/test.seconds' EXIT
+          (cd app && cargo test --locked) 2>&1 | tee ci-out/test.log
+
+      - name: 3. headless --snap render
+        id: snap
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: |
+          trap 'echo $SECONDS > ci-out/snap.seconds; cat ci-out/snap.log' EXIT
+          unset WAYLAND_DISPLAY DISPLAY
+          "app/target/perf/zene-rune$EXE" --snap ci-out/snap.png --size 1366x768 --scale 1 --scene piano --at 0.4 \
+            > ci-out/snap.log 2>&1
+          python ci/check_png.py ci-out/snap.png 1366 768 | tee ci-out/snap-check.json
+
+      - name: 3b. macOS only, informational - the same snap through wgpu's Metal backend
+        if: runner.os == 'macOS' && steps.build.outcome == 'success'
+        continue-on-error: true
+        env:
+          RUNE_GPU_BACKEND: wgpu
+        run: |
+          trap 'cat ci-out/snap-wgpu.log' EXIT
+          "app/target/perf/zene-rune$EXE" --snap ci-out/snap-wgpu.png --size 1366x768 --scale 1 --scene piano --at 0.4 \
+            > ci-out/snap-wgpu.log 2>&1
+          python ci/check_png.py ci-out/snap-wgpu.png 1366 768 | tee ci-out/snap-wgpu-check.json
+
+      - name: 4. a real window reaches its first frame
+        id: window
+        if: steps.build.outcome == 'success'
+        continue-on-error: true
+        run: |
+          unset WAYLAND_DISPLAY
+          B="app/target/perf/zene-rune$EXE"
+          if [ "$RUNNER_OS" = Linux ]; then
+            # No display on the runner: a virtual X server, lavapipe for the GPU (env set above).
+            unset DISPLAY
+            xvfb-run -a -s "-screen 0 1366x768x24" \
+              python ci/window_check.py --exe "$B" --timeout 90 --out ci-out/window.json
+          else
+            # Windows and macOS hosted runners have a logged-in desktop session.
+            python ci/window_check.py --exe "$B" --timeout 90 --out ci-out/window.json
+          fi
+
+      # --- verdict and artifacts ---------------------------------------------------------------
+
+      - name: Verdict (summary.json; red if any check failed)
+        if: always()
+        run: |
+          python ci/summarize.py --dir ci-out --os "${{ matrix.name }}" --min-tests "$MIN_TESTS" \
+            --build "${{ steps.build.outcome }}" --test "${{ steps.test.outcome }}" \
+            --snap "${{ steps.snap.outcome }}" --window "${{ steps.window.outcome }}"
+
+      - name: Upload logs, summary.json, snap PNG
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rune-${{ matrix.name }}
+          path: rune/ci-out/
+          if-no-files-found: warn
+          retention-days: 30
