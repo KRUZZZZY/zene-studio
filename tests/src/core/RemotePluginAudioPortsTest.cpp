@@ -36,6 +36,7 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <thread>
 #include <type_traits>
 
 #include <QDir>
@@ -508,6 +509,53 @@ private slots:
 
 		controller.activate(512);
 		QCOMPARE(controller.activateCalls(), 1);
+	}
+
+	/**
+	 * Detaching the buffers must not race with audio processing.
+	 *
+	 * The render thread reads the controller's buffer pointer for the whole period, under
+	 * the audio engine's change mutex. A stand-in thread holds that mutex, as the render
+	 * thread does. disconnectBuffers() must park behind it (modelChangeWaiters() counts a
+	 * thread parked in requestChangeInModel()) and must not change the pointer until the
+	 * period is over. No sleep and no elapsed time: the observation is the waiter count.
+	 */
+	void DisconnectBuffersWaitsForRendering()
+	{
+		TestAudioPortsModel model{false};
+		TestAudioPortsController controller{model};
+		RemotePlugin plugin{controller};
+		QCOMPARE(controller.buffers(), &plugin);
+
+		auto* const engine = Engine::audioEngine();
+		std::atomic<bool> held{false};
+		std::atomic<bool> release{false};
+		std::thread renderStandIn{[&] {
+			engine->requestChangeInModel();
+			held = true;
+			while (!release) { std::this_thread::yield(); }
+			engine->doneChangeInModel();
+		}};
+		while (!held) { std::this_thread::yield(); }
+
+		std::atomic<bool> finished{false};
+		std::thread detacher{[&] {
+			controller.disconnectBuffers();
+			finished = true;
+		}};
+
+		// Either the detacher parks behind the render period, or it finished without waiting.
+		while (engine->modelChangeWaiters() == 0 && !finished) { std::this_thread::yield(); }
+		const bool finishedWhileRendering = finished;
+		const bool pointerChangedWhileRendering = controller.buffers() != &plugin;
+
+		release = true;
+		renderStandIn.join();
+		detacher.join();
+
+		QVERIFY2(!finishedWhileRendering, "disconnectBuffers() completed while the render period held the model");
+		QVERIFY2(!pointerChangedWhileRendering, "the buffer pointer changed during the render period");
+		QCOMPARE(controller.buffers(), nullptr);
 	}
 
 	/**
