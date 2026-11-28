@@ -61,7 +61,9 @@ DynProcControls::DynProcControls( DynProcEffect * _eff ) :
 
 void DynProcControls::sampleRateChanged()
 {
-	m_effect->m_needsUpdate = true;
+	// Control thread: the engine has set the new device rate, so the window it needs is built
+	// here - this allocates - and the audio path only installs it (BUG new-p9-130).
+	m_effect->prepareSampleRateChange();
 }
 
 

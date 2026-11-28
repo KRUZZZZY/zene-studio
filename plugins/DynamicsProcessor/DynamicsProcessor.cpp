@@ -60,14 +60,27 @@ Plugin::Descriptor PLUGIN_EXPORT dynamicsprocessor_plugin_descriptor =
 const float DYN_NOISE_FLOOR = 0.00001f; // -100dBFS noise floor
 const double DNF_LOG = -1.0;
 
+namespace
+{
+
+//! The RMS window the detector runs at a sample rate - the plugin's original expression.
+std::size_t rmsWindow( sample_rate_t rate )
+{
+	return 64 * rate / 44100;
+}
+
+} // namespace
+
 DynProcEffect::DynProcEffect( Model * _parent,
 			const Descriptor::SubPluginFeatures::Key * _key ) :
 	AudioPlugin(&dynamicsprocessor_plugin_descriptor, _parent, _key),
 	m_dpControls( this )
 {
 	m_currentPeak[0] = m_currentPeak[1] = DYN_NOISE_FLOOR;
-	m_rms[0] = new RmsHelper( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
-	m_rms[1] = new RmsHelper( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
+	// The first bank is built here, off the audio thread; every later one is built by
+	// prepareSampleRateChange().
+	m_banks.push_back( std::make_unique<RmsBank>( rmsWindow( Engine::audioEngine()->outputSampleRate() ) ) );
+	m_currentBank = m_banks.back().get();
 	calcAttack();
 	calcRelease();
 }
@@ -77,8 +90,51 @@ DynProcEffect::DynProcEffect( Model * _parent,
 
 DynProcEffect::~DynProcEffect()
 {
-	delete m_rms[0];
-	delete m_rms[1];
+	// m_banks owns every window; the audio path only reads them, so nothing is freed by hand.
+}
+
+
+void DynProcEffect::prepareSampleRateChange()
+{
+	// Control thread. The audio path installs this bank with one pointer exchange, so the
+	// buffer the new window needs is allocated - and the replaced one freed - here, outside
+	// the processing path (BUG new-p9-130).
+	const std::size_t window = rmsWindow( Engine::audioEngine()->outputSampleRate() );
+	// Rebuild a bank nobody holds: not the one the audio path announced it runs on, and not
+	// the one this thread published and the audio path has not collected yet.
+	RmsBank * const inUse = m_currentPublished.load( std::memory_order_acquire );
+	RmsBank * bank = nullptr;
+	for( const auto & candidate : m_banks )
+	{
+		if( candidate.get() != inUse && candidate.get() != m_lastPublished )
+		{
+			bank = candidate.get();
+			break;
+		}
+	}
+	if( bank == nullptr )
+	{
+		m_banks.push_back( std::make_unique<RmsBank>( window ) );
+		bank = m_banks.back().get();
+	}
+	else
+	{
+		bank->resize( window );
+	}
+	// Publish the bank first, then the request: the release store orders the two for the
+	// acquire that consumes them.
+	m_lastPublished = bank;
+	m_pendingBank.store( bank, std::memory_order_release );
+	m_needsUpdate.store( true, std::memory_order_release );
+}
+
+
+void DynProcEffect::adoptRmsBank( RmsBank * bank )
+{
+	m_currentBank = bank;
+	// Announce what the audio path runs on. The control thread excludes this bank and the one
+	// in flight, so it only ever rebuilds an idle one - nothing is allocated or freed here.
+	m_currentPublished.store( bank, std::memory_order_release );
 }
 
 
@@ -114,13 +170,18 @@ ProcessStatus DynProcEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 // debug code
 //	qDebug( "peaks %f %f", m_currentPeak[0], m_currentPeak[1] );
 
-	if( m_needsUpdate )
+	// The request is published by the controls' sample-rate slot on the control thread, with
+	// the bank it announces already built. One exchange takes the request, so a period that is
+	// already running cannot lose one that arrives between the read and the clear; the second
+	// exchange installs the prepared window and frees nothing here (BUG new-p9-130).
+	if( m_needsUpdate.exchange( false, std::memory_order_acq_rel ) )
 	{
-		m_rms[0]->setSize( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
-		m_rms[1]->setSize( 64 * Engine::audioEngine()->outputSampleRate() / 44100 );
+		if( RmsBank * const prepared = m_pendingBank.exchange( nullptr, std::memory_order_acq_rel ) )
+		{
+			adoptRmsBank( prepared );
+		}
 		calcAttack();
 		calcRelease();
-		m_needsUpdate = false;
 	}
 	else
 	{
@@ -134,6 +195,8 @@ ProcessStatus DynProcEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 		}
 	}
 
+	RmsHelper * const rms[2] = { &m_currentBank->m_rms[0], &m_currentBank->m_rms[1] };
+
 	for (float* frame : inOut.framesView())
 	{
 		auto s = std::array{frame[0], frame[1]};
@@ -145,7 +208,7 @@ ProcessStatus DynProcEffect::processImpl(InterleavedBufferView<float, 2> inOut)
 // update peak values
 		for ( i=0; i <= 1; i++ )
 		{
-			const double t = m_rms[i]->update( s[i] );
+			const double t = rms[i]->update( s[i] );
 			if( t > m_currentPeak[i] )
 			{
 				m_currentPeak[i] = m_currentPeak[i] * m_attCoeff + (1 - m_attCoeff) * t;
